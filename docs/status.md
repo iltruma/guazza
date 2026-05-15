@@ -8,7 +8,6 @@
 - Identificate 22 stazioni SIR, 6 stazioni ARPAT
 - `config/stations.yaml` completo con coordinate, sensori verificati via API, `used_by` per location
 - `config/sources.yaml`, `config/locations.yaml`, `config/indicators.yaml` presenti
-- Script `scripts/01–04_*.py` per ricognizione sorgenti
 
 ### Refactoring repo — schema wide + struttura flat (completato — 2026-05-15)
 - **Schema DuckDB wide**: una riga per `(source, station_id, ts)` con colonne `temp_c`, `humidity_pct`, `precip_mm`, `wind_speed_ms`, ...

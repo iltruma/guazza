@@ -1,8 +1,6 @@
 # Guazza — sorgenti dati: endpoint, parametri, note di accesso
 #
 # Stato di ogni endpoint: OK / DA_VERIFICARE / INSTABILE / NO_API
-# Gli endpoint DA_VERIFICARE o NO_API vanno testati con scripts/03_probe_data_sources.py
-# e scripts/04_check_benchmark_scrapers.py prima di Sprint 1.
 
 sources:
 
@@ -37,7 +35,7 @@ sources:
     url: "https://historical-forecast-api.open-meteo.com/v1/forecast"
     status: OK
     auth: none
-    coverage_start: "2022-01-01"   # da verificare con scripts/03
+    coverage_start: "2022-01-01"
     notes: >
       Archivio run passati (essenziale per training). Stessa interfaccia
       di Forecast API ma con parametri start_date/end_date.
@@ -132,21 +130,10 @@ sources:
     url: "http://www.cfr.toscana.it/index.php?IDS=10&IDT=76"
     status: DA_VERIFICARE
     auth: none
-    format: DA_VERIFICARE   # PDF/RSS/HTML? — verificare con scripts/03
+    format: DA_VERIFICARE   # PDF/RSS/HTML?
     notes: >
       Bollettini di vigilanza meteo regionali. Formato da verificare.
       Zone di allerta toscane: mappare le 4 location alle zone CFR.
-
-  prociv:
-    label: "Protezione Civile — allerte criticità"
-    url: "https://mappe.protezionecivile.gov.it/ms/api/v2/allerte"
-    status: DA_VERIFICARE
-    auth: none
-    format: JSON   # probabile API REST
-    notes: >
-      API di Protezione Civile per allerte meteo. Da verificare struttura
-      risposta e filtro per regione Toscana.
-      scripts/03_probe_data_sources.py verificherà endpoint e formato.
 
   # ── Radar precipitazioni ─────────────────────────────────────────────────
 
@@ -174,7 +161,7 @@ sources:
       API ufficiale MET Norway, preferire rispetto allo scraping HTML.
       Richiede header User-Agent identificativo.
       Rate limit: max 20 req/s, no IP ban se si rispetta ToS.
-      scripts/04_check_benchmark_scrapers.py verificherà endpoint.
+      Da verificare in Sprint 4 (benchmark provider).
 
   meteoam:
     label: "MeteoAM — Aeronautica Militare"
@@ -184,7 +171,7 @@ sources:
     format: DA_VERIFICARE
     notes: >
       Aeronautica Militare. Verificare se esiste endpoint API o solo HTML.
-      scripts/04_check_benchmark_scrapers.py testerà struttura HTML.
+      Da verificare in Sprint 4 (benchmark provider).
 
   threebmeteo:
     label: "3BMeteo"
@@ -196,7 +183,7 @@ sources:
     notes: >
       Scraping HTML per confronto accuracy. Rispettare ToS.
       Solo per benchmark MAE/CRPS aggregato (dati mai ridistribuiti).
-      scripts/04_check_benchmark_scrapers.py verificherà selettori CSS.
+      Da verificare in Sprint 4 (benchmark provider).
 
   ilmeteo:
     label: "iLMeteo"
@@ -207,7 +194,7 @@ sources:
     tos: "DA_VERIFICARE — solo benchmark aggregato, no ridistribuzione"
     notes: >
       Come 3BMeteo. Solo benchmark statistico aggregato.
-      scripts/04_check_benchmark_scrapers.py verificherà selettori CSS.
+      Da verificare in Sprint 4 (benchmark provider).
 
   # ── LAMMA (V2, non Sprint 1) ─────────────────────────────────────────────
 
