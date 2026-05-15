@@ -285,3 +285,39 @@ def test_upsert_daily_and_realtime_same_ts_no_conflict(tmp_db: Path) -> None:
     rt_row = next(r for r in rows if r[0] == "realtime")
     assert daily_row[1] == pytest.approx(31.0)   # tmax_c preservato
     assert rt_row[2] == pytest.approx(12.5)       # temp_c preservato
+
+
+def test_upsert_sir_observations_dedup_within_batch(tmp_db: Path) -> None:
+    """Batch con duplicati PK interni non deve crashare (DuckDB FatalException).
+
+    Simula il caso backfill: termo_csv e pluvio0_24 producono entrambi
+    una riga (sir_toscana, TOS01000891, 2022-01-01, daily).
+    Il merge COALESCE deve preservare entrambi i valori.
+    """
+    ts = datetime(2022, 1, 1)
+    records = [
+        # primo sensore: termo_csv → ha tmax_c/tmin_c, no precip
+        {
+            "source": "sir_toscana", "station_id": "TOS01000891",
+            "location_id": "casa_campi", "ts": ts, "granularity": "daily",
+            "tmax_c": 10.0, "tmin_c": 2.0, "precip_mm": None,
+        },
+        # secondo sensore: pluvio0_24 → ha precip, no tmax/tmin
+        {
+            "source": "sir_toscana", "station_id": "TOS01000891",
+            "location_id": "casa_campi", "ts": ts, "granularity": "daily",
+            "tmax_c": None, "tmin_c": None, "precip_mm": 5.4,
+        },
+    ]
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        n = db.upsert_sir_observations(records)  # non deve crashare
+        rows = db.execute(
+            "SELECT tmax_c, tmin_c, precip_mm FROM observations WHERE station_id='TOS01000891'"
+        ).fetchall()
+
+    assert n == 2  # batch aveva 2 record
+    assert len(rows) == 1  # ma nel DB una sola riga (deduplicata)
+    assert rows[0][0] == pytest.approx(10.0)   # tmax_c dal primo sensore
+    assert rows[0][1] == pytest.approx(2.0)    # tmin_c dal primo sensore
+    assert rows[0][2] == pytest.approx(5.4)    # precip_mm dal secondo sensore

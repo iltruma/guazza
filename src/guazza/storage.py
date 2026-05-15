@@ -214,6 +214,24 @@ class DuckDBClient:
                 rec.get("qc_pass"),
             ])
 
+        # DuckDB executemany non gestisce duplicati interni al batch con ON CONFLICT.
+        # Deduplicare per PK (source, station_id, ts, granularity) = indici 0,1,3,4.
+        # In caso di duplicati nel batch, l'ultimo record vince (merge COALESCE-like).
+        dedup: dict[tuple[Any, ...], list[Any]] = {}
+        for row in rows:
+            pk = (row[0], row[1], row[3], row[4])
+            if pk in dedup:
+                existing = dedup[pk]
+                # COALESCE: mantieni il valore non-None tra existing e nuovo
+                merged = [
+                    new if new is not None else old
+                    for old, new in zip(existing, row, strict=True)
+                ]
+                dedup[pk] = merged
+            else:
+                dedup[pk] = row
+        rows = list(dedup.values())
+
         self.executemany(
             f"""
             INSERT INTO observations
