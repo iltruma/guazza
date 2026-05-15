@@ -150,7 +150,7 @@ class DuckDBClient:
                 "tmax_c": rec.get("tmax_c"),
                 "tmin_c": rec.get("tmin_c"),
                 "temp_c": rec.get("temp_c"),
-                "humidity_pct": rec.get("hum_med_pct") or rec.get("humidity_pct"),
+                "humidity_pct": rec.get("hum_med_pct") if rec.get("hum_med_pct") is not None else rec.get("humidity_pct"),
                 "precip_mm": rec.get("precip_mm"),
                 "wind_speed_ms": rec.get("wind_speed_ms"),
                 "wind_dir_deg": rec.get("wind_dir_deg"),

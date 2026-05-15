@@ -231,3 +231,23 @@ def test_upsert_idempotent(tmp_db: Path) -> None:
         db.upsert_sir_observations([_termo_record()])
         count = db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
     assert count == 1
+
+
+def test_upsert_igro_zero_humidity_preserved(tmp_db: Path) -> None:
+    """hum_med_pct=0.0 non deve essere trattato come falsy — regressione bug 'or'."""
+    rec = {
+        "source": "sir_toscana",
+        "station_id": _STATION,
+        "location_id": _LOCATION,
+        "ts": _TS,
+        "hum_med_pct": 0.0,
+    }
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        db.upsert_sir_observations([rec])
+        row = db.execute(
+            "SELECT humidity_pct FROM observations WHERE station_id = ? AND ts = ?",
+            [_STATION, _TS],
+        ).fetchone()
+    assert row is not None
+    assert row[0] == pytest.approx(0.0), "humidity_pct=0.0 deve essere salvato, non ignorato"
