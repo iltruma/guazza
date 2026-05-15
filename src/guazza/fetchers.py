@@ -16,7 +16,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -631,6 +631,276 @@ def save_netatmo_to_db(
         f"[{location_id}] Salvate {len(stations)} stazioni in netatmo_fetch_log, "
         f"{len(obs_rows)} osservazioni in observations"
     )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Open-Meteo — Forecast + Historical Forecast
+# ═════════════════════════════════════════════════════════════════════════════
+
+_OM_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+_OM_HISTORICAL_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+
+# Variabili orarie richieste
+_OM_HOURLY_VARS = [
+    "temperature_2m",
+    "relative_humidity_2m",
+    "precipitation",
+    "wind_speed_10m",
+    "wind_direction_10m",
+    "wind_gusts_10m",
+    "surface_pressure",
+]
+
+# Mapping variabile Open-Meteo → colonna observations wide
+_OM_VAR_MAP: dict[str, str] = {
+    "temperature_2m": "temp_c",
+    "relative_humidity_2m": "humidity_pct",
+    "precipitation": "precip_mm",
+    "wind_speed_10m": "wind_speed_ms",
+    "wind_direction_10m": "wind_dir_deg",
+    "wind_gusts_10m": "wind_gust_ms",
+    "surface_pressure": "pressure_hpa",
+}
+
+# Cadenza run per modello (ore UTC). Usata per arrotondare ts_run.
+_MODEL_RUN_HOURS: dict[str, list[int]] = {
+    "ecmwf_ifs025": [0, 12],
+    "icon_eu": [0, 3, 6, 9, 12, 15, 18, 21],
+    "gfs025": [0, 6, 12, 18],
+    "arome_france": [0, 3, 6, 9, 12, 15, 18, 21],
+    # fallback generico
+    "default": [0, 6, 12, 18],
+}
+
+# Modelli disponibili per l'area Toscana
+_OM_MODELS: list[str] = ["ecmwf_ifs025", "icon_eu", "gfs025", "arome_france"]
+
+
+def _infer_ts_run(model: str, now_utc: datetime) -> datetime:
+    """Stima ts_run = ultimo run completato prima di now_utc per il modello dato.
+
+    Arrotonda per difetto all'ora UTC più recente nella lista dei run del modello.
+    I run NWP hanno tipicamente un lag di ~2-4h dalla cutoff, ma qui usiamo
+    l'ora nominale del run (es. ECMWF 00 UTC) perché è quella che identifica
+    il run nei dati archiviati.
+    """
+    run_hours = _MODEL_RUN_HOURS.get(model, _MODEL_RUN_HOURS["default"])
+    current_hour = now_utc.hour
+    # trova l'ultima ora di run ≤ ora corrente
+    last_run_hour = max((h for h in run_hours if h <= current_hour), default=run_hours[-1])
+    if last_run_hour > current_hour:
+        # tutti i run sono dopo l'ora corrente: prendi l'ultimo run del giorno precedente
+        ts_run = (now_utc - timedelta(days=1)).replace(
+            hour=run_hours[-1], minute=0, second=0, microsecond=0
+        )
+    else:
+        ts_run = now_utc.replace(hour=last_run_hour, minute=0, second=0, microsecond=0)
+    return ts_run
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=15))
+def _fetch_om_json(url: str, params: dict[str, str | int | float | list[str]]) -> dict[str, Any]:
+    logger.debug(f"Open-Meteo fetch: {url} params={params}")
+    with httpx.Client(timeout=30) as client:
+        r = client.get(url, params=params)
+        r.raise_for_status()
+    return r.json()  # type: ignore[no-any-return]
+
+
+def _parse_om_response(
+    data: dict[str, Any],
+    model: str,
+    location_id: str,
+    ts_run: datetime,
+) -> list[dict[str, Any]]:
+    """Converte risposta Open-Meteo in lista di record wide per tabella forecasts.
+
+    Returns:
+        Lista di dict con chiavi: source, location_id, ts_run, ts_valid,
+        lead_time_h + colonne meteo.
+    """
+    hourly = data.get("hourly", {})
+    times: list[str] = hourly.get("time", [])
+    if not times:
+        logger.warning(f"Open-Meteo [{model}] risposta senza dati hourly")
+        return []
+
+    records: list[dict[str, Any]] = []
+    for i, time_str in enumerate(times):
+        try:
+            # ISO8601 senza timezone: l'API restituisce UTC quando timezone=UTC
+            ts_valid = datetime.fromisoformat(time_str).replace(tzinfo=UTC)
+        except ValueError:
+            logger.debug(f"ts_valid non parsabile: {time_str!r}")
+            continue
+
+        lead_h = int((ts_valid - ts_run).total_seconds() / 3600)
+
+        rec: dict[str, Any] = {
+            "source": f"open_meteo_{model}",
+            "location_id": location_id,
+            "ts_run": ts_run,
+            "ts_valid": ts_valid,
+            "lead_time_h": lead_h,
+        }
+        for om_var, col in _OM_VAR_MAP.items():
+            series = hourly.get(om_var, [])
+            val = series[i] if i < len(series) else None
+            rec[col] = float(val) if val is not None else None
+
+        records.append(rec)
+
+    logger.info(f"Open-Meteo [{model}] [{location_id}] → {len(records)} righe (ts_run={ts_run})")
+    return records
+
+
+def fetch_openmeteo_forecast(
+    location_id: str,
+    lat: float,
+    lon: float,
+    models: list[str] | None = None,
+    forecast_days: int = 7,
+    now_utc: datetime | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Fetch forecast live da Open-Meteo per una location, multi-modello.
+
+    Args:
+        location_id: ID location Guazza.
+        lat, lon: coordinate della location.
+        models: lista modelli (default: tutti i modelli _OM_MODELS).
+        forecast_days: giorni di forecast (1–16).
+        now_utc: timestamp corrente UTC (iniettabile per test).
+
+    Returns:
+        Dict {model: [record_wide, ...]} — un record per ora per modello.
+    """
+    if models is None:
+        models = _OM_MODELS
+    if now_utc is None:
+        now_utc = datetime.now(tz=UTC)
+
+    results: dict[str, list[dict[str, Any]]] = {}
+
+    for model in models:
+        ts_run = _infer_ts_run(model, now_utc)
+        params: dict[str, str | int | float | list[str]] = {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": ",".join(_OM_HOURLY_VARS),
+            "models": model,
+            "forecast_days": forecast_days,
+            "timezone": "UTC",
+            "wind_speed_unit": "ms",
+        }
+        try:
+            data = _fetch_om_json(_OM_FORECAST_URL, params)
+            records = _parse_om_response(data, model, location_id, ts_run)
+            results[model] = records
+        except Exception as e:
+            logger.error(f"Open-Meteo forecast [{model}] [{location_id}] fallito: {e}")
+            results[model] = []
+        time.sleep(0.5)  # throttle gentile tra modelli
+
+    return results
+
+
+def fetch_openmeteo_historical(
+    location_id: str,
+    lat: float,
+    lon: float,
+    start_date: str,
+    end_date: str,
+    models: list[str] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Fetch storico forecast da Open-Meteo Historical Forecast API.
+
+    Usata per backfill training set (dati 2022+).
+    ts_run = arrotondamento per difetto al run del modello per ogni ora.
+
+    Args:
+        start_date, end_date: formato "YYYY-MM-DD".
+
+    Returns:
+        Dict {model: [record_wide, ...]}
+    """
+    if models is None:
+        models = _OM_MODELS
+
+    results: dict[str, list[dict[str, Any]]] = {}
+
+    for model in models:
+        params: dict[str, str | int | float | list[str]] = {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": ",".join(_OM_HOURLY_VARS),
+            "models": model,
+            "start_date": start_date,
+            "end_date": end_date,
+            "timezone": "UTC",
+            "wind_speed_unit": "ms",
+        }
+        try:
+            data = _fetch_om_json(_OM_HISTORICAL_URL, params)
+            # Per lo storico, ts_run = inferita per ogni riga in base all'ora
+            hourly = data.get("hourly", {})
+            times: list[str] = hourly.get("time", [])
+            # Prima passa: inferisci ts_run per ogni ts_valid
+            all_records: list[dict[str, Any]] = []
+            for i, time_str in enumerate(times):
+                try:
+                    ts_valid = datetime.fromisoformat(time_str).replace(tzinfo=UTC)
+                except ValueError:
+                    continue
+                ts_run = _infer_ts_run(model, ts_valid)
+                lead_h = int((ts_valid - ts_run).total_seconds() / 3600)
+                rec: dict[str, Any] = {
+                    "source": f"open_meteo_{model}",
+                    "location_id": location_id,
+                    "ts_run": ts_run,
+                    "ts_valid": ts_valid,
+                    "lead_time_h": lead_h,
+                }
+                for om_var, col in _OM_VAR_MAP.items():
+                    series = hourly.get(om_var, [])
+                    val = series[i] if i < len(series) else None
+                    rec[col] = float(val) if val is not None else None
+                all_records.append(rec)
+
+            results[model] = all_records
+            logger.info(
+                f"Open-Meteo historical [{model}] [{location_id}] "
+                f"→ {len(all_records)} righe ({start_date}→{end_date})"
+            )
+        except Exception as e:
+            logger.error(f"Open-Meteo historical [{model}] [{location_id}] fallito: {e}")
+            results[model] = []
+        time.sleep(0.5)
+
+    return results
+
+
+def fetch_openmeteo_all_locations(
+    locations: dict[str, Any],
+    models: list[str] | None = None,
+    forecast_days: int = 7,
+    now_utc: datetime | None = None,
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Fetch forecast per tutte le location.
+
+    Returns:
+        Dict {location_id: {model: [record_wide, ...]}}
+    """
+    results: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for loc_id, loc in locations.items():
+        results[loc_id] = fetch_openmeteo_forecast(
+            location_id=loc_id,
+            lat=loc["lat"],
+            lon=loc["lon"],
+            models=models,
+            forecast_days=forecast_days,
+            now_utc=now_utc,
+        )
+    return results
 
 
 def fetch_netatmo_all_locations(

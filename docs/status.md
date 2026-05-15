@@ -45,12 +45,20 @@ barometro, radiometro_*, evaporimetro: **solo realtime**, nessuno storico CSV.
 Richiede header `X-Requested-With: XMLHttpRequest` **e** `Referer: https://www.sir.toscana.it/`.
 Senza Referer risponde con pagina HTML (redirect al portale).
 
+### Smoke test multi-sensore SIR + fix bug storage (completato — 2026-05-15)
+- 6 test per `upsert_sir_observations`: merge 4 sensori → 1 riga wide, COALESCE, idempotenza
+- Fix bug: `hum_med_pct=0.0` era trattato come falsy con `or` → sostituito con `is not None`
+- Rimossi duplicati di fixture in `test_storage.py`
+
+### Ingestion Open-Meteo (completato — 2026-05-15)
+- `fetch_openmeteo_forecast`: fetch live multi-modello (ecmwf_ifs025, icon_eu, gfs025, arome_france)
+- `fetch_openmeteo_historical`: backfill storico (Historical Forecast API, 2022+)
+- `fetch_openmeteo_all_locations`: wrapper per tutte le 4 location
+- `ts_run` inferita per difetto all'ultimo run nominale del modello (ECMWF: 0/12 UTC, ICON-EU: ogni 3h, GFS: ogni 6h)
+- `upsert_forecasts` in `DuckDBClient`: UPSERT su tabella `forecasts` wide, DO UPDATE sovrascrive (l'ultimo run vince)
+- 16 test nuovi (mock HTTP, parse, lead_time_h, upsert idempotenza/conflict)
+
 ## Prossimi passi (in ordine)
 
-1. **Smoke test reale SIR: PASSATO** — scaricate 12.552 righe (34 anni, 1992–2026) per TOS01001215, inserite in DuckDB wide, PK source+station_id+ts mantiene 1 riga/giorno correttamente
-2. **Ingestion Open-Meteo**: implementare fetch forecast NWP multi-modello → tabella `forecasts` wide
-3. **Job end-to-end**: `jobs/ingest.py` deve orchestrare fetch SIR + Netatmo + Open-Meteo per tutte le location
-5. **Smoke test multi-sensore SIR**: per TOS01001215, scaricare pluvio + anemo + igro, verificare UPSERT wide corretto (una riga per giorno con più colonne)
-6. **Ingestion Open-Meteo**: implementare fetch forecast NWP multi-modello → tabella `forecasts` wide
-7. **Job end-to-end**: `jobs/ingest.py` deve orchestrare fetch SIR + Netatmo + Open-Meteo per tutte le location
-8. **Feature engineering (Sprint 2)**: lag temporali + join `observations` ↔ `forecasts` wide per training set LightGBM
+1. **Job end-to-end**: `jobs/ingest.py` deve orchestrare SIR + Netatmo + Open-Meteo per tutte le location
+2. **Feature engineering (Sprint 2)**: lag temporali + join `observations` ↔ `forecasts` wide per training set LightGBM
