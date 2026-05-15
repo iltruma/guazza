@@ -1,6 +1,8 @@
 # Guazza — Istruzioni di progetto
 
-> A inizio sessione leggi `docs/status.md` per sapere dove siamo.
+> **STOP — prima di qualsiasi azione leggi `docs/status.md` integralmente.**
+> Non scrivere codice, non fare ricerche, non proporre nulla finché non hai letto lo stato corrente.
+> Questo vale per ogni agente (Claude, Gemini, GPT, o altro) e per ogni sessione, anche breve.
 
 ## Progetto
 

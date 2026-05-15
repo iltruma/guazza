@@ -1,28 +1,21 @@
 # Contribuire a Guazza
 
-Questo repo è sviluppato da un team misto: umano (Cosimo) + agenti AI (Claude/OpenCode,
-Gemini, GPT, altri). Le regole qui sotto valgono per tutti, umani e agenti.
+Repo sviluppato da un team misto: umano (Cosimo) + agenti AI (Claude/OpenCode, Gemini, GPT, altri).
 
 ---
 
-## Prerequisiti
+## Setup
 
 ```bash
-# Clone e setup
 git clone <repo-url> && cd guazza
 uv sync
-
-# Installa pre-commit hook
-cp .githooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
-# oppure:
-git config core.hooksPath .githooks
 ```
 
-## Leggere prima di lavorare
+## Leggere prima di lavorare — OBBLIGATORIO
 
-Obbligatorio a inizio sessione:
+**Nessuna azione prima di aver letto questi file:**
 
-1. `docs/status.md` — stato corrente, cosa è fatto, prossimi passi
+1. `docs/status.md` — stato corrente, cosa è fatto, prossimi passi (`🟡` = punto aperto)
 2. `AGENTS.md` — regole di progetto, stack, guardrail
 3. `docs/decisions.md` — perché le cose sono come sono
 4. `docs/known_issues.md` — workaround attivi
@@ -54,20 +47,18 @@ Se non passano → fermarsi, non aggiungere complessità sopra un problema apert
 ```
 
 Tipi: `feat`, `fix`, `test`, `docs`, `config`, `refactor`, `chore`
-Scope: modulo o componente (`ingestion`, `storage`, `indicators`, `config`, ecc.)
 
-Esempi validi:
+Esempi:
 ```
 feat(fetchers): aggiungi fetch Open-Meteo multi-modello
 fix(storage): correzione upsert duplicati in observations
-test(indicators): aggiungi test edge case DLE gelata
 docs(decisions): documenta D-011 scelta embargo CV
 ```
 
 ### Staging selettivo — OBBLIGATORIO
 
 ```bash
-# Corretto: solo i file del task corrente
+# Corretto
 git add src/guazza/fetchers.py tests/test_fetchers.py
 
 # Vietato
@@ -81,12 +72,12 @@ git add .
 
 ---
 
-## Checklist prima di considerare un task completato
+## Checklist completamento task
 
-- [ ] Codice tipato (type hints ovunque), mypy passa
-- [ ] Test pytest scritti: happy path + almeno un edge case
+- [ ] Codice tipato, mypy passa
+- [ ] Test pytest: happy path + almeno un edge case
 - [ ] `ruff check` zero warning
-- [ ] Log strutturato (`loguru`) dove rilevante
+- [ ] Log strutturato dove rilevante
 - [ ] Healthchecks.io ping se è un job cron
 - [ ] `docs/known_issues.md` aggiornato se workaround
 - [ ] Commit creato con formato corretto
@@ -95,21 +86,19 @@ git add .
 
 ## Guardrail zona rossa — STOP e chiedi conferma
 
-Queste azioni richiedono conferma esplicita prima di procedere:
-
 | Categoria | Esempi |
 |---|---|
-| Rete reale | `httpx.get(...)`, curl, wget su URL esterni |
+| Rete reale | `httpx.get(...)`, curl, wget |
 | Scrittura DB | `INSERT`, `UPDATE`, `DELETE`, `ALTER TABLE` su DuckDB |
 | File dati | scrittura su `/var/lib/guazza/`, Parquet esistenti |
-| Dipendenze | `uv add <pacchetto>`, `pip install` non in pyproject.toml |
+| Dipendenze | `uv add`, `pip install` non in pyproject.toml |
 
-Pattern obbligatorio prima di procedere:
+Pattern obbligatorio:
 ```
 Sto per eseguire:
   [tipo]: [dettaglio — URL / query SQL / comando]
-  Scopo: [perché è necessario]
-  Impatto: [cosa cambia/scrive/modifica]
+  Scopo: [perché]
+  Impatto: [cosa cambia]
 
 Attendo conferma.
 ```
@@ -119,23 +108,13 @@ Attendo conferma.
 ## Errori in esecuzione
 
 1. Fermarsi immediatamente
-2. Mostrare l'output completo dell'errore
-3. Aspettare istruzioni — non tentare fix autonomi, non ritentare varianti
-
----
-
-## Stack e decisioni architetturali
-
-Lo stack è blindato. Prima di proporre un'alternativa, verificare in `AGENTS.md`
-sezione "Anti-pattern" e in `docs/decisions.md`. Se un bug tecnico reale impone
-una deviazione, documentarla in `docs/decisions.md` con motivazione.
+2. Mostrare l'output completo
+3. Aspettare istruzioni — no fix autonomi, no varianti
 
 ---
 
 ## Aggiornamento documentazione
 
-- `docs/status.md` va aggiornato a fine sessione con: cosa è stato fatto,
-  prossimi passi, punti aperti (tag `🟡`)
-- `docs/known_issues.md` va aggiornato se si trova un workaround non ovvio
-- `docs/decisions.md` va aggiornato se si prende una nuova decisione
-  architetturale (formato `D-NNN`)
+- `docs/status.md` → aggiornare a fine sessione
+- `docs/known_issues.md` → aggiornare se si trova un workaround non ovvio
+- `docs/decisions.md` → aggiornare per nuove decisioni architetturali (`D-NNN`)
