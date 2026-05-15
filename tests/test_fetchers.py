@@ -2,24 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from guazza.fetchers import (
-    _StationData,
     _extract_measures,
     _measure_ts,
     _qc_range,
+    _StationData,
     fetch_netatmo_location,
     fetch_sir_historical,
     fetch_sir_realtime,
     save_netatmo_to_db,
 )
 from guazza.storage import DuckDBClient
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Helpers
@@ -262,7 +261,7 @@ def test_extract_measures() -> None:
 def test_measure_ts() -> None:
     measures = {"02:aa": {"type": ["temperature"], "res": {str(_TS_UNIX): [18.0]}}}
     ts = _measure_ts(measures)
-    assert ts == datetime.fromtimestamp(_TS_UNIX, tz=timezone.utc)
+    assert ts == datetime.fromtimestamp(_TS_UNIX, tz=UTC)
 
 
 def test_qc_range_valid() -> None:
@@ -315,7 +314,7 @@ def _make_station(mac: str, temp: float, qc: bool = True) -> _StationData:
         delta_elev_m=2.0,
         weight=0.35,
         measures={"temp_c": temp, "humidity_pct": 65.0, "rain_1h": None, "wind_speed_ms": None},
-        ts=datetime(2026, 5, 14, 10, 0, 0, tzinfo=timezone.utc),
+        ts=datetime(2026, 5, 14, 10, 0, 0, tzinfo=UTC),
         qc_range=qc,
         qc_cross=qc,
     )
@@ -323,7 +322,7 @@ def _make_station(mac: str, temp: float, qc: bool = True) -> _StationData:
 
 def test_save_netatmo_to_db_inserts_fetch_log(seeded_db: Path) -> None:
     stations = [_make_station("70:ee:50:aa:bb:cc", 18.5)]
-    fetched_at = datetime(2026, 5, 14, 10, 0, 0, tzinfo=timezone.utc)
+    fetched_at = datetime(2026, 5, 14, 10, 0, 0, tzinfo=UTC)
     with DuckDBClient(db_path=seeded_db) as db:
         save_netatmo_to_db(db, "casa_campi", stations, fetched_at)
         count = db.execute("SELECT COUNT(*) FROM netatmo_fetch_log").fetchone()[0]
@@ -332,7 +331,7 @@ def test_save_netatmo_to_db_inserts_fetch_log(seeded_db: Path) -> None:
 
 def test_save_netatmo_to_db_inserts_observations_wide(seeded_db: Path) -> None:
     stations = [_make_station("70:ee:50:aa:bb:cc", 18.5)]
-    fetched_at = datetime(2026, 5, 14, 10, 0, 0, tzinfo=timezone.utc)
+    fetched_at = datetime(2026, 5, 14, 10, 0, 0, tzinfo=UTC)
     with DuckDBClient(db_path=seeded_db) as db:
         save_netatmo_to_db(db, "casa_campi", stations, fetched_at)
         count = db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
@@ -344,7 +343,7 @@ def test_save_netatmo_to_db_inserts_observations_wide(seeded_db: Path) -> None:
 
 def test_save_netatmo_to_db_idempotent(seeded_db: Path) -> None:
     stations = [_make_station("70:ee:50:aa:bb:cc", 18.5)]
-    fetched_at = datetime(2026, 5, 14, 10, 0, 0, tzinfo=timezone.utc)
+    fetched_at = datetime(2026, 5, 14, 10, 0, 0, tzinfo=UTC)
     with DuckDBClient(db_path=seeded_db) as db:
         save_netatmo_to_db(db, "casa_campi", stations, fetched_at)
         save_netatmo_to_db(db, "casa_campi", stations, fetched_at)

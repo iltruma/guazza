@@ -48,3 +48,7 @@ htmlcov/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# opencode
+.opencode/sessions/
+.opencode/snapshots/

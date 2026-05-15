@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -205,7 +205,7 @@ def test_evaluate_all_includes_location_specific() -> None:
 
 
 def test_log_results_inserts(seeded_db: Path) -> None:
-    ts = datetime(2026, 5, 14, 10, 0, 0, tzinfo=timezone.utc)
+    ts = datetime(2026, 5, 14, 10, 0, 0, tzinfo=UTC)
     results = [
         IndicatorResult(
             indicator_id="panni",
@@ -225,7 +225,7 @@ def test_log_results_inserts(seeded_db: Path) -> None:
 
 
 def test_log_results_idempotent(seeded_db: Path) -> None:
-    ts = datetime(2026, 5, 14, 10, 0, 0, tzinfo=timezone.utc)
+    ts = datetime(2026, 5, 14, 10, 0, 0, tzinfo=UTC)
     results = [
         IndicatorResult(
             indicator_id="panni",
