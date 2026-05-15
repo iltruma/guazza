@@ -157,11 +157,14 @@ class DuckDBClient:
         return len(records)
 
     def upsert_sir_observations(self, records: list[dict]) -> int:
-        """UPSERT wide per osservazioni SIR storiche.
+        """UPSERT wide per osservazioni SIR/ARPAT/Netatmo storiche.
 
         Ogni record è parziale (solo le colonne del sensore scaricato).
-        Il DO UPDATE usa COALESCE per preservare valori già presenti:
-        se la colonna è già non-NULL, non viene sovrascritta con NULL.
+        Usa staging table + UPDATE/INSERT per performance bulk:
+        - Righe esistenti: aggiornate con COALESCE (preserva non-NULL)
+        - Righe nuove: inserite
+
+        ~10-50x più veloce del precedente executemany+ON CONFLICT su batch grandi.
 
         Returns:
             Numero di record processati.
@@ -169,7 +172,10 @@ class DuckDBClient:
         if not records:
             return 0
 
-        # Solo le colonne che esistono nello schema (escluse PK e granularity)
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+
+        # Solo le colonne che esistono nello schema (escluse PK)
         _obs_cols = [
             "tmax_c", "tmin_c", "temp_c",
             "humidity_pct",
@@ -180,21 +186,20 @@ class DuckDBClient:
             "weight", "qc_pass",
         ]
 
-        coalesce_sets = ", ".join(
-            f"{col} = COALESCE(excluded.{col}, observations.{col})"
-            for col in _obs_cols
-        )
-
+        # Prepara righe
         rows: list[list[Any]] = []
         for rec in records:
-            # hum_med_pct → humidity_pct; hum_min/max non hanno colonna → ignorate.
-            humidity = rec.get("hum_med_pct") if rec.get("hum_med_pct") is not None else rec.get("humidity_pct")
+            humidity = (
+                rec.get("hum_med_pct")
+                if rec.get("hum_med_pct") is not None
+                else rec.get("humidity_pct")
+            )
             rows.append([
                 rec.get("source", "sir_toscana"),
                 rec["station_id"],
                 rec.get("location_id", ""),
                 rec["ts"],
-                rec["granularity"],  # obbligatorio — 'daily' | 'realtime' | 'hourly'
+                rec["granularity"],
                 rec.get("tmax_c"),
                 rec.get("tmin_c"),
                 rec.get("temp_c"),
@@ -214,15 +219,13 @@ class DuckDBClient:
                 rec.get("qc_pass"),
             ])
 
-        # DuckDB executemany non gestisce duplicati interni al batch con ON CONFLICT.
-        # Deduplicare per PK (source, station_id, ts, granularity) = indici 0,1,3,4.
-        # In caso di duplicati nel batch, l'ultimo record vince (merge COALESCE-like).
+        # Dedup in-batch: PK = (source, station_id, ts, granularity) = indici 0,1,3,4
+        # Ultimo record vince con merge COALESCE.
         dedup: dict[tuple[Any, ...], list[Any]] = {}
         for row in rows:
             pk = (row[0], row[1], row[3], row[4])
             if pk in dedup:
                 existing = dedup[pk]
-                # COALESCE: mantieni il valore non-None tra existing e nuovo
                 merged = [
                     new if new is not None else old
                     for old, new in zip(existing, row, strict=True)
@@ -232,8 +235,60 @@ class DuckDBClient:
                 dedup[pk] = row
         rows = list(dedup.values())
 
-        self.executemany(
-            f"""
+        # ── Staging table + bulk UPDATE/INSERT ──────────────────────────────
+        self._conn.execute("DROP TABLE IF EXISTS _staging_obs")
+        self._conn.execute("""
+            CREATE TEMPORARY TABLE _staging_obs (
+                source VARCHAR,
+                station_id VARCHAR,
+                location_id VARCHAR,
+                ts TIMESTAMP,
+                granularity VARCHAR,
+                tmax_c DOUBLE,
+                tmin_c DOUBLE,
+                temp_c DOUBLE,
+                humidity_pct DOUBLE,
+                precip_mm DOUBLE,
+                precip_interval_h TINYINT,
+                wind_speed_ms DOUBLE,
+                wind_dir_deg DOUBLE,
+                wind_gust_ms DOUBLE,
+                pressure_hpa DOUBLE,
+                level_m DOUBLE,
+                pm10_ugm3 DOUBLE,
+                pm25_ugm3 DOUBLE,
+                no2_ugm3 DOUBLE,
+                o3_ugm3 DOUBLE,
+                weight DOUBLE,
+                qc_pass BOOLEAN
+            )
+        """)
+
+        # Bulk insert nel staging — nessun constraint, veloce
+        self._conn.executemany(
+            """INSERT INTO _staging_obs VALUES
+                (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            rows,
+        )
+
+        # UPDATE righe esistenti con COALESCE
+        coalesce_sets = ", ".join(
+            f"{col} = COALESCE(s.{col}, observations.{col})"
+            for col in _obs_cols
+        )
+        self._conn.execute(f"""
+            UPDATE observations SET
+                location_id = COALESCE(s.location_id, observations.location_id),
+                {coalesce_sets}
+            FROM _staging_obs s
+            WHERE observations.source = s.source
+              AND observations.station_id = s.station_id
+              AND observations.ts = s.ts
+              AND observations.granularity = s.granularity
+        """)
+
+        # INSERT righe nuove (non presenti in observations)
+        self._conn.execute("""
             INSERT INTO observations
                 (source, station_id, location_id, ts, granularity,
                  tmax_c, tmin_c, temp_c,
@@ -242,13 +297,25 @@ class DuckDBClient:
                  pressure_hpa, level_m,
                  pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3,
                  weight, qc_pass)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (source, station_id, ts, granularity) DO UPDATE SET
-                location_id   = COALESCE(excluded.location_id, observations.location_id),
-                {coalesce_sets}
-            """,
-            rows,
-        )
+            SELECT s.source, s.station_id, s.location_id, s.ts, s.granularity,
+                   s.tmax_c, s.tmin_c, s.temp_c,
+                   s.humidity_pct, s.precip_mm, s.precip_interval_h,
+                   s.wind_speed_ms, s.wind_dir_deg, s.wind_gust_ms,
+                   s.pressure_hpa, s.level_m,
+                   s.pm10_ugm3, s.pm25_ugm3, s.no2_ugm3, s.o3_ugm3,
+                   s.weight, s.qc_pass
+            FROM _staging_obs s
+            WHERE NOT EXISTS (
+                SELECT 1 FROM observations o
+                WHERE o.source = s.source
+                  AND o.station_id = s.station_id
+                  AND o.ts = s.ts
+                  AND o.granularity = s.granularity
+            )
+        """)
+
+        self._conn.execute("DROP TABLE IF EXISTS _staging_obs")
+
         logger.info(f"upsert_sir_observations: {len(records)} record processati")
         return len(records)
 
