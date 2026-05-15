@@ -15,19 +15,24 @@ CREATE TABLE IF NOT EXISTS locations (
 );
 
 -- ── Osservazioni meteo ground truth ───────────────────────────────────────────
--- Wide: una riga per (source, station_id, ts).
--- Ogni stazione produce una sola riga per timestamp.
+-- Wide: una riga per (source, station_id, ts, granularity).
+-- granularity: 'daily' (CSV SIR, aggregato giornaliero),
+--              'realtime' (SIR actions.php, Netatmo — lettura istantanea),
+--              'hourly' (future sorgenti orarie)
+-- La granularity è in PK perché lo stesso (source, station_id, ts=00:00)
+-- può esistere sia come daily (CSV) sia come realtime (chiamata a mezzanotte).
 CREATE TABLE IF NOT EXISTS observations (
     source       VARCHAR   NOT NULL,
     station_id   VARCHAR   NOT NULL,
     location_id  VARCHAR   NOT NULL,
     ts           TIMESTAMP NOT NULL,
+    granularity  VARCHAR   NOT NULL, -- 'daily' | 'realtime' | 'hourly'
     temp_c          DOUBLE,
     tmin_c          DOUBLE,
     tmax_c          DOUBLE,
     humidity_pct    DOUBLE,
     precip_mm       DOUBLE,
-    precip_interval_h TINYINT, -- granularità: 1=1h, 24=24h. NULL se ignota.
+    precip_interval_h TINYINT, -- 1=1h, 24=24h. NULL se ignota.
     wind_speed_ms   DOUBLE,
     wind_dir_deg    DOUBLE,
     wind_gust_ms    DOUBLE,
@@ -39,11 +44,11 @@ CREATE TABLE IF NOT EXISTS observations (
     o3_ugm3         DOUBLE,
     weight          DOUBLE,
     qc_pass         BOOLEAN,
-    PRIMARY KEY (source, station_id, ts)
+    PRIMARY KEY (source, station_id, ts, granularity)
 );
 
 CREATE INDEX IF NOT EXISTS idx_observations_location_ts
-    ON observations (location_id, ts);
+    ON observations (location_id, ts, granularity);
 
 -- ── Previsioni grezze multi-modello (NWP) ────────────────────────────────────
 -- Wide: una riga per (source, location_id, ts_run, ts_valid).

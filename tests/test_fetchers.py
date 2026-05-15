@@ -704,25 +704,25 @@ def test_upsert_forecasts_batch_historical(seeded_db_forecasts: Path) -> None:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def test_sir_historical_pluvio_has_precip_interval_24() -> None:
-    """pluvio0_24 deve produrre precip_interval_h=24 in ogni record."""
+    """pluvio0_24 deve produrre precip_interval_h=24 e granularity='daily'."""
     csv_text = _make_csv('"precip [mm]";"flag"', ['15/06/2024;2,4;V', '16/06/2024;0,0;V'])
     rows = _patched_sir_fetch("TOS00000001", "pluvio0_24", csv_text)
     assert len(rows) == 2
-    assert all(r.get("precip_interval_h") == 24 for r in rows), \
-        "pluvio0_24 deve avere precip_interval_h=24"
+    assert all(r.get("precip_interval_h") == 24 for r in rows)
+    assert all(r.get("granularity") == "daily" for r in rows)
 
 
 def test_sir_historical_termo_no_precip_interval() -> None:
-    """termo_csv non deve avere precip_interval_h."""
+    """termo_csv deve avere granularity='daily' e precip_interval_h=None."""
     csv_text = _make_csv('"Tmax [°C]";"Tmin [°C]"', ['15/06/2024;31,0;14,5'])
     rows = _patched_sir_fetch("TOS00000001", "termo_csv", csv_text)
     assert len(rows) == 1
-    assert all(r.get("precip_interval_h") is None for r in rows), \
-        "termo_csv non deve avere precip_interval_h"
+    assert all(r.get("precip_interval_h") is None for r in rows)
+    assert all(r.get("granularity") == "daily" for r in rows)
 
 
 def test_sir_realtime_precip_interval_1() -> None:
-    """CUM01 in SIR realtime deve produrre precip_interval_h=1."""
+    """CUM01 in SIR realtime deve produrre precip_interval_h=1 e granularity='realtime'."""
     from guazza.fetchers import fetch_sir_realtime
     mock_json = {
         "pluvio": {"CUM01": "3.4", "CUM24": "5.4"},
@@ -739,6 +739,7 @@ def test_sir_realtime_precip_interval_1() -> None:
         rec = fetch_sir_realtime("TOS99999999")
     assert rec["precip_mm"] == pytest.approx(3.4)
     assert rec["precip_interval_h"] == 1
+    assert rec["granularity"] == "realtime"
 
 
 # ═════════════════════════════════════════════════════════════════════════════

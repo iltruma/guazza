@@ -169,7 +169,7 @@ class DuckDBClient:
         if not records:
             return 0
 
-        # Solo le colonne che esistono nello schema (escluse PK)
+        # Solo le colonne che esistono nello schema (escluse PK e granularity)
         _obs_cols = [
             "tmax_c", "tmin_c", "temp_c",
             "humidity_pct",
@@ -194,6 +194,7 @@ class DuckDBClient:
                 rec["station_id"],
                 rec.get("location_id", ""),
                 rec["ts"],
+                rec["granularity"],  # obbligatorio — 'daily' | 'realtime' | 'hourly'
                 rec.get("tmax_c"),
                 rec.get("tmin_c"),
                 rec.get("temp_c"),
@@ -216,15 +217,15 @@ class DuckDBClient:
         self.executemany(
             f"""
             INSERT INTO observations
-                (source, station_id, location_id, ts,
+                (source, station_id, location_id, ts, granularity,
                  tmax_c, tmin_c, temp_c,
                  humidity_pct, precip_mm, precip_interval_h,
                  wind_speed_ms, wind_dir_deg, wind_gust_ms,
                  pressure_hpa, level_m,
                  pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3,
                  weight, qc_pass)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (source, station_id, ts) DO UPDATE SET
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (source, station_id, ts, granularity) DO UPDATE SET
                 location_id   = COALESCE(excluded.location_id, observations.location_id),
                 {coalesce_sets}
             """,

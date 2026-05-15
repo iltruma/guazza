@@ -67,16 +67,16 @@ def test_no_connection_outside_context(tmp_db: Path) -> None:
 
 
 def test_observations_wide_insert(tmp_db: Path) -> None:
-    """Inserimento wide: una sola riga per (source, station_id, ts)."""
+    """Inserimento wide: una sola riga per (source, station_id, ts, granularity)."""
     with DuckDBClient(db_path=tmp_db) as db:
         db.init_schema()
         db.execute(
             """
             INSERT INTO observations
-                (source, station_id, location_id, ts,
+                (source, station_id, location_id, ts, granularity,
                  temp_c, humidity_pct, precip_mm)
             VALUES ('sir_toscana', 'TOS01001215', 'casa_campi',
-                    '2024-06-15 00:00:00', 28.5, 65.0, 0.0)
+                    '2024-06-15 00:00:00', 'daily', 28.5, 65.0, 0.0)
             """,
         )
         row = db.execute(
@@ -100,6 +100,7 @@ def _termo_record() -> dict:
         "station_id": _STATION,
         "location_id": _LOCATION,
         "ts": _TS,
+        "granularity": "daily",
         "tmax_c": 31.0,
         "tmin_c": 14.5,
     }
@@ -111,6 +112,7 @@ def _pluvio_record() -> dict:
         "station_id": _STATION,
         "location_id": _LOCATION,
         "ts": _TS,
+        "granularity": "daily",
         "precip_mm": 3.2,
     }
 
@@ -121,6 +123,7 @@ def _igro_record() -> dict:
         "station_id": _STATION,
         "location_id": _LOCATION,
         "ts": _TS,
+        "granularity": "daily",
         "hum_med_pct": 72.0,
         "hum_min_pct": 45.0,
         "hum_max_pct": 95.0,
@@ -133,6 +136,7 @@ def _anemo_record() -> dict:
         "station_id": _STATION,
         "location_id": _LOCATION,
         "ts": _TS,
+        "granularity": "daily",
         "wind_speed_ms": 2.1,
         "wind_dir_deg": 45.0,
         "wind_gust_ms": 8.5,
@@ -191,6 +195,7 @@ def test_upsert_does_not_overwrite_existing_values(tmp_db: Path) -> None:
             "station_id": _STATION,
             "location_id": _LOCATION,
             "ts": _TS,
+            "granularity": "daily",
             "precip_mm": 5.0,
             # tmax_c assente → non deve cancellare il 31.0 precedente
         }
@@ -240,6 +245,7 @@ def test_upsert_igro_zero_humidity_preserved(tmp_db: Path) -> None:
         "station_id": _STATION,
         "location_id": _LOCATION,
         "ts": _TS,
+        "granularity": "daily",
         "hum_med_pct": 0.0,
     }
     with DuckDBClient(db_path=tmp_db) as db:
@@ -251,3 +257,31 @@ def test_upsert_igro_zero_humidity_preserved(tmp_db: Path) -> None:
         ).fetchone()
     assert row is not None
     assert row[0] == pytest.approx(0.0), "humidity_pct=0.0 deve essere salvato, non ignorato"
+
+
+def test_upsert_daily_and_realtime_same_ts_no_conflict(tmp_db: Path) -> None:
+    """daily e realtime con stesso (source, station_id, ts) devono coesistere senza sovrascriversi."""
+    daily = {**_termo_record(), "ts": _TS}  # granularity="daily", ts=00:00
+    realtime = {
+        "source": "sir_toscana",
+        "station_id": _STATION,
+        "location_id": _LOCATION,
+        "ts": _TS,           # stesso ts esatto — edge case mezzanotte
+        "granularity": "realtime",
+        "temp_c": 12.5,
+    }
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        db.upsert_sir_observations([daily])
+        db.upsert_sir_observations([realtime])
+        count = db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+        rows = db.execute(
+            "SELECT granularity, tmax_c, temp_c FROM observations ORDER BY granularity"
+        ).fetchall()
+    assert count == 2, "daily e realtime devono essere righe distinte"
+    gran = {r[0] for r in rows}
+    assert gran == {"daily", "realtime"}
+    daily_row = next(r for r in rows if r[0] == "daily")
+    rt_row = next(r for r in rows if r[0] == "realtime")
+    assert daily_row[1] == pytest.approx(31.0)   # tmax_c preservato
+    assert rt_row[2] == pytest.approx(12.5)       # temp_c preservato

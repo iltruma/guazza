@@ -203,6 +203,7 @@ def fetch_sir_historical(
             "station_id": station_id,
             "location_id": location_id,
             "ts": ts,
+            "granularity": "daily",
         }
 
         for i, (var_name, _type) in enumerate(variables):
@@ -303,6 +304,7 @@ def fetch_sir_realtime(station_id: str) -> dict[str, Any]:
         "source": "sir_toscana",
         "station_id": station_id,
         "ts": ts,
+        "granularity": "realtime",
     }
 
     # termo
@@ -667,6 +669,7 @@ def save_netatmo_to_db(
         obs_rows.append([
             "netatmo", sd.mac, location_id,
             sd.ts,
+            "realtime",  # granularity
             sd.measures.get("temp_c"),
             None,  # tmin_c
             None,  # tmax_c
@@ -690,13 +693,13 @@ def save_netatmo_to_db(
         db.executemany(
             """
             INSERT INTO observations
-                (source, station_id, location_id, ts,
+                (source, station_id, location_id, ts, granularity,
                  temp_c, tmin_c, tmax_c, humidity_pct, precip_mm, precip_interval_h,
                  wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa, level_m,
                  pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3,
                  weight, qc_pass)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (source, station_id, ts) DO UPDATE SET
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (source, station_id, ts, granularity) DO UPDATE SET
                 location_id = excluded.location_id,
                 temp_c        = excluded.temp_c,
                 humidity_pct  = excluded.humidity_pct,
