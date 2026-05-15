@@ -1019,8 +1019,10 @@ def fetch_netatmo_all_locations(
 # ARPAT — Qualità aria (NRT orario + bollettini giornalieri)
 # ═════════════════════════════════════════════════════════════════════════════
 
-_ARPAT_NRT_URL = "https://www.arpat.toscana.it/temas/aria/rete-regionale-di-rilevamento/nrt/valori_last"
-_ARPAT_BOLLETTINI_URL = "https://www.arpat.toscana.it/temas/aria/rete-regionale-di-rilevamento/bollettini/dati"
+_ARPAT_NRT_URL = "https://api.arpat.toscana.it/app/air/nrt/valori_last"
+_ARPAT_BOLLETTINI_URL = "https://api.arpat.toscana.it/app/air/bollettini/dati"
+
+_arpat_nrt_first_call_logged = False
 
 # Mapping nome variabile ARPAT → colonna observations wide (None = non in schema, ignorato)
 _ARPAT_NRT_VAR_MAP: dict[str, str | None] = {
@@ -1045,10 +1047,10 @@ _ARPAT_BOLL_VAR_MAP: dict[str, str | None] = {
     wait=wait_exponential(multiplier=1, min=60, max=600),
     retry=retry_if_exception(lambda e: not isinstance(e, ValueError)),
 )
-def _fetch_arpat_json(url: str) -> Any:
+def _fetch_arpat_json(url: str, params: dict[str, str] | None = None) -> Any:
     """Fetch JSON da endpoint ARPAT con retry (backoff 60s/300s/600s)."""
     with httpx.Client(timeout=30) as client:
-        r = client.get(url)
+        r = client.get(url, params=params)
         r.raise_for_status()
     return r.json()
 
@@ -1073,6 +1075,11 @@ def fetch_arpat_nrt(
         logger.error(f"ARPAT NRT [{location_id}] fetch fallito: {e}")
         _log_scrape(f"arpat_nrt:{location_id}", "fail", detail=str(e))
         return []
+
+    global _arpat_nrt_first_call_logged
+    if not _arpat_nrt_first_call_logged:
+        logger.debug(f"ARPAT NRT raw response (first 200): {str(data)[:200]}")
+        _arpat_nrt_first_call_logged = True
 
     # data è una lista di stazioni: [{"codice_stazione": "FI-SIGNA", "misurazioni": {...}, ...}]
     # Struttura effettiva non verificata su endpoint reale — parsing difensivo
@@ -1167,35 +1174,40 @@ def fetch_arpat_bollettini(
     except ValueError as e:
         raise ValueError(f"date deve essere YYYY-MM-DD, ricevuto: {date!r}") from e
 
-    try:
-        data = _fetch_arpat_json(_ARPAT_BOLLETTINI_URL)
-    except Exception as e:
-        logger.error(f"ARPAT bollettini [{location_id}] fetch fallito: {e}")
-        _log_scrape(f"arpat_bollettini:{location_id}", "fail", detail=str(e))
-        return []
-
-    # Parsing difensivo — struttura reale da verificare al primo run su VPS
-    station_index: dict[str, dict[str, Any]] = {}
-    if isinstance(data, list):
-        for item in data:
-            sid = item.get("codice_stazione") or item.get("stazione") or item.get("id", "")
-            if sid:
-                station_index[str(sid).upper()] = item
-    elif isinstance(data, dict):
-        items_list2: list[Any] = data.get("stazioni") or data.get("data") or []
-        for item in items_list2:
-            sid = item.get("codice_stazione") or item.get("stazione") or item.get("id", "")
-            if sid:
-                station_index[str(sid).upper()] = item
-
     records: list[dict[str, Any]] = []
 
     for st in arpat_stations:
         station_id = str(st["id"]).upper()
         weight = float(st.get("weight", 1.0))
-        item = station_index.get(station_id)
+
+        try:
+            data = _fetch_arpat_json(
+                _ARPAT_BOLLETTINI_URL,
+                params={
+                    "startdate": date,
+                    "enddate": date,
+                    "stazione": station_id,
+                    "limit": "1000",
+                },
+            )
+        except Exception as e:
+            logger.warning(
+                f"ARPAT bollettini [{location_id}] stazione {station_id} fallito: {e}"
+            )
+            continue
+
+        # Parsing difensivo — la risposta è già filtrata per stazione
+        item: dict[str, Any] | None = None
+        if isinstance(data, list):
+            if len(data) > 0:
+                item = data[0]
+        elif isinstance(data, dict):
+            items_list: list[Any] = data.get("stazioni") or data.get("data") or []
+            if len(items_list) > 0:
+                item = items_list[0]
+
         if item is None:
-            logger.debug(f"ARPAT bollettini: stazione {station_id} non trovata nella risposta")
+            logger.debug(f"ARPAT bollettini: nessun dato per stazione {station_id}")
             continue
 
         misurazioni: dict[str, Any] = (

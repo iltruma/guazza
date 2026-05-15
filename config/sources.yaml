@@ -103,8 +103,8 @@ sources:
   arpat:
     label: "ARPAT Toscana — qualità aria"
     endpoints:
-      nrt:        "https://www.arpat.toscana.it/temas/aria/rete-regionale-di-rilevamento/nrt/valori_last"
-      bollettini: "https://www.arpat.toscana.it/temas/aria/rete-regionale-di-rilevamento/bollettini/dati"
+      nrt:        "https://api.arpat.toscana.it/app/air/nrt/valori_last"
+      bollettini: "https://api.arpat.toscana.it/app/air/bollettini/dati"
     status: OK
     auth: none
     format: JSON
@@ -119,6 +119,7 @@ sources:
     variables_nrt:        [NO2, O3, CO, BENZENE]
     variables_bollettini: [NO2, O3, PM10, PM2.5, BENZENE, CO]
     notes: >
+      Endpoint bollettini: ?startdate=YYYY-MM-DD&enddate=YYYY-MM-DD&stazione=<id>&limit=1000.
       Endpoint trovati via analisi HAR (2026-05-13). Coordinate stazioni non esposte
       (metadata-catalog → 401). arpat_zone per casa_campi = agglomerato_firenze.
       Stazioni: 6 totali mappate con pesi per location (vedi config/locations.yaml).

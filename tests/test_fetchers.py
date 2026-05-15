@@ -912,8 +912,16 @@ def test_arpat_bollettini_single_station() -> None:
             "misurazioni": {"PM10": "35.0", "PM2.5": "18.0", "NO2": "22.0"},
         }
     ]
-    with _patch_arpat_json(payload):
+    with patch("guazza.fetchers._fetch_arpat_json") as mock_fetch:
+        mock_fetch.return_value = payload
         records = fetch_arpat_bollettini("casa_campi", _ARPAT_STATIONS_SINGLE, date="2026-05-14")
+
+    assert mock_fetch.call_count == 1
+    call_kwargs = mock_fetch.call_args.kwargs
+    assert call_kwargs["params"]["stazione"] == "FI-SIGNA"
+    assert call_kwargs["params"]["startdate"] == "2026-05-14"
+    assert call_kwargs["params"]["enddate"] == "2026-05-14"
+    assert call_kwargs["params"]["limit"] == "1000"
 
     assert len(records) == 1
     r = records[0]
@@ -950,3 +958,23 @@ def test_arpat_bollettini_missing_pm_values_none() -> None:
     assert len(records) == 1
     assert records[0]["pm10_ugm3"] is None
     assert records[0]["pm25_ugm3"] is None
+
+
+def test_arpat_bollettini_params_per_station() -> None:
+    """_fetch_arpat_json chiamato con params corretti per ogni stazione."""
+    stations = [
+        {"id": "PO-ROMA", "weight": 0.7},
+        {"id": "PO-FERRUCCI", "weight": 0.3},
+    ]
+    with patch("guazza.fetchers._fetch_arpat_json") as mock_fetch:
+        mock_fetch.return_value = {"stazioni": [{"misurazioni": {"PM10": "10.0"}}]}
+        records = fetch_arpat_bollettini("lavoro_madda", stations, date="2026-05-14")
+
+    assert mock_fetch.call_count == 2
+    calls = mock_fetch.call_args_list
+    assert calls[0].kwargs["params"]["stazione"] == "PO-ROMA"
+    assert calls[0].kwargs["params"]["startdate"] == "2026-05-14"
+    assert calls[0].kwargs["params"]["enddate"] == "2026-05-14"
+    assert calls[0].kwargs["params"]["limit"] == "1000"
+    assert calls[1].kwargs["params"]["stazione"] == "PO-FERRUCCI"
+    assert len(records) == 2
