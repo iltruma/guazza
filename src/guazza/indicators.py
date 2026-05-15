@@ -3,20 +3,8 @@
 Input:  SignalBag (dict str→float) pre-computato dal pipeline di ingestion/forecast.
 Output: lista IndicatorResult (verde/giallo/rosso) + log in DuckDB indicator_log.
 
-Notazione segnali nel YAML:
-  P(precip > 0.2mm)   → chiave letterale nel SignalBag (pre-computata dal caller)
-  Tmin_p10            → variabile diretta nel SignalBag
-  level_sir           → variabile diretta nel SignalBag
-  threshold_1         → variabile diretta nel SignalBag
-
-Valutazione condizioni:
-  1. Tenta rosso  → se vero: verdict = rosso
-  2. Tenta giallo → se vero: verdict = giallo
-  3. Altrimenti:           verdict = verde
-  Fallback a giallo se nessuna condizione è soddisfatta (log warning).
-
 CLI:
-    uv run python -m guazza.indicators.engine evaluate --location casa_campi --signals '{...}'
+    uv run python -m guazza.indicators evaluate --location casa_campi --signals '{...}'
 """
 
 from __future__ import annotations
@@ -24,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,19 +20,14 @@ import yaml
 from loguru import logger
 
 if TYPE_CHECKING:
-    from guazza.storage.duckdb_client import DuckDBClient
-
-# ── Tipi ──────────────────────────────────────────────────────────────────────
+    from guazza.storage import DuckDBClient
 
 SignalBag = dict[str, float | None]
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_INDICATORS_YAML = Path(
     __import__("os").environ.get("CONFIG_DIR", str(_REPO_ROOT / "config"))
 ) / "indicators.yaml"
-
-
-# ── Risultato ─────────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -56,55 +39,35 @@ class IndicatorResult:
     alpha: float              # cost_fp / (cost_fp + cost_fn)
     cost_fn: float
     cost_fp: float
-    probability: float | None = None   # confidenza (None finché no ML)
-    ts: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
-
-
-# ── Caricamento config ────────────────────────────────────────────────────────
+    probability: float | None = None
+    ts: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
 
 
 def load_indicators(path: Path | None = None) -> dict[str, Any]:
     """Carica la sezione 'indicators' dal YAML."""
     p = path or _DEFAULT_INDICATORS_YAML
     with p.open() as f:
-        return yaml.safe_load(f)["indicators"]
-
-
-# ── Logica di valutazione ─────────────────────────────────────────────────────
+        return yaml.safe_load(f)["indicators"]  # type: ignore[no-any-return]
 
 
 def _compute_alpha(costs: dict[str, Any]) -> float:
-    """alpha = cost_fp / (cost_fp + cost_fn) — soglia quantile LightGBM."""
+    """alpha = cost_fp / (cost_fp + cost_fn)."""
     fn = float(costs["fn"])
     fp = float(costs["fp"])
     return fp / (fp + fn)
 
 
 def _eval_condition(logic_str: str, signals: SignalBag) -> bool:
-    """Valuta una condizione logica YAML contro un SignalBag.
-
-    Trasformazioni applicate prima di eval():
-      - P(expr)   → _sig.get('P(expr)', 0.0)  (probabilità pre-calcolata)
-      - AND / OR  → and / or
-      - variabili senza P() (Tmin_p10, level_sir, …) → variabili dirette
-
-    eval() gira con __builtins__={} per limitare la superficie di attacco.
-    Il SignalBag contiene solo float: nessun rischio di iniezione in produzione.
-    """
+    """Valuta una condizione logica YAML contro un SignalBag."""
     if not logic_str:
         return False
-
     expr = logic_str.replace(" AND ", " and ").replace(" OR ", " or ")
-
-    # P(…) → lookup nel dict _sig
     expr = re.sub(
         r"P\([^)]+\)",
         lambda m: f"_sig.get({m.group()!r}, 0.0)",
         expr,
     )
-
     try:
-        # None → 0.0 per evitare errori di confronto
         clean = {k: (v if v is not None else 0.0) for k, v in signals.items()}
         return bool(eval(expr, {"__builtins__": {}}, {**clean, "_sig": clean}))  # noqa: S307
     except Exception as exc:
@@ -127,7 +90,6 @@ def evaluate_indicator(
     alpha = _compute_alpha(costs)
     logic: dict[str, str] = cfg.get("logic", {})
 
-    # Valutazione in ordine decrescente di gravità
     for rule in ("red", "yellow", "green"):
         condition = logic.get(rule, "")
         if condition and _eval_condition(condition, signals):
@@ -142,7 +104,6 @@ def evaluate_indicator(
                 cost_fp=float(costs["fp"]),
             )
 
-    # Nessuna condizione soddisfatta — fallback conservativo
     logger.warning(
         f"[{location_id}] {indicator_id}: nessuna condizione soddisfatta → fallback giallo"
     )
@@ -171,9 +132,6 @@ def evaluate_all(
     return results
 
 
-# ── Persistenza ───────────────────────────────────────────────────────────────
-
-
 def log_results(
     db: DuckDBClient,
     results: list[IndicatorResult],
@@ -182,9 +140,7 @@ def log_results(
     """Salva i risultati DLE in indicator_log. Idempotente per stessa (ts, location, indicator)."""
     if not results:
         return
-
     summary_json = json.dumps(input_summary or {})
-
     db.executemany(
         """
         INSERT INTO indicator_log

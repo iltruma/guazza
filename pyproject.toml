@@ -39,12 +39,9 @@ dev = [
 ]
 
 [project.scripts]
-guazza-ingest-realtime  = "guazza.jobs.ingest_realtime:app"
-guazza-ingest-forecasts = "guazza.jobs.ingest_forecasts:app"
-guazza-predict          = "guazza.jobs.predict:app"
-guazza-retrain          = "guazza.jobs.retrain:app"
-guazza-validate         = "guazza.jobs.validate:app"
-guazza-backup           = "guazza.jobs.backup:app"
+guazza-ingest  = "guazza.jobs.ingest:app"
+guazza-predict = "guazza.jobs.predict:app"
+guazza-backup  = "guazza.jobs.backup:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/guazza"]

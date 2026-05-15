@@ -22,7 +22,6 @@ import duckdb
 import typer
 from loguru import logger
 
-# Posizione default del DB — sovrascrivibile via variabile d'ambiente DB_PATH
 _DEFAULT_DB_PATH = Path(os.environ.get("DB_PATH", "/var/lib/guazza/guazza.duckdb"))
 _SCHEMA_SQL = Path(__file__).parent / "schema.sql"
 
@@ -41,18 +40,15 @@ class DuckDBClient:
         self._lock_fd: int | None = None
         self._lock_path = self.db_path.with_suffix(".lock")
 
-    # ── Context manager ──────────────────────────────────────────────────────
-
     def __enter__(self) -> DuckDBClient:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         if not self.read_only:
-            # Acquisisci lock esclusivo prima di aprire la connessione in write
             self._lock_fd = os.open(str(self._lock_path), os.O_CREAT | os.O_WRONLY)
             fcntl.flock(self._lock_fd, fcntl.LOCK_EX)
             logger.debug(f"Lock acquisito: {self._lock_path}")
 
-        self._conn = duckdb.connect(str(self._db_path_str), read_only=self.read_only)
+        self._conn = duckdb.connect(str(self.db_path), read_only=self.read_only)
         logger.debug(f"DuckDB aperto: {self.db_path} (read_only={self.read_only})")
         return self
 
@@ -67,14 +63,8 @@ class DuckDBClient:
             self._lock_fd = None
             logger.debug(f"Lock rilasciato: {self._lock_path}")
 
-    @property
-    def _db_path_str(self) -> str:
-        return str(self.db_path)
-
-    # ── Metodi principali ─────────────────────────────────────────────────────
-
-    def execute(self, query: str, params: list[Any] | None = None) -> duckdb.DuckDBPyRelation:
-        """Esegui una query SQL. Richiede connessione aperta (within context manager)."""
+    def execute(self, query: str, params: list[Any] | None = None) -> Any:
+        """Esegui una query SQL. Richiede connessione aperta."""
         if self._conn is None:
             raise RuntimeError("DuckDBClient non è nel context manager.")
         if params:
@@ -92,35 +82,22 @@ class DuckDBClient:
         if not _SCHEMA_SQL.exists():
             raise FileNotFoundError(f"Schema SQL non trovato: {_SCHEMA_SQL}")
         sql = _SCHEMA_SQL.read_text()
-        # DuckDB non supporta multi-statement in execute(), splittiamo per ";"
         statements = [s.strip() for s in sql.split(";") if s.strip()]
         for stmt in statements:
             self.execute(stmt)
         logger.info(f"Schema applicato: {len(statements)} statement eseguiti")
 
-    def run_migrations(self) -> int:
-        """Esegui le migrations pendenti (ALTER TABLE per DB esistenti).
-
-        Complementare a init_schema(): quello gestisce i CREATE TABLE IF NOT EXISTS
-        per install da zero; questo gestisce le colonne aggiunte dopo il deploy.
-        Restituisce il numero di migrations applicate.
-        """
-        from guazza.storage.migrations import run_migrations as _run
-
-        return _run(self)
-
     def verify_schema(self) -> bool:
         """Verifica che le tabelle attese esistano nel database."""
         expected_tables = {
             "locations",
-            "forecasts_raw",
             "observations",
-            "hydro_observations",
-            "air_quality",
+            "forecasts",
             "predictions",
             "benchmark_forecasts",
             "alerts",
             "station_weights",
+            "netatmo_fetch_log",
             "indicator_log",
         }
         result = self.execute("SHOW TABLES").fetchall()
@@ -132,8 +109,6 @@ class DuckDBClient:
         logger.info(f"Schema OK: {len(existing)} tabelle presenti")
         return True
 
-
-# ── Context manager helper ────────────────────────────────────────────────────
 
 @contextmanager
 def open_db(
@@ -150,7 +125,6 @@ def open_db(
 
 app = typer.Typer(help="Utility DuckDB per Guazza.")
 
-
 _DB_OPTION = typer.Option(_DEFAULT_DB_PATH, "--db", help="Path del file DuckDB")
 
 
@@ -160,14 +134,6 @@ def cmd_init_schema(db_path: Path = _DB_OPTION) -> None:
     with DuckDBClient(db_path=db_path) as db:
         db.init_schema()
     typer.echo("Schema inizializzato.")
-
-
-@app.command("migrate")
-def cmd_migrate(db_path: Path = _DB_OPTION) -> None:
-    """Applica le migrations pendenti allo schema DuckDB."""
-    with DuckDBClient(db_path=db_path) as db:
-        n = db.run_migrations()
-    typer.echo(f"Migrations applicate: {n}")
 
 
 @app.command("verify-schema")

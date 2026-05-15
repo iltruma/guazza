@@ -1,4 +1,4 @@
-"""Test unitari per il Decision Logic Engine."""
+"""Test unitari per indicators.py (Decision Logic Engine)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from guazza.indicators.engine import (
+from guazza.indicators import (
     IndicatorResult,
     SignalBag,
     _compute_alpha,
@@ -18,10 +18,7 @@ from guazza.indicators.engine import (
     load_indicators,
     log_results,
 )
-from guazza.storage.duckdb_client import DuckDBClient
-
-
-# ── Fixture ───────────────────────────────────────────────────────────────────
+from guazza.storage import DuckDBClient
 
 
 @pytest.fixture
@@ -29,11 +26,9 @@ def seeded_db(tmp_path: Path) -> Path:
     db_path = tmp_path / "test.duckdb"
     with DuckDBClient(db_path=db_path) as db:
         db.init_schema()
-        db.run_migrations()
     return db_path
 
 
-# Config minimale per i test — non dipende dal file YAML reale
 _CFG_PANNI = {
     "label": "Panni",
     "horizon_h": 8,
@@ -75,27 +70,18 @@ _ALL_INDICATORS = {
 }
 
 
-# ── Test _compute_alpha ───────────────────────────────────────────────────────
-
-
 def test_alpha_panni() -> None:
-    """panni: fn=5, fp=1 → alpha = 1/6."""
     alpha = _compute_alpha({"fn": 5, "fp": 1})
     assert math.isclose(alpha, 1 / 6, rel_tol=1e-9)
 
 
 def test_alpha_symmetric() -> None:
-    """Costi uguali → alpha = 0.5."""
     assert math.isclose(_compute_alpha({"fn": 2, "fp": 2}), 0.5)
 
 
 def test_alpha_bisenzio() -> None:
-    """bisenzio: fn=10, fp=1 → alpha ≈ 0.09 (molto conservativo)."""
     alpha = _compute_alpha({"fn": 10, "fp": 1})
     assert math.isclose(alpha, 1 / 11, rel_tol=1e-6)
-
-
-# ── Test _eval_condition ──────────────────────────────────────────────────────
 
 
 def test_eval_simple_true() -> None:
@@ -119,14 +105,12 @@ def test_eval_and_one_false() -> None:
 
 
 def test_eval_direct_variable() -> None:
-    """Variabili senza P() (Tmin_p10, level_sir, ecc.) si risolvono direttamente."""
     signals: SignalBag = {"Tmin_p10": 1.5}
     assert _eval_condition("Tmin_p10 < 2.0", signals) is True
 
 
 def test_eval_missing_signal_defaults_zero() -> None:
-    """Segnale mancante → default 0.0 (non eccezione)."""
-    assert _eval_condition("P(precip > 0.2mm) < 0.15", {}) is True  # 0.0 < 0.15
+    assert _eval_condition("P(precip > 0.2mm) < 0.15", {}) is True
 
 
 def test_eval_or_condition() -> None:
@@ -134,15 +118,11 @@ def test_eval_or_condition() -> None:
     assert _eval_condition("P(precip > 0.2mm) > 0.45 OR Tmin_p10 < 2.0", signals)
 
 
-# ── Test evaluate_indicator ───────────────────────────────────────────────────
-
-
 def test_panni_verde() -> None:
     signals: SignalBag = {"P(precip > 0.2mm)": 0.05, "P(RH > 80%)": 0.10}
     r = evaluate_indicator("panni", _CFG_PANNI, signals, "casa_campi")
     assert r is not None
     assert r.verdict == "verde"
-    assert r.rule_matched == "green"
 
 
 def test_panni_giallo() -> None:
@@ -167,7 +147,6 @@ def test_panni_alpha_correct() -> None:
 
 
 def test_bisenzio_location_specific_match() -> None:
-    """bisenzio si applica a casa_campi."""
     signals: SignalBag = {"level_sir": 0.5, "threshold_1": 1.2, "threshold_2": 2.0}
     r = evaluate_indicator("bisenzio", _CFG_BISENZIO, signals, "casa_campi")
     assert r is not None
@@ -175,7 +154,6 @@ def test_bisenzio_location_specific_match() -> None:
 
 
 def test_bisenzio_location_specific_skip() -> None:
-    """bisenzio NON si applica a lavoro_cosimo → None."""
     signals: SignalBag = {"level_sir": 0.5, "threshold_1": 1.2, "threshold_2": 2.0}
     r = evaluate_indicator("bisenzio", _CFG_BISENZIO, signals, "lavoro_cosimo")
     assert r is None
@@ -196,18 +174,13 @@ def test_bisenzio_rosso() -> None:
 
 
 def test_motorino_rosso_freddo() -> None:
-    """Tmin_p10 < 2°C → rosso anche con poca pioggia."""
     signals: SignalBag = {"P(precip > 0.2mm)": 0.10, "Tmin_p10": 1.0}
     r = evaluate_indicator("motorino", _CFG_MOTORINO, signals, "casa_campi")
     assert r is not None
     assert r.verdict == "rosso"
 
 
-# ── Test evaluate_all ─────────────────────────────────────────────────────────
-
-
 def test_evaluate_all_filters_location_specific() -> None:
-    """bisenzio non appare nei risultati per lavoro_cosimo."""
     signals: SignalBag = {
         "P(precip > 0.2mm)": 0.05, "P(RH > 80%)": 0.10,
         "Tmin_p10": 8.0, "level_sir": 0.5,
@@ -221,7 +194,6 @@ def test_evaluate_all_filters_location_specific() -> None:
 
 
 def test_evaluate_all_includes_location_specific() -> None:
-    """bisenzio appare nei risultati per casa_campi."""
     signals: SignalBag = {
         "P(precip > 0.2mm)": 0.05, "P(RH > 80%)": 0.10,
         "Tmin_p10": 8.0, "level_sir": 0.5,
@@ -232,11 +204,7 @@ def test_evaluate_all_includes_location_specific() -> None:
     assert "bisenzio" in ids
 
 
-# ── Test log_results ──────────────────────────────────────────────────────────
-
-
 def test_log_results_inserts(seeded_db: Path) -> None:
-    """log_results() salva i record in indicator_log."""
     ts = datetime(2026, 5, 14, 10, 0, 0, tzinfo=timezone.utc)
     results = [
         IndicatorResult(
@@ -257,7 +225,6 @@ def test_log_results_inserts(seeded_db: Path) -> None:
 
 
 def test_log_results_idempotent(seeded_db: Path) -> None:
-    """log_results() due volte con stessa (ts, location, indicator) non duplica."""
     ts = datetime(2026, 5, 14, 10, 0, 0, tzinfo=timezone.utc)
     results = [
         IndicatorResult(
@@ -279,16 +246,11 @@ def test_log_results_idempotent(seeded_db: Path) -> None:
 
 
 def test_log_results_empty_no_crash(seeded_db: Path) -> None:
-    """log_results() con lista vuota non crasha."""
     with DuckDBClient(db_path=seeded_db) as db:
         log_results(db, [])
 
 
-# ── Smoke test con config reale ───────────────────────────────────────────────
-
-
 def test_load_real_config_has_9_indicators() -> None:
-    """Il file indicators.yaml reale deve avere esattamente 9 indicatori."""
     try:
         indicators = load_indicators()
     except FileNotFoundError:
@@ -300,7 +262,6 @@ def test_load_real_config_has_9_indicators() -> None:
 
 
 def test_real_config_all_have_costs() -> None:
-    """Tutti gli indicatori nel config reale devono avere costs.fn e costs.fp."""
     try:
         indicators = load_indicators()
     except FileNotFoundError:
@@ -312,7 +273,6 @@ def test_real_config_all_have_costs() -> None:
 
 
 def test_real_config_alpha_range() -> None:
-    """alpha deve essere in (0, 1) per tutti gli indicatori."""
     try:
         indicators = load_indicators()
     except FileNotFoundError:

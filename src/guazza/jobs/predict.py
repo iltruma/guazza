@@ -1,14 +1,18 @@
-"""Job: inference ML + Decision Logic Engine — ogni 6 ore."""
+"""Entry point cron — predizioni ML.
+
+Verra' implementato nello Sprint 2.
+"""
+
+from __future__ import annotations
 
 import typer
 
-app = typer.Typer(help="Inference LightGBM quantile + DLE per tutte le location.")
+app = typer.Typer(help="Predizioni ML per Guazza.")
 
 
-@app.command()
-def main() -> None:
-    """Esegui inference e aggiorna JSON output. Da implementare in Sprint 2."""
-    raise NotImplementedError("Sprint 2")
+@app.command("run")
+def cmd_run() -> None:
+    typer.echo("TODO: genera predizioni per tutte le location")
 
 
 if __name__ == "__main__":

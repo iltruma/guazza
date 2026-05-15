@@ -15,12 +15,13 @@ Progetto personale con ambizioni scientifiche, sviluppato in spare time a sprint
 
 ## Utente
 
-Cloud Architect con background ML applicato. Conosce bene Python, Klipper, CFD, infrastructure cloud. Non ha bisogno di spiegazioni elementari.
+Cloud Architect e Solution Architect con background ML applicato. Programmatore esperto (Python, infrastructure cloud, CFD, Klipper). Non ha bisogno di spiegazioni elementari.
 
 - Risposte dirette e concrete
 - Niente preamble, riepiloghi finali, filler
 - Una sola domanda per turno se serve chiarimento
 - Non spiegare cose ovvie
+- Preferisce SQL diretto su DuckDB per query ad-hoc
 
 ## Stato corrente
 
@@ -269,8 +270,17 @@ uv run python scripts/03_probe_data_sources.py
 uv run python scripts/04_check_benchmark_scrapers.py
 
 # Ingestion manuale (dopo Sprint 1)
-uv run python -m guazza.jobs.ingest_forecasts --location casa_campi
+uv run python -m guazza.jobs.ingest --location casa_campi
 
 # Validazione schema DuckDB
-uv run python -m guazza.storage.duckdb_client --verify-schema
+uv run python -m guazza.storage --verify-schema
 ```
+
+## Regole OpenRouter — ottimizzazione costi
+
+- **Batchare tool calls** in ogni turno quando possibile (max 32 chiamate parallele)
+- **Mai loop di ricerca** su API o scraping senza limite; 3 tentativi max con backoff
+- **Preferire `read`/`grep`** a `task` per ricerche in <5 file
+- **Non riscrivere file interi** se `edit` può modificare il blocco rilevante
+- **Commit atomici** a ogni milestone stabile per evitare perdita lavoro
+- **Evitare risposte lunghe** — codice nei file, non nel testo della chat

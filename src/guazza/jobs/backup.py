@@ -1,14 +1,18 @@
-"""Job: backup DuckDB su Cloudflare R2 — ogni 24 ore."""
+"""Entry point cron — backup DuckDB su R2.
+
+Verra' implementato nello Sprint 1.
+"""
+
+from __future__ import annotations
 
 import typer
 
-app = typer.Typer(help="Backup notturno DuckDB su Cloudflare R2.")
+app = typer.Typer(help="Backup Guazza.")
 
 
-@app.command()
-def main() -> None:
-    """Esegui backup. Da implementare in Sprint 1."""
-    raise NotImplementedError("Sprint 1")
+@app.command("run")
+def cmd_run() -> None:
+    typer.echo("TODO: backup guazza.duckdb su Cloudflare R2")
 
 
 if __name__ == "__main__":
