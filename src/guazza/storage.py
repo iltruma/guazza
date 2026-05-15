@@ -109,6 +109,89 @@ class DuckDBClient:
         logger.info(f"Schema OK: {len(existing)} tabelle presenti")
         return True
 
+    def upsert_sir_observations(self, records: list[dict]) -> int:
+        """UPSERT wide per osservazioni SIR storiche.
+
+        Ogni record è parziale (solo le colonne del sensore scaricato).
+        Il DO UPDATE usa COALESCE per preservare valori già presenti:
+        se la colonna è già non-NULL, non viene sovrascritta con NULL.
+
+        Returns:
+            Numero di record processati.
+        """
+        if not records:
+            return 0
+
+        # Solo le colonne che esistono nello schema (escluse PK)
+        _obs_cols = [
+            "tmax_c", "tmin_c", "temp_c",
+            "humidity_pct",
+            "precip_mm",
+            "wind_speed_ms", "wind_dir_deg", "wind_gust_ms",
+            "pressure_hpa", "level_m",
+            "pm10_ugm3", "pm25_ugm3", "no2_ugm3", "o3_ugm3",
+            "weight", "qc_pass",
+        ]
+
+        coalesce_sets = ", ".join(
+            f"{col} = COALESCE(excluded.{col}, observations.{col})"
+            for col in _obs_cols
+        )
+
+        for rec in records:
+            # Mappa nomi SIR → colonne observations:
+            # igro usa hum_* ma la tabella ha solo humidity_pct.
+            # hum_med_pct → humidity_pct; hum_min/max non hanno colonna → ignorate.
+            mapped: dict[str, object] = {
+                "source": rec.get("source", "sir_toscana"),
+                "station_id": rec["station_id"],
+                "location_id": rec.get("location_id", ""),
+                "ts": rec["ts"],
+                "tmax_c": rec.get("tmax_c"),
+                "tmin_c": rec.get("tmin_c"),
+                "temp_c": rec.get("temp_c"),
+                "humidity_pct": rec.get("hum_med_pct") or rec.get("humidity_pct"),
+                "precip_mm": rec.get("precip_mm"),
+                "wind_speed_ms": rec.get("wind_speed_ms"),
+                "wind_dir_deg": rec.get("wind_dir_deg"),
+                "wind_gust_ms": rec.get("wind_gust_ms"),
+                "pressure_hpa": rec.get("pressure_hpa"),
+                "level_m": rec.get("level_m"),
+                "pm10_ugm3": rec.get("pm10_ugm3"),
+                "pm25_ugm3": rec.get("pm25_ugm3"),
+                "no2_ugm3": rec.get("no2_ugm3"),
+                "o3_ugm3": rec.get("o3_ugm3"),
+                "weight": rec.get("weight"),
+                "qc_pass": rec.get("qc_pass"),
+            }
+            self.execute(
+                f"""
+                INSERT INTO observations
+                    (source, station_id, location_id, ts,
+                     tmax_c, tmin_c, temp_c,
+                     humidity_pct, precip_mm,
+                     wind_speed_ms, wind_dir_deg, wind_gust_ms,
+                     pressure_hpa, level_m,
+                     pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3,
+                     weight, qc_pass)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (source, station_id, ts) DO UPDATE SET
+                    location_id   = COALESCE(excluded.location_id, observations.location_id),
+                    {coalesce_sets}
+                """,
+                [
+                    mapped["source"], mapped["station_id"], mapped["location_id"], mapped["ts"],
+                    mapped["tmax_c"], mapped["tmin_c"], mapped["temp_c"],
+                    mapped["humidity_pct"], mapped["precip_mm"],
+                    mapped["wind_speed_ms"], mapped["wind_dir_deg"], mapped["wind_gust_ms"],
+                    mapped["pressure_hpa"], mapped["level_m"],
+                    mapped["pm10_ugm3"], mapped["pm25_ugm3"], mapped["no2_ugm3"], mapped["o3_ugm3"],
+                    mapped["weight"], mapped["qc_pass"],
+                ],
+            )
+        logger.info(f"upsert_sir_observations: {len(records)} record processati")
+        return len(records)
+
 
 @contextmanager
 def open_db(
