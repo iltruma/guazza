@@ -220,6 +220,20 @@ Preferire commit atomici (un task = un commit). Se il task ha sotto-step, un com
 7. **Suggerire aggiornamento a `docs/status.md`** a fine sessione
 8. Non assumere che l'ambiente sia pulito — verificare che i test passino prima di nuove feature
 
+### Spiegazione obbligatoria prima di modificare codice
+
+Per ogni modifica non banale (tocca >5 righe, interfacce pubbliche, schema DB, o dipendenze):
+
+1. **Cosa cambia** — descrivi il problema che la modifica risolve
+2. **Come pensi di implementarlo** — approccio ad alto livello (non pseudocodice)
+3. **Alternative scartate** — solo se la scelta non è ovvia
+4. **Aspetta conferma** prima di scrivere codice
+
+Eccezioni che non richiedono conferma:
+- Fix banali: typo, rename locale, 1-2 righe senza effetti collaterali
+- Task con istruzione esplicita "vai" o "implementa direttamente"
+- Correzioni richieste da lint/mypy/test che non cambiano semantica
+
 ### Scraper fragili (CFR Toscana, ARPAT)
 
 - `try/except` con `tenacity` exponential backoff (3 tentativi, delay 60s, 300s, 600s)
