@@ -984,3 +984,120 @@ def test_arpat_bollettini_params_per_station() -> None:
     assert calls[0].kwargs["params"]["limit"] == "1000"
     assert calls[1].kwargs["params"]["stazione"] == "PO-FERRUCCI"
     assert len(records) == 2
+
+
+# ── Bollettini range (backfill storico) ───────────────────────────────────────
+
+from guazza.fetchers import fetch_arpat_bollettini_range  # noqa: E402
+
+
+def test_arpat_bollettini_range_multi_day() -> None:
+    """Range multi-giorno: una riga wide per (stazione, giorno)."""
+    payload = {
+        "items": [
+            {"data_osservazione": "2026-05-13", "inquinante": "PM10",  "valore": "30.0"},
+            {"data_osservazione": "2026-05-13", "inquinante": "PM2.5", "valore": "15.0"},
+            {"data_osservazione": "2026-05-13", "inquinante": "NO2",   "valore": "20.0"},
+            {"data_osservazione": "2026-05-14", "inquinante": "PM10",  "valore": "35.0"},
+            {"data_osservazione": "2026-05-14", "inquinante": "NO2",   "valore": "22.0"},
+        ]
+    }
+    with patch("guazza.fetchers._fetch_arpat_json") as mock_fetch:
+        mock_fetch.return_value = payload
+        records = fetch_arpat_bollettini_range(
+            "casa_campi", _ARPAT_STATIONS_SINGLE,
+            start_date="2026-05-13", end_date="2026-05-14",
+        )
+
+    assert mock_fetch.call_count == 1
+    call_params = mock_fetch.call_args.kwargs["params"]
+    assert call_params["startdate"] == "2026-05-13"
+    assert call_params["enddate"] == "2026-05-14"
+    assert call_params["stazione"] == "FI-SIGNA"
+    assert call_params["limit"] == "100000"
+
+    assert len(records) == 2
+    by_ts = {r["ts"]: r for r in records}
+    r13 = by_ts[datetime(2026, 5, 13, tzinfo=UTC)]
+    assert r13["pm10_ugm3"] == pytest.approx(30.0)
+    assert r13["pm25_ugm3"] == pytest.approx(15.0)
+    assert r13["no2_ugm3"] == pytest.approx(20.0)
+    r14 = by_ts[datetime(2026, 5, 14, tzinfo=UTC)]
+    assert r14["pm10_ugm3"] == pytest.approx(35.0)
+    assert r14["pm25_ugm3"] is None   # non presente il 14
+    assert r14["no2_ugm3"] == pytest.approx(22.0)
+
+    assert all(r["source"] == "arpat" for r in records)
+    assert all(r["granularity"] == "daily" for r in records)
+    assert all(r["station_id"] == "FI-SIGNA" for r in records)
+
+
+def test_arpat_bollettini_range_multi_station() -> None:
+    """Due stazioni → due chiamate HTTP, record separati per stazione."""
+    payload_roma = {
+        "items": [
+            {"data_osservazione": "2026-05-14", "inquinante": "PM10", "valore": "10.0"},
+        ]
+    }
+    payload_ferrucci = {
+        "items": [
+            {"data_osservazione": "2026-05-14", "inquinante": "PM10", "valore": "12.0"},
+        ]
+    }
+    with patch("guazza.fetchers._fetch_arpat_json") as mock_fetch:
+        mock_fetch.side_effect = [payload_roma, payload_ferrucci]
+        records = fetch_arpat_bollettini_range(
+            "lavoro_madda", _ARPAT_STATIONS_MULTI,
+            start_date="2026-05-14", end_date="2026-05-14",
+        )
+
+    assert mock_fetch.call_count == 2
+    assert len(records) == 2
+    by_station = {r["station_id"]: r for r in records}
+    assert by_station["PO-ROMA"]["pm10_ugm3"] == pytest.approx(10.0)
+    assert by_station["PO-ROMA"]["weight"] == pytest.approx(0.7)
+    assert by_station["PO-FERRUCCI"]["pm10_ugm3"] == pytest.approx(12.0)
+    assert by_station["PO-FERRUCCI"]["weight"] == pytest.approx(0.3)
+
+
+def test_arpat_bollettini_range_invalid_date_raises() -> None:
+    """Date in formato errato → ValueError senza fetch."""
+    with pytest.raises(ValueError):
+        fetch_arpat_bollettini_range(
+            "casa_campi", _ARPAT_STATIONS_SINGLE,
+            start_date="01-01-2018", end_date="2026-05-14",
+        )
+
+
+def test_arpat_bollettini_range_http_error_skips_station() -> None:
+    """Errore HTTP su una stazione → lista vuota, nessuna eccezione propagata."""
+    with _patch_arpat_json_error(Exception("timeout")):
+        records = fetch_arpat_bollettini_range(
+            "casa_campi", _ARPAT_STATIONS_SINGLE,
+            start_date="2026-05-13", end_date="2026-05-14",
+        )
+    assert records == []
+
+
+def test_arpat_bollettini_range_empty_response() -> None:
+    """Risposta con items vuoto → lista vuota."""
+    with _patch_arpat_json({"items": []}):
+        records = fetch_arpat_bollettini_range(
+            "casa_campi", _ARPAT_STATIONS_SINGLE,
+            start_date="2018-01-01", end_date="2018-01-31",
+        )
+    assert records == []
+
+
+def test_arpat_bollettini_range_list_format_fallback() -> None:
+    """Risposta come lista diretta invece di dict con 'items'."""
+    payload = [
+        {"data_osservazione": "2026-05-14", "inquinante": "PM10", "valore": "28.0"},
+    ]
+    with _patch_arpat_json(payload):
+        records = fetch_arpat_bollettini_range(
+            "casa_campi", _ARPAT_STATIONS_SINGLE,
+            start_date="2026-05-14", end_date="2026-05-14",
+        )
+    assert len(records) == 1
+    assert records[0]["pm10_ugm3"] == pytest.approx(28.0)

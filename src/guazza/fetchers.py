@@ -1252,6 +1252,124 @@ def fetch_arpat_bollettini(
     return records
 
 
+def fetch_arpat_bollettini_range(
+    location_id: str,
+    arpat_stations: list[dict[str, Any]],
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, Any]]:
+    """Fetch bollettini giornalieri ARPAT su un range di date (backfill storico).
+
+    Una singola chiamata HTTP per stazione con startdate/enddate estesi.
+    Restituisce tutti i record nel range — una riga wide per (stazione, giorno).
+
+    Args:
+        location_id: ID location Guazza.
+        arpat_stations: lista di {"id": str, "weight": float} da locations.yaml.
+        start_date, end_date: formato "YYYY-MM-DD".
+
+    Returns:
+        Lista di record wide compatibili con upsert su `observations`.
+        granularity='daily', una riga per (stazione, giorno).
+    """
+    # Validazione date
+    try:
+        datetime.strptime(start_date, "%Y-%m-%d")
+        datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError as e:
+        raise ValueError(f"start_date/end_date devono essere YYYY-MM-DD: {e}") from e
+
+    records: list[dict[str, Any]] = []
+
+    for st in arpat_stations:
+        station_id = str(st["id"]).upper()
+        weight = float(st.get("weight", 1.0))
+
+        try:
+            data = _fetch_arpat_json(
+                _ARPAT_BOLLETTINI_URL,
+                params={
+                    "startdate": start_date,
+                    "enddate": end_date,
+                    "stazione": station_id,
+                    "limit": "100000",
+                },
+            )
+        except Exception as e:
+            logger.warning(
+                f"ARPAT bollettini range [{location_id}] stazione {station_id} fallito: {e}"
+            )
+            _log_scrape(
+                f"arpat_bollettini_range:{location_id}:{station_id}",
+                "fail",
+                detail=str(e),
+            )
+            continue
+
+        raw_items: list[Any] = []
+        if isinstance(data, list):
+            raw_items = data
+        elif isinstance(data, dict):
+            raw_items = data.get("items") or data.get("stazioni") or data.get("data") or []
+
+        # Aggrega per data: {date_str: {inquinante_upper: valore}}
+        by_date: dict[str, dict[str, Any]] = {}
+        for item in raw_items:
+            date_str = str(
+                item.get("data_osservazione")
+                or item.get("data")
+                or item.get("date")
+                or ""
+            ).strip()
+            inq = str(item.get("inquinante") or "").upper()
+            val = item.get("valore")
+            if not date_str or not inq:
+                continue
+            if date_str not in by_date:
+                by_date[date_str] = {}
+            by_date[date_str][inq] = val
+
+        for date_str, inq_map in sorted(by_date.items()):
+            try:
+                ts_day = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
+            except ValueError:
+                logger.debug(f"ARPAT bollettini range: data non parsabile: {date_str!r}")
+                continue
+
+            rec: dict[str, Any] = {
+                "source": "arpat",
+                "station_id": station_id,
+                "location_id": location_id,
+                "ts": ts_day,
+                "granularity": "daily",
+                "weight": weight,
+                "qc_pass": True,
+            }
+            for arpat_var, col in _ARPAT_BOLL_VAR_MAP.items():
+                if col is None:
+                    continue
+                raw = inq_map.get(arpat_var.upper())
+                try:
+                    rec[col] = float(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    rec[col] = None
+
+            records.append(rec)
+
+        logger.info(
+            f"ARPAT bollettini range [{location_id}] {station_id}: "
+            f"{len(by_date)} giorni ({start_date}→{end_date})"
+        )
+        _log_scrape(
+            f"arpat_bollettini_range:{location_id}:{station_id}",
+            "ok",
+            rows=len(by_date),
+        )
+        time.sleep(0.5)
+
+    return records
+
+
 def fetch_arpat_all_locations(
     locations: dict[str, Any],
     mode: str = "nrt",
