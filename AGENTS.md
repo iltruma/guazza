@@ -289,7 +289,7 @@ uv run python -m guazza.jobs.ingest forecasts
 uv run python -m guazza.storage verify-schema
 ```
 
-## Regole OpenRouter — ottimizzazione costi
+## Regole di routing modelli — ottimizzazione costi
 
 - **Batchare tool calls** in ogni turno quando possibile (max 32 chiamate parallele)
 - **Mai loop di ricerca** su API o scraping senza limite; 3 tentativi max con backoff
