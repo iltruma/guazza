@@ -47,7 +47,10 @@ Senza Referer risponde con pagina HTML (redirect al portale).
 
 ## Prossimi passi (in ordine)
 
-1. **Smoke test reale SIR**: scaricare CSV storico per TOS01001215, inserire in DuckDB via `observations` wide, verificare riga unica per giorno
+1. **Smoke test reale SIR: PASSATO** — scaricate 12.552 righe (34 anni, 1992–2026) per TOS01001215, inserite in DuckDB wide, PK source+station_id+ts mantiene 1 riga/giorno correttamente
 2. **Ingestion Open-Meteo**: implementare fetch forecast NWP multi-modello → tabella `forecasts` wide
 3. **Job end-to-end**: `jobs/ingest.py` deve orchestrare fetch SIR + Netatmo + Open-Meteo per tutte le location
-4. **Feature engineering (Sprint 2)**: lag temporali + join `observations` ↔ `forecasts` wide per training set LightGBM
+5. **Smoke test multi-sensore SIR**: per TOS01001215, scaricare pluvio + anemo + igro, verificare UPSERT wide corretto (una riga per giorno con più colonne)
+6. **Ingestion Open-Meteo**: implementare fetch forecast NWP multi-modello → tabella `forecasts` wide
+7. **Job end-to-end**: `jobs/ingest.py` deve orchestrare fetch SIR + Netatmo + Open-Meteo per tutte le location
+8. **Feature engineering (Sprint 2)**: lag temporali + join `observations` ↔ `forecasts` wide per training set LightGBM
