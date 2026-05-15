@@ -51,3 +51,6 @@ htmlcov/
 
 # opencode
 .opencode/
+
+# claude code
+.claude/
