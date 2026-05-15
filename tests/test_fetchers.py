@@ -908,13 +908,14 @@ def test_arpat_nrt_ts_from_data_ora_osservazione() -> None:
 # ── Bollettini ────────────────────────────────────────────────────────────────
 
 def test_arpat_bollettini_single_station() -> None:
-    """Bollettino giornaliero → record con PM10 e PM2.5, granularity='daily'."""
-    payload = [
-        {
-            "codice_stazione": "FI-SIGNA",
-            "misurazioni": {"PM10": "35.0", "PM2.5": "18.0", "NO2": "22.0"},
-        }
-    ]
+    """Bollettino giornaliero formato reale → record con PM10 e PM2.5, granularity='daily'."""
+    payload = {
+        "items": [
+            {"data_osservazione": "2026-05-14", "stazione": "FI-SIGNA", "inquinante": "PM10",  "valore": "35.0"},
+            {"data_osservazione": "2026-05-14", "stazione": "FI-SIGNA", "inquinante": "PM2.5", "valore": "18.0"},
+            {"data_osservazione": "2026-05-14", "stazione": "FI-SIGNA", "inquinante": "NO2",   "valore": "22.0"},
+        ]
+    }
     with patch("guazza.fetchers._fetch_arpat_json") as mock_fetch:
         mock_fetch.return_value = payload
         records = fetch_arpat_bollettini("casa_campi", _ARPAT_STATIONS_SINGLE, date="2026-05-14")
@@ -951,26 +952,28 @@ def test_arpat_bollettini_http_error_returns_empty() -> None:
 
 
 def test_arpat_bollettini_missing_pm_values_none() -> None:
-    """Valori PM assenti nella risposta → None, non eccezione."""
-    payload = [
-        {"codice_stazione": "FI-SIGNA", "misurazioni": {}},
-    ]
+    """Nessun inquinante nella risposta → record saltato (inq_map vuoto)."""
+    payload = {"items": []}
     with _patch_arpat_json(payload):
         records = fetch_arpat_bollettini("casa_campi", _ARPAT_STATIONS_SINGLE, date="2026-05-14")
 
-    assert len(records) == 1
-    assert records[0]["pm10_ugm3"] is None
-    assert records[0]["pm25_ugm3"] is None
+    assert records == []
 
 
 def test_arpat_bollettini_params_per_station() -> None:
     """_fetch_arpat_json chiamato con params corretti per ogni stazione."""
+    real_payload = {
+        "items": [
+            {"data_osservazione": "2026-05-14", "stazione": "PO-ROMA",     "inquinante": "PM10", "valore": "10.0"},
+            {"data_osservazione": "2026-05-14", "stazione": "PO-FERRUCCI", "inquinante": "PM10", "valore": "12.0"},
+        ]
+    }
     stations = [
         {"id": "PO-ROMA", "weight": 0.7},
         {"id": "PO-FERRUCCI", "weight": 0.3},
     ]
     with patch("guazza.fetchers._fetch_arpat_json") as mock_fetch:
-        mock_fetch.return_value = {"stazioni": [{"misurazioni": {"PM10": "10.0"}}]}
+        mock_fetch.return_value = real_payload
         records = fetch_arpat_bollettini("lavoro_madda", stations, date="2026-05-14")
 
     assert mock_fetch.call_count == 2

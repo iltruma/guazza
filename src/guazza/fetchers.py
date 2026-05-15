@@ -1162,7 +1162,12 @@ def fetch_arpat_bollettini(
     arpat_stations: list[dict[str, Any]],
     date: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Fetch bollettino giornaliero ARPAT (PM10, PM2.5) per una location.
+    """Fetch bollettino giornaliero ARPAT (PM10, PM2.5, NO2) per una location.
+
+    La risposta reale è {"items": [{"data_osservazione": "2026-05-14",
+    "stazione": "PO-ROMA", "inquinante": "PM10", "valore": "21", ...}, ...]}.
+    Una riga per (data, stazione, inquinante) — aggrega per inquinante per
+    costruire il record wide.
 
     Args:
         location_id: ID location Guazza.
@@ -1204,23 +1209,24 @@ def fetch_arpat_bollettini(
             )
             continue
 
-        # Parsing difensivo — la risposta è già filtrata per stazione
-        item: dict[str, Any] | None = None
+        # Risposta: {"items": [{"data_osservazione": ..., "inquinante": ..., "valore": ...}]}
+        # Una riga per inquinante — aggrega in dict {inquinante_upper: valore}
+        raw_items: list[Any] = []
         if isinstance(data, list):
-            if len(data) > 0:
-                item = data[0]
+            raw_items = data
         elif isinstance(data, dict):
-            items_list: list[Any] = data.get("stazioni") or data.get("data") or []
-            if len(items_list) > 0:
-                item = items_list[0]
+            raw_items = data.get("items") or data.get("stazioni") or data.get("data") or []
 
-        if item is None:
-            logger.debug(f"ARPAT bollettini: nessun dato per stazione {station_id}")
+        inq_map: dict[str, Any] = {}
+        for item in raw_items:
+            inq = str(item.get("inquinante") or "").upper()
+            val = item.get("valore")
+            if inq:
+                inq_map[inq] = val
+
+        if not inq_map:
+            logger.debug(f"ARPAT bollettini: nessun dato per stazione {station_id} data {date}")
             continue
-
-        misurazioni: dict[str, Any] = (
-            item.get("misurazioni") or item.get("valori") or item
-        )
 
         rec: dict[str, Any] = {
             "source": "arpat",
@@ -1234,7 +1240,7 @@ def fetch_arpat_bollettini(
         for arpat_var, col in _ARPAT_BOLL_VAR_MAP.items():
             if col is None:
                 continue
-            raw = misurazioni.get(arpat_var) or misurazioni.get(arpat_var.lower())
+            raw = inq_map.get(arpat_var.upper())
             try:
                 rec[col] = float(raw) if raw is not None else None
             except (TypeError, ValueError):
