@@ -17,6 +17,7 @@ from guazza.fetchers import (
     _StationData,
     fetch_netatmo_location,
     fetch_openmeteo_forecast,
+    fetch_openmeteo_historical,
     fetch_sir_historical,
     fetch_sir_realtime,
     save_netatmo_to_db,
@@ -562,3 +563,114 @@ def test_upsert_forecasts_empty(seeded_db_forecasts: Path) -> None:
     with DuckDBClient(db_path=seeded_db_forecasts) as db:
         n = db.upsert_forecasts([])
     assert n == 0
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Open-Meteo — modalità storica (ts_run=None)
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Risposta mock storica: 3 ore consecutive per testare ts_run variabile
+_OM_HISTORICAL_MOCK = {
+    "latitude": 43.76,
+    "longitude": 11.19,
+    "timezone": "UTC",
+    "hourly": {
+        # ECMWF run 00: ts_valid 00:00-11:00 → ts_run=00:00
+        # ECMWF run 12: ts_valid 12:00-23:00 → ts_run=12:00
+        "time": ["2026-05-14T11:00", "2026-05-14T12:00", "2026-05-14T13:00"],
+        "temperature_2m": [20.0, 21.0, 21.5],
+        "relative_humidity_2m": [50.0, 48.0, 46.0],
+        "precipitation": [0.0, 0.0, 0.0],
+        "wind_speed_10m": [3.0, 3.5, 4.0],
+        "wind_direction_10m": [180.0, 185.0, 190.0],
+        "wind_gusts_10m": [6.0, 7.0, 8.0],
+        "surface_pressure": [1012.0, 1011.5, 1011.0],
+    },
+}
+
+
+def test_parse_om_response_historical_ts_run_inferred() -> None:
+    """ts_run=None → inferita per riga: 11:00 UTC → ts_run=00:00, 12:00 → ts_run=12:00."""
+    records = _parse_om_response(_OM_HISTORICAL_MOCK, "ecmwf_ifs025", "lavoro_cosimo", ts_run=None)
+    assert len(records) == 3
+
+    # ts_valid 11:00 → ECMWF run 00 UTC → lead_time_h = 11
+    r11 = records[0]
+    assert r11["ts_run"] == datetime(2026, 5, 14, 0, 0, tzinfo=UTC)
+    assert r11["lead_time_h"] == 11
+
+    # ts_valid 12:00 → ECMWF run 12 UTC → lead_time_h = 0
+    r12 = records[1]
+    assert r12["ts_run"] == datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
+    assert r12["lead_time_h"] == 0
+
+    # ts_valid 13:00 → ECMWF run 12 UTC → lead_time_h = 1
+    r13 = records[2]
+    assert r13["ts_run"] == datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
+    assert r13["lead_time_h"] == 1
+
+
+def test_parse_om_response_historical_values() -> None:
+    """Valori correttamente estratti in modalità storica."""
+    records = _parse_om_response(_OM_HISTORICAL_MOCK, "ecmwf_ifs025", "lavoro_cosimo", ts_run=None)
+    r = records[0]
+    assert r["temp_c"] == pytest.approx(20.0)
+    assert r["humidity_pct"] == pytest.approx(50.0)
+    assert r["wind_speed_ms"] == pytest.approx(3.0)
+    assert r["pressure_hpa"] == pytest.approx(1012.0)
+
+
+def test_fetch_openmeteo_historical_uses_parse_om_response() -> None:
+    """fetch_openmeteo_historical produce record con ts_run inferred correttamente."""
+    with patch("guazza.fetchers._fetch_om_json", return_value=_OM_HISTORICAL_MOCK):
+        results = fetch_openmeteo_historical(
+            location_id="lavoro_cosimo",
+            lat=43.76,
+            lon=11.19,
+            start_date="2026-05-14",
+            end_date="2026-05-14",
+            models=["ecmwf_ifs025"],
+        )
+    assert "ecmwf_ifs025" in results
+    records = results["ecmwf_ifs025"]
+    assert len(records) == 3
+    # ts_run varia per riga (non fissa)
+    assert records[0]["ts_run"] != records[1]["ts_run"]
+    # lead_time_h corretto
+    assert records[1]["lead_time_h"] == 0  # ts_valid=12:00, ts_run=12:00
+
+
+def test_fetch_openmeteo_historical_error_returns_empty() -> None:
+    """Se il fetch fallisce → lista vuota, nessuna eccezione."""
+    with patch("guazza.fetchers._fetch_om_json", side_effect=Exception("timeout")):
+        results = fetch_openmeteo_historical(
+            location_id="lavoro_cosimo",
+            lat=43.76,
+            lon=11.19,
+            start_date="2026-05-14",
+            end_date="2026-05-14",
+            models=["ecmwf_ifs025"],
+        )
+    assert results["ecmwf_ifs025"] == []
+
+
+def test_upsert_forecasts_batch_historical(seeded_db_forecasts: Path) -> None:
+    """upsert_forecasts batch: 3 record storici con ts_run diverse → 3 righe."""
+    records = _parse_om_response(_OM_HISTORICAL_MOCK, "ecmwf_ifs025", "lavoro_cosimo", ts_run=None)
+    with DuckDBClient(db_path=seeded_db_forecasts) as db:
+        n = db.upsert_forecasts(records)
+        count = db.execute("SELECT COUNT(*) FROM forecasts").fetchone()[0]
+        # verifica lead_time_h corretto per la riga con ts_valid=12:00
+        row = db.execute(
+            "SELECT lead_time_h FROM forecasts WHERE ts_valid = '2026-05-14T12:00:00+00:00'"
+        ).fetchone()
+    assert n == 3
+    assert count == 3
+    # verifica lead_time_h corretto per la riga con ts_valid=12:00
+    ts_12 = datetime(2026, 5, 14, 12, 0, 0, tzinfo=UTC)
+    with DuckDBClient(db_path=seeded_db_forecasts) as db:
+        row = db.execute(
+            "SELECT lead_time_h FROM forecasts WHERE ts_valid = ?", [ts_12]
+        ).fetchone()
+    assert row is not None
+    assert row[0] == 0

@@ -110,11 +110,11 @@ class DuckDBClient:
         return True
 
     def upsert_forecasts(self, records: list[dict]) -> int:
-        """UPSERT wide per forecast Open-Meteo nella tabella forecasts.
+        """UPSERT batch wide per forecast Open-Meteo nella tabella forecasts.
 
         PK: (source, location_id, ts_run, ts_valid).
-        DO UPDATE sovrascrive tutte le colonne meteo (i forecast si aggiornano
-        ad ogni run: l'ultimo run vince).
+        DO UPDATE sovrascrive tutte le colonne meteo (l'ultimo run vince).
+        Usa executemany per performance su backfill storico (140k+ righe).
 
         Returns:
             Numero di record processati.
@@ -122,32 +122,35 @@ class DuckDBClient:
         if not records:
             return 0
 
-        for rec in records:
-            self.execute(
-                """
-                INSERT INTO forecasts
-                    (source, location_id, ts_run, ts_valid, lead_time_h,
-                     temp_c, humidity_pct, precip_mm,
-                     wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (source, location_id, ts_run, ts_valid) DO UPDATE SET
-                    lead_time_h   = excluded.lead_time_h,
-                    temp_c        = excluded.temp_c,
-                    humidity_pct  = excluded.humidity_pct,
-                    precip_mm     = excluded.precip_mm,
-                    wind_speed_ms = excluded.wind_speed_ms,
-                    wind_dir_deg  = excluded.wind_dir_deg,
-                    wind_gust_ms  = excluded.wind_gust_ms,
-                    pressure_hpa  = excluded.pressure_hpa
-                """,
-                [
-                    rec["source"], rec["location_id"], rec["ts_run"], rec["ts_valid"],
-                    rec.get("lead_time_h"),
-                    rec.get("temp_c"), rec.get("humidity_pct"), rec.get("precip_mm"),
-                    rec.get("wind_speed_ms"), rec.get("wind_dir_deg"),
-                    rec.get("wind_gust_ms"), rec.get("pressure_hpa"),
-                ],
-            )
+        rows = [
+            [
+                rec["source"], rec["location_id"], rec["ts_run"], rec["ts_valid"],
+                rec.get("lead_time_h"),
+                rec.get("temp_c"), rec.get("humidity_pct"), rec.get("precip_mm"),
+                rec.get("wind_speed_ms"), rec.get("wind_dir_deg"),
+                rec.get("wind_gust_ms"), rec.get("pressure_hpa"),
+            ]
+            for rec in records
+        ]
+        self.executemany(
+            """
+            INSERT INTO forecasts
+                (source, location_id, ts_run, ts_valid, lead_time_h,
+                 temp_c, humidity_pct, precip_mm,
+                 wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (source, location_id, ts_run, ts_valid) DO UPDATE SET
+                lead_time_h   = excluded.lead_time_h,
+                temp_c        = excluded.temp_c,
+                humidity_pct  = excluded.humidity_pct,
+                precip_mm     = excluded.precip_mm,
+                wind_speed_ms = excluded.wind_speed_ms,
+                wind_dir_deg  = excluded.wind_dir_deg,
+                wind_gust_ms  = excluded.wind_gust_ms,
+                pressure_hpa  = excluded.pressure_hpa
+            """,
+            rows,
+        )
         logger.info(f"upsert_forecasts: {len(records)} record processati")
         return len(records)
 

@@ -711,9 +711,14 @@ def _parse_om_response(
     data: dict[str, Any],
     model: str,
     location_id: str,
-    ts_run: datetime,
+    ts_run: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Converte risposta Open-Meteo in lista di record wide per tabella forecasts.
+
+    Args:
+        ts_run: se None (modalità storica), viene inferita per ogni riga con
+                _infer_ts_run(model, ts_valid). Se fornita (modalità live),
+                viene usata fissa per tutti i record.
 
     Returns:
         Lista di dict con chiavi: source, location_id, ts_run, ts_valid,
@@ -734,12 +739,14 @@ def _parse_om_response(
             logger.debug(f"ts_valid non parsabile: {time_str!r}")
             continue
 
-        lead_h = int((ts_valid - ts_run).total_seconds() / 3600)
+        # Modalità storica: ts_run inferita per ogni ora (ogni record può avere ts_run diversa)
+        effective_ts_run = ts_run if ts_run is not None else _infer_ts_run(model, ts_valid)
+        lead_h = int((ts_valid - effective_ts_run).total_seconds() / 3600)
 
         rec: dict[str, Any] = {
             "source": f"open_meteo_{model}",
             "location_id": location_id,
-            "ts_run": ts_run,
+            "ts_run": effective_ts_run,
             "ts_valid": ts_valid,
             "lead_time_h": lead_h,
         }
@@ -750,7 +757,10 @@ def _parse_om_response(
 
         records.append(rec)
 
-    logger.info(f"Open-Meteo [{model}] [{location_id}] → {len(records)} righe (ts_run={ts_run})")
+    logger.info(
+        f"Open-Meteo [{model}] [{location_id}] → {len(records)} righe"
+        + (f" (ts_run={ts_run})" if ts_run is not None else " (ts_run=inferita per riga)")
+    )
     return records
 
 
@@ -815,7 +825,8 @@ def fetch_openmeteo_historical(
     """Fetch storico forecast da Open-Meteo Historical Forecast API.
 
     Usata per backfill training set (dati 2022+).
-    ts_run = arrotondamento per difetto al run del modello per ogni ora.
+    ts_run viene inferita per ogni riga con _infer_ts_run(model, ts_valid):
+    ogni ora ha il suo ts_run = ultimo run nominale per difetto.
 
     Args:
         start_date, end_date: formato "YYYY-MM-DD".
@@ -841,35 +852,12 @@ def fetch_openmeteo_historical(
         }
         try:
             data = _fetch_om_json(_OM_HISTORICAL_URL, params)
-            # Per lo storico, ts_run = inferita per ogni riga in base all'ora
-            hourly = data.get("hourly", {})
-            times: list[str] = hourly.get("time", [])
-            # Prima passa: inferisci ts_run per ogni ts_valid
-            all_records: list[dict[str, Any]] = []
-            for i, time_str in enumerate(times):
-                try:
-                    ts_valid = datetime.fromisoformat(time_str).replace(tzinfo=UTC)
-                except ValueError:
-                    continue
-                ts_run = _infer_ts_run(model, ts_valid)
-                lead_h = int((ts_valid - ts_run).total_seconds() / 3600)
-                rec: dict[str, Any] = {
-                    "source": f"open_meteo_{model}",
-                    "location_id": location_id,
-                    "ts_run": ts_run,
-                    "ts_valid": ts_valid,
-                    "lead_time_h": lead_h,
-                }
-                for om_var, col in _OM_VAR_MAP.items():
-                    series = hourly.get(om_var, [])
-                    val = series[i] if i < len(series) else None
-                    rec[col] = float(val) if val is not None else None
-                all_records.append(rec)
-
-            results[model] = all_records
+            # ts_run=None → inferita per ogni riga in _parse_om_response
+            records = _parse_om_response(data, model, location_id, ts_run=None)
+            results[model] = records
             logger.info(
                 f"Open-Meteo historical [{model}] [{location_id}] "
-                f"→ {len(all_records)} righe ({start_date}→{end_date})"
+                f"→ {len(records)} righe ({start_date}→{end_date})"
             )
         except Exception as e:
             logger.error(f"Open-Meteo historical [{model}] [{location_id}] fallito: {e}")
