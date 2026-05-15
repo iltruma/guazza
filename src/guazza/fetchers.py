@@ -1015,6 +1015,251 @@ def fetch_netatmo_all_locations(
     return results
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# ARPAT — Qualità aria (NRT orario + bollettini giornalieri)
+# ═════════════════════════════════════════════════════════════════════════════
+
+_ARPAT_NRT_URL = "https://www.arpat.toscana.it/temas/aria/rete-regionale-di-rilevamento/nrt/valori_last"
+_ARPAT_BOLLETTINI_URL = "https://www.arpat.toscana.it/temas/aria/rete-regionale-di-rilevamento/bollettini/dati"
+
+# Mapping nome variabile ARPAT → colonna observations wide (None = non in schema, ignorato)
+_ARPAT_NRT_VAR_MAP: dict[str, str | None] = {
+    "NO2":     "no2_ugm3",
+    "O3":      "o3_ugm3",
+    "CO":      None,   # non in schema wide — ignorato (CO non in observations)
+    "BENZENE": None,   # non in schema wide — ignorato
+}
+
+_ARPAT_BOLL_VAR_MAP: dict[str, str | None] = {
+    "PM10":    "pm10_ugm3",
+    "PM2.5":   "pm25_ugm3",
+    "NO2":     "no2_ugm3",
+    "O3":      "o3_ugm3",
+    "CO":      None,
+    "BENZENE": None,
+}
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=60, max=600),
+    retry=retry_if_exception(lambda e: not isinstance(e, ValueError)),
+)
+def _fetch_arpat_json(url: str) -> Any:
+    """Fetch JSON da endpoint ARPAT con retry (backoff 60s/300s/600s)."""
+    with httpx.Client(timeout=30) as client:
+        r = client.get(url)
+        r.raise_for_status()
+    return r.json()
+
+
+def fetch_arpat_nrt(
+    location_id: str,
+    arpat_stations: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Fetch valori NRT orari ARPAT (NO2, O3) per una location.
+
+    Args:
+        location_id: ID location Guazza.
+        arpat_stations: lista di {"id": str, "weight": float} da locations.yaml.
+
+    Returns:
+        Lista di record wide compatibili con upsert su `observations`.
+        Una riga per stazione ARPAT con granularity='hourly'.
+    """
+    try:
+        data = _fetch_arpat_json(_ARPAT_NRT_URL)
+    except Exception as e:
+        logger.error(f"ARPAT NRT [{location_id}] fetch fallito: {e}")
+        _log_scrape(f"arpat_nrt:{location_id}", "fail", detail=str(e))
+        return []
+
+    # data è una lista di stazioni: [{"codice_stazione": "FI-SIGNA", "misurazioni": {...}, ...}]
+    # Struttura effettiva non verificata su endpoint reale — parsing difensivo
+    station_index: dict[str, dict[str, Any]] = {}
+    if isinstance(data, list):
+        for item in data:
+            sid = item.get("codice_stazione") or item.get("stazione") or item.get("id", "")
+            if sid:
+                station_index[str(sid).upper()] = item
+    elif isinstance(data, dict):
+        # Alcune API ARPAT restituiscono {"stazioni": [...]}
+        items_list: list[Any] = data.get("stazioni") or data.get("data") or []
+        for item in items_list:
+            sid = item.get("codice_stazione") or item.get("stazione") or item.get("id", "")
+            if sid:
+                station_index[str(sid).upper()] = item
+
+    records: list[dict[str, Any]] = []
+    now_utc = datetime.now(tz=UTC).replace(minute=0, second=0, microsecond=0)
+
+    for st in arpat_stations:
+        station_id = str(st["id"]).upper()
+        weight = float(st.get("weight", 1.0))
+        item = station_index.get(station_id)
+        if item is None:
+            logger.debug(f"ARPAT NRT: stazione {station_id} non trovata nella risposta")
+            continue
+
+        # Estrai timestamp dalla risposta se presente, fallback a ora corrente troncata
+        raw_ts = item.get("data") or item.get("timestamp") or item.get("ora")
+        ts: datetime
+        if raw_ts:
+            try:
+                ts = datetime.fromisoformat(str(raw_ts).replace(" ", "T"))
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=UTC)
+            except ValueError:
+                ts = now_utc
+        else:
+            ts = now_utc
+
+        misurazioni: dict[str, Any] = (
+            item.get("misurazioni") or item.get("valori") or item
+        )
+
+        rec: dict[str, Any] = {
+            "source": "arpat",
+            "station_id": station_id,
+            "location_id": location_id,
+            "ts": ts,
+            "granularity": "hourly",
+            "weight": weight,
+            "qc_pass": True,
+        }
+        for arpat_var, col in _ARPAT_NRT_VAR_MAP.items():
+            if col is None:
+                continue
+            raw = misurazioni.get(arpat_var) or misurazioni.get(arpat_var.lower())
+            try:
+                rec[col] = float(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                rec[col] = None
+
+        records.append(rec)
+
+    _log_scrape(f"arpat_nrt:{location_id}", "ok", rows=len(records))
+    return records
+
+
+def fetch_arpat_bollettini(
+    location_id: str,
+    arpat_stations: list[dict[str, Any]],
+    date: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch bollettino giornaliero ARPAT (PM10, PM2.5) per una location.
+
+    Args:
+        location_id: ID location Guazza.
+        arpat_stations: lista di {"id": str, "weight": float} da locations.yaml.
+        date: data target YYYY-MM-DD (default: ieri).
+
+    Returns:
+        Lista di record wide compatibili con upsert su `observations`.
+        Una riga per stazione ARPAT con granularity='daily'.
+    """
+    if date is None:
+        date = (datetime.now(tz=UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # Validazione data prima del fetch — evita chiamate HTTP inutili
+    try:
+        ts_day = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError as e:
+        raise ValueError(f"date deve essere YYYY-MM-DD, ricevuto: {date!r}") from e
+
+    try:
+        data = _fetch_arpat_json(_ARPAT_BOLLETTINI_URL)
+    except Exception as e:
+        logger.error(f"ARPAT bollettini [{location_id}] fetch fallito: {e}")
+        _log_scrape(f"arpat_bollettini:{location_id}", "fail", detail=str(e))
+        return []
+
+    # Parsing difensivo — struttura reale da verificare al primo run su VPS
+    station_index: dict[str, dict[str, Any]] = {}
+    if isinstance(data, list):
+        for item in data:
+            sid = item.get("codice_stazione") or item.get("stazione") or item.get("id", "")
+            if sid:
+                station_index[str(sid).upper()] = item
+    elif isinstance(data, dict):
+        items_list2: list[Any] = data.get("stazioni") or data.get("data") or []
+        for item in items_list2:
+            sid = item.get("codice_stazione") or item.get("stazione") or item.get("id", "")
+            if sid:
+                station_index[str(sid).upper()] = item
+
+    records: list[dict[str, Any]] = []
+
+    for st in arpat_stations:
+        station_id = str(st["id"]).upper()
+        weight = float(st.get("weight", 1.0))
+        item = station_index.get(station_id)
+        if item is None:
+            logger.debug(f"ARPAT bollettini: stazione {station_id} non trovata nella risposta")
+            continue
+
+        misurazioni: dict[str, Any] = (
+            item.get("misurazioni") or item.get("valori") or item
+        )
+
+        rec: dict[str, Any] = {
+            "source": "arpat",
+            "station_id": station_id,
+            "location_id": location_id,
+            "ts": ts_day,
+            "granularity": "daily",
+            "weight": weight,
+            "qc_pass": True,
+        }
+        for arpat_var, col in _ARPAT_BOLL_VAR_MAP.items():
+            if col is None:
+                continue
+            raw = misurazioni.get(arpat_var) or misurazioni.get(arpat_var.lower())
+            try:
+                rec[col] = float(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                rec[col] = None
+
+        records.append(rec)
+
+    _log_scrape(f"arpat_bollettini:{location_id}", "ok", rows=len(records))
+    return records
+
+
+def fetch_arpat_all_locations(
+    locations: dict[str, Any],
+    mode: str = "nrt",
+    date: str | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Fetch ARPAT per tutte le location che hanno arpat_stations.
+
+    Args:
+        locations: dict locations da locations.yaml["locations"].
+        mode: 'nrt' (orario) o 'bollettini' (giornaliero).
+        date: solo per mode='bollettini', formato YYYY-MM-DD.
+
+    Returns:
+        Dict {location_id: [record, ...]}
+    """
+    results: dict[str, list[dict[str, Any]]] = {}
+    for loc_id, loc in locations.items():
+        arpat_stations = loc.get("arpat_stations")
+        if not arpat_stations:
+            continue
+        try:
+            if mode == "nrt":
+                records = fetch_arpat_nrt(loc_id, arpat_stations)
+            else:
+                records = fetch_arpat_bollettini(loc_id, arpat_stations, date=date)
+            results[loc_id] = records
+        except Exception as e:
+            logger.error(f"ARPAT {mode} [{loc_id}] fallito: {e}")
+            _log_scrape(f"arpat_{mode}:{loc_id}", "fail", detail=str(e))
+            results[loc_id] = []
+        time.sleep(0.5)
+    return results
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 import typer  # noqa: E402

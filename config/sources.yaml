@@ -123,19 +123,7 @@ sources:
       (metadata-catalog → 401). arpat_zone per casa_campi = agglomerato_firenze.
       Stazioni: 6 totali mappate con pesi per location (vedi config/locations.yaml).
 
-  # ── Allerte ufficiali ─────────────────────────────────────────────────────
-
-  cfr_alerts:
-    label: "CFR Toscana — bollettini vigilanza meteo"
-    url: "http://www.cfr.toscana.it/index.php?IDS=10&IDT=76"
-    status: DA_VERIFICARE
-    auth: none
-    format: DA_VERIFICARE   # PDF/RSS/HTML?
-    notes: >
-      Bollettini di vigilanza meteo regionali. Formato da verificare.
-      Zone di allerta toscane: mappare le 4 location alle zone CFR.
-
-  # ── Radar precipitazioni ─────────────────────────────────────────────────
+  # ── Radar precipitazioni (frontend only) ────────────────────────────────
 
   rainviewer:
     label: "RainViewer — radar precipitazioni"
@@ -143,9 +131,11 @@ sources:
     status: OK
     auth: none
     format: JSON
+    scope: frontend_only   # tile embed nel frontend, nessuna ingestion strutturata
     notes: >
       API pubblica gratuita per tile radar. Utilizzata nel frontend V1
       per embed radar (visualizzazione, non ingestion dati strutturati).
+      CFR Toscana rimosso: copertura allerte già fornita da SIR idrometria.
       Documentazione: https://www.rainviewer.com/api.html
 
   # ── Benchmark providers ───────────────────────────────────────────────────

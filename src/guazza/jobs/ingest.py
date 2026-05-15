@@ -35,6 +35,7 @@ from loguru import logger
 
 from guazza.fetchers import (
     _log_scrape,
+    fetch_arpat_all_locations,
     fetch_netatmo_all_locations,
     fetch_openmeteo_all_locations,
     fetch_openmeteo_historical,
@@ -369,6 +370,7 @@ def cmd_daily(
     ok = True
     sir_total = 0
     om_total = 0
+    arpat_total = 0
 
     try:
         with DuckDBClient(db_path=db_path) as db:
@@ -394,6 +396,13 @@ def cmd_daily(
                             om_total += db.upsert_forecasts(records)
                 logger.info(f"daily Open-Meteo: {om_total} record")
 
+            # ARPAT bollettini giornalieri (PM10, PM2.5)
+            arpat_results = fetch_arpat_all_locations(locations, mode="bollettini", date=date)
+            for _loc_id, records in arpat_results.items():
+                if records:
+                    arpat_total += db.upsert_sir_observations(records)
+            logger.info(f"daily ARPAT bollettini: {arpat_total} record")
+
     except Exception as e:
         logger.error(f"daily fallito: {e}")
         _ping_healthchecks("/fail")
@@ -401,9 +410,9 @@ def cmd_daily(
         raise typer.Exit(1) from e
 
     elapsed = time.monotonic() - t0
-    _log_scrape("job_daily", "ok" if ok else "fail", rows=sir_total + om_total)
+    _log_scrape("job_daily", "ok" if ok else "fail", rows=sir_total + om_total + arpat_total)
     _ping_healthchecks()
-    typer.echo(f"daily completato in {elapsed:.0f}s — SIR:{sir_total} OM:{om_total}")
+    typer.echo(f"daily completato in {elapsed:.0f}s — SIR:{sir_total} OM:{om_total} ARPAT:{arpat_total}")
 
 
 @app.command("realtime")
@@ -430,6 +439,7 @@ def cmd_realtime(
     ok = True
     sir_total = 0
     netatmo_total = 0
+    arpat_total = 0
 
     try:
         with DuckDBClient(db_path=db_path) as db:
@@ -454,6 +464,13 @@ def cmd_realtime(
             netatmo_total = sum(len(v) for v in netatmo_results.values())
             logger.info(f"realtime Netatmo: {netatmo_total} stazioni totali")
 
+            # 3. ARPAT NRT — valori orari NO2/O3
+            arpat_results = fetch_arpat_all_locations(locations, mode="nrt")
+            for _loc_id, records in arpat_results.items():
+                if records:
+                    arpat_total += db.upsert_sir_observations(records)
+            logger.info(f"realtime ARPAT NRT: {arpat_total} record")
+
     except Exception as e:
         logger.error(f"realtime fallito: {e}")
         _ping_healthchecks("/fail")
@@ -462,11 +479,11 @@ def cmd_realtime(
 
     elapsed = time.monotonic() - t0
     _log_scrape("job_realtime", "ok" if ok else "fail",
-                rows=sir_total + netatmo_total)
+                rows=sir_total + netatmo_total + arpat_total)
     _ping_healthchecks()
     typer.echo(
         f"realtime completato in {elapsed:.0f}s — "
-        f"SIR:{sir_total} Netatmo:{netatmo_total}"
+        f"SIR:{sir_total} Netatmo:{netatmo_total} ARPAT:{arpat_total}"
     )
 
 

@@ -1,11 +1,13 @@
-"""Test unitari per fetchers.py (SIR + Netatmo + Open-Meteo wide)."""
+"""Test unitari per fetchers.py (SIR + Netatmo + Open-Meteo wide + ARPAT)."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from guazza.fetchers import (
@@ -771,3 +773,180 @@ def test_parse_sir_realtime_ts_unparsable_fallback() -> None:
     ts = _parse_sir_realtime_ts(data)
     after = datetime.now(tz=UTC)
     assert before <= ts <= after
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ARPAT — fetch_arpat_nrt + fetch_arpat_bollettini
+# ═════════════════════════════════════════════════════════════════════════════
+
+from guazza.fetchers import fetch_arpat_bollettini, fetch_arpat_nrt  # noqa: E402
+
+_ARPAT_STATIONS_SINGLE = [{"id": "FI-SIGNA", "weight": 1.0}]
+_ARPAT_STATIONS_MULTI = [
+    {"id": "PO-ROMA", "weight": 0.7},
+    {"id": "PO-FERRUCCI", "weight": 0.3},
+]
+
+
+def _patch_arpat_json(payload: Any) -> Any:
+    """Mocker per _fetch_arpat_json — bypassa retry tenacity e httpx."""
+    return patch("guazza.fetchers._fetch_arpat_json", return_value=payload)
+
+
+def _patch_arpat_json_error(exc: Exception) -> Any:
+    """Mocker per _fetch_arpat_json che solleva eccezione."""
+    return patch("guazza.fetchers._fetch_arpat_json", side_effect=exc)
+
+
+# ── NRT ──────────────────────────────────────────────────────────────────────
+
+def test_arpat_nrt_single_station_list_format() -> None:
+    """Formato lista: una stazione → un record con NO2 e O3."""
+    payload = [
+        {
+            "codice_stazione": "FI-SIGNA",
+            "misurazioni": {"NO2": "25.3", "O3": "48.7", "CO": "0.4"},
+        }
+    ]
+    with _patch_arpat_json(payload):
+        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
+
+    assert len(records) == 1
+    r = records[0]
+    assert r["source"] == "arpat"
+    assert r["station_id"] == "FI-SIGNA"
+    assert r["location_id"] == "casa_campi"
+    assert r["granularity"] == "hourly"
+    assert r["no2_ugm3"] == pytest.approx(25.3)
+    assert r["o3_ugm3"] == pytest.approx(48.7)
+    assert r["weight"] == pytest.approx(1.0)
+
+
+def test_arpat_nrt_dict_format_stazioni_key() -> None:
+    """Formato dict con chiave 'stazioni'."""
+    payload = {
+        "stazioni": [
+            {
+                "codice_stazione": "FI-SIGNA",
+                "misurazioni": {"NO2": "10.0", "O3": "60.0"},
+            }
+        ]
+    }
+    with _patch_arpat_json(payload):
+        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
+
+    assert len(records) == 1
+    assert records[0]["no2_ugm3"] == pytest.approx(10.0)
+
+
+def test_arpat_nrt_multi_station_weights() -> None:
+    """Due stazioni con pesi diversi → due record."""
+    payload = [
+        {"codice_stazione": "PO-ROMA",     "misurazioni": {"NO2": "30.0"}},
+        {"codice_stazione": "PO-FERRUCCI", "misurazioni": {"NO2": "45.0"}},
+    ]
+    with _patch_arpat_json(payload):
+        records = fetch_arpat_nrt("lavoro_madda", _ARPAT_STATIONS_MULTI)
+
+    assert len(records) == 2
+    by_id = {r["station_id"]: r for r in records}
+    assert by_id["PO-ROMA"]["weight"] == pytest.approx(0.7)
+    assert by_id["PO-FERRUCCI"]["weight"] == pytest.approx(0.3)
+
+
+def test_arpat_nrt_station_not_in_response() -> None:
+    """Stazione nella config ma assente dalla risposta → record saltato."""
+    payload = [
+        {"codice_stazione": "ALTRA-STAZIONE", "misurazioni": {"NO2": "10.0"}},
+    ]
+    with _patch_arpat_json(payload):
+        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
+
+    assert records == []
+
+
+def test_arpat_nrt_null_values() -> None:
+    """Valori null/assenti → colonne None, non eccezione."""
+    payload = [
+        {"codice_stazione": "FI-SIGNA", "misurazioni": {"NO2": None, "O3": ""}},
+    ]
+    with _patch_arpat_json(payload):
+        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
+
+    assert len(records) == 1
+    assert records[0]["no2_ugm3"] is None
+    assert records[0]["o3_ugm3"] is None
+
+
+def test_arpat_nrt_http_error_returns_empty() -> None:
+    """Errore generico in _fetch_arpat_json → lista vuota, nessuna eccezione propagata."""
+    with _patch_arpat_json_error(Exception("timeout")):
+        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
+
+    assert records == []
+
+
+def test_arpat_nrt_ts_from_response() -> None:
+    """Timestamp dalla risposta deve essere parsato correttamente."""
+    payload = [
+        {
+            "codice_stazione": "FI-SIGNA",
+            "data": "2026-05-15T10:00:00",
+            "misurazioni": {"NO2": "20.0"},
+        }
+    ]
+    with _patch_arpat_json(payload):
+        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
+
+    assert len(records) == 1
+    assert records[0]["ts"] == datetime(2026, 5, 15, 10, 0, 0, tzinfo=UTC)
+
+
+# ── Bollettini ────────────────────────────────────────────────────────────────
+
+def test_arpat_bollettini_single_station() -> None:
+    """Bollettino giornaliero → record con PM10 e PM2.5, granularity='daily'."""
+    payload = [
+        {
+            "codice_stazione": "FI-SIGNA",
+            "misurazioni": {"PM10": "35.0", "PM2.5": "18.0", "NO2": "22.0"},
+        }
+    ]
+    with _patch_arpat_json(payload):
+        records = fetch_arpat_bollettini("casa_campi", _ARPAT_STATIONS_SINGLE, date="2026-05-14")
+
+    assert len(records) == 1
+    r = records[0]
+    assert r["source"] == "arpat"
+    assert r["granularity"] == "daily"
+    assert r["pm10_ugm3"] == pytest.approx(35.0)
+    assert r["pm25_ugm3"] == pytest.approx(18.0)
+    assert r["no2_ugm3"] == pytest.approx(22.0)
+    assert r["ts"] == datetime(2026, 5, 14, tzinfo=UTC)
+
+
+def test_arpat_bollettini_invalid_date_raises() -> None:
+    """Data non valida → ValueError prima del fetch."""
+    with pytest.raises(ValueError, match="YYYY-MM-DD"):
+        fetch_arpat_bollettini("casa_campi", _ARPAT_STATIONS_SINGLE, date="14-05-2026")
+
+
+def test_arpat_bollettini_http_error_returns_empty() -> None:
+    """Errore generico in _fetch_arpat_json → lista vuota."""
+    with _patch_arpat_json_error(Exception("conn refused")):
+        records = fetch_arpat_bollettini("casa_campi", _ARPAT_STATIONS_SINGLE, date="2026-05-14")
+
+    assert records == []
+
+
+def test_arpat_bollettini_missing_pm_values_none() -> None:
+    """Valori PM assenti nella risposta → None, non eccezione."""
+    payload = [
+        {"codice_stazione": "FI-SIGNA", "misurazioni": {}},
+    ]
+    with _patch_arpat_json(payload):
+        records = fetch_arpat_bollettini("casa_campi", _ARPAT_STATIONS_SINGLE, date="2026-05-14")
+
+    assert len(records) == 1
+    assert records[0]["pm10_ugm3"] is None
+    assert records[0]["pm25_ugm3"] is None
