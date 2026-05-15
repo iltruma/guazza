@@ -3,9 +3,11 @@
 # Fonte: https://api.arpat.toscana.it/app/air/config
 # Aggiornato: 2026-05-15
 #
-# Usato dal DLE (Sprint 5) per classificare i valori ARPAT con le soglie ufficiali.
-# Non interrogare l'API a runtime — questa config è statica, aggiornare manualmente
-# se ARPAT modifica le scale (raro).
+# L'API ARPAT restituisce il campo `livello` per singolo inquinante.
+# Lo schema `observations` è wide (una riga per stazione, colonne per inquinante)
+# quindi non c'è una colonna `livello` — il DLE lo ricalcola da questo file
+# usando il valore numerico (pm10_ugm3, no2_ugm3 ecc.) al momento della valutazione.
+# Calcolo: trovare il livello in cui min <= valore < max (o valore >= min se no max).
 #
 # levelValue semantica:
 #   1 = Minima   2 = Bassa   3 = Media   4 = Media-alta   5 = Alta
