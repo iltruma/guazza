@@ -109,29 +109,19 @@ il refresh automatico.
 
 ---
 
-## KI-007 — SIR `pluvio0_24`: finestra 08:00–08:00 CEST, non mezzanotte UTC
+## KI-007 — ECMWF falso allarme precipitazioni su Toscana (osservazione preliminare)
 
-**Severità**: media (impatta allineamento con Open-Meteo e feature engineering)
-**Stato**: confermato empiricamente
+**Severità**: informativa
+**Stato**: da verificare su serie storica più lunga
 
-**Problema**: il CSV storico SIR (`pluvio0_24`) aggrega la precipitazione sulla
-finestra **08:00–08:00 ora locale** (CEST = UTC+2 in estate). La riga con data
-`YYYY-MM-DD` contiene la pioggia caduta tra le 06:00 UTC del giorno corrente
-e le 06:00 UTC del giorno successivo.
+**Osservazione** (2026-05-14, singolo giorno — non conclusiva):
+- TOS01001215 Scandicci: 0.0mm osservati, ECMWF 0.7mm, ICON-EU 0.5mm
+- TOS11000516 Casa Rota: 0.0mm osservati, ECMWF 2.0mm, ICON-EU 0.4mm
 
-**Esempio osservato** (2026-05-14, TOS01001215 Scandicci):
-- CSV storico `pluvio0_24`: `0,0 mm` (flag `P` = prevalidato)
-- Portale SIR realtime: 2.2 mm cumulativi giornalieri
-- Spiegazione: i 2.2 mm sono caduti dopo le 06:00 UTC del 14/05, quindi
-  ricadono nella riga del **15/05** nel CSV storico.
+La finestra `pluvio0_24` nel CSV SIR è **mezzanotte–mezzanotte** (confermato
+confrontando CSV con dati Excel SIR). I valori CSV sono il riferimento corretto
+per il training.
 
-**Conseguenza per il feature engineering**:
-- Il join `observations.precip_mm` (SIR, finestra 08-08) ↔ `forecasts.precip_mm`
-  (Open-Meteo, finestra 00-00 UTC) introduce un offset sistematico di ~6h.
-- Per il training LightGBM: usare `precip_mm` SIR come target giornaliero
-  richiede di allineare la finestra (es. aggregare le 24h di forecast dalla
-  06:00 UTC, non dalla 00:00 UTC).
-
-**Workaround**: in fase di feature engineering, shiftare la finestra di
-aggregazione delle precipitazioni forecast di +6h per allinearla alla
-finestra SIR. Documentare esplicitamente nell'artefatto di training.
+**Nota**: l'ipotesi iniziale di una finestra 08:00–08:00 CEST era errata —
+basata su un confronto con cumulativo realtime SIR che usava una finestra
+temporale diversa (09:00 del 13/05 → 09:00 del 14/05).
