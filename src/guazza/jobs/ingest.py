@@ -22,6 +22,7 @@ Variabili d'ambiente:
 from __future__ import annotations
 
 import os
+import sys
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -199,6 +200,22 @@ _DB_OPT = typer.Option(_DEFAULT_DB, "--db", help="Path file DuckDB")
 _CFG_OPT = typer.Option(str(_DEFAULT_CFG), "--config-dir", help="Directory YAML config")
 
 
+def _setup_logging(level: str = "INFO") -> None:
+    """Configura loguru per stdout con output JSON strutturato.
+
+    Rimuove il sink di default (testo su stderr) e aggiunge un sink
+    su stdout con serialize=True — ogni evento è una riga JSON valida.
+
+    In produzione sarà sufficiente aggiungere un secondo sink su file:
+        logger.add("/var/lib/guazza/logs/guazza.jsonl", serialize=True, rotation="1 day")
+
+    Chiamare solo nei comandi CLI, non a livello di modulo, per non
+    inquinare l'output dei test pytest.
+    """
+    logger.remove()  # rimuove il sink di default (stderr, formato testo)
+    logger.add(sys.stdout, serialize=True, level=level)
+
+
 @app.command("historical")
 def cmd_historical(
     db_path: Path = _DB_OPT,
@@ -212,6 +229,7 @@ def cmd_historical(
     Da eseguire una volta sola per caricare lo storico di training.
     Non schedulare come cron — usa 'daily' per il delta incrementale.
     """
+    _setup_logging()
     if not end_date:
         end_date = datetime.now(tz=UTC).strftime("%Y-%m-%d")
 
@@ -283,6 +301,7 @@ def cmd_daily(
     Schedulare a ~06:00 UTC (SIR pubblica i dati validati del giorno precedente
     tipicamente entro le 03:00-05:00 UTC).
     """
+    _setup_logging()
     if not date:
         date = (datetime.now(tz=UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -348,6 +367,7 @@ def cmd_realtime(
     Schedulare ogni 15-30 minuti.
     SIR ha granularità ~15 min; Netatmo aggiorna ogni 10 min circa.
     """
+    _setup_logging()
     cfg = Path(config_dir)
     locations, _ = _load_config(cfg)
 
@@ -412,6 +432,7 @@ def cmd_forecasts(
     Schedulare ogni 6 ore (allineato ai run ECMWF: 00/06/12/18 UTC + lag ~2h).
     Suggerito: 02:00, 08:00, 14:00, 20:00 UTC.
     """
+    _setup_logging()
     cfg = Path(config_dir)
     locations, _ = _load_config(cfg)
 
