@@ -1,0 +1,246 @@
+"""Decision Logic Engine — valutazione indicatori operativi semaforo.
+
+Input:  SignalBag (dict str→float) pre-computato dal pipeline di ingestion/forecast.
+Output: lista IndicatorResult (verde/giallo/rosso) + log in DuckDB indicator_log.
+
+Notazione segnali nel YAML:
+  P(precip > 0.2mm)   → chiave letterale nel SignalBag (pre-computata dal caller)
+  Tmin_p10            → variabile diretta nel SignalBag
+  level_sir           → variabile diretta nel SignalBag
+  threshold_1         → variabile diretta nel SignalBag
+
+Valutazione condizioni:
+  1. Tenta rosso  → se vero: verdict = rosso
+  2. Tenta giallo → se vero: verdict = giallo
+  3. Altrimenti:           verdict = verde
+  Fallback a giallo se nessuna condizione è soddisfatta (log warning).
+
+CLI:
+    uv run python -m guazza.indicators.engine evaluate --location casa_campi --signals '{...}'
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import yaml
+from loguru import logger
+
+if TYPE_CHECKING:
+    from guazza.storage.duckdb_client import DuckDBClient
+
+# ── Tipi ──────────────────────────────────────────────────────────────────────
+
+SignalBag = dict[str, float | None]
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_INDICATORS_YAML = Path(
+    __import__("os").environ.get("CONFIG_DIR", str(_REPO_ROOT / "config"))
+) / "indicators.yaml"
+
+
+# ── Risultato ─────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class IndicatorResult:
+    indicator_id: str
+    location_id: str
+    verdict: str              # 'verde' | 'giallo' | 'rosso'
+    rule_matched: str         # 'green' | 'yellow' | 'red' | 'fallback'
+    alpha: float              # cost_fp / (cost_fp + cost_fn)
+    cost_fn: float
+    cost_fp: float
+    probability: float | None = None   # confidenza (None finché no ML)
+    ts: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+
+# ── Caricamento config ────────────────────────────────────────────────────────
+
+
+def load_indicators(path: Path | None = None) -> dict[str, Any]:
+    """Carica la sezione 'indicators' dal YAML."""
+    p = path or _DEFAULT_INDICATORS_YAML
+    with p.open() as f:
+        return yaml.safe_load(f)["indicators"]
+
+
+# ── Logica di valutazione ─────────────────────────────────────────────────────
+
+
+def _compute_alpha(costs: dict[str, Any]) -> float:
+    """alpha = cost_fp / (cost_fp + cost_fn) — soglia quantile LightGBM."""
+    fn = float(costs["fn"])
+    fp = float(costs["fp"])
+    return fp / (fp + fn)
+
+
+def _eval_condition(logic_str: str, signals: SignalBag) -> bool:
+    """Valuta una condizione logica YAML contro un SignalBag.
+
+    Trasformazioni applicate prima di eval():
+      - P(expr)   → _sig.get('P(expr)', 0.0)  (probabilità pre-calcolata)
+      - AND / OR  → and / or
+      - variabili senza P() (Tmin_p10, level_sir, …) → variabili dirette
+
+    eval() gira con __builtins__={} per limitare la superficie di attacco.
+    Il SignalBag contiene solo float: nessun rischio di iniezione in produzione.
+    """
+    if not logic_str:
+        return False
+
+    expr = logic_str.replace(" AND ", " and ").replace(" OR ", " or ")
+
+    # P(…) → lookup nel dict _sig
+    expr = re.sub(
+        r"P\([^)]+\)",
+        lambda m: f"_sig.get({m.group()!r}, 0.0)",
+        expr,
+    )
+
+    try:
+        # None → 0.0 per evitare errori di confronto
+        clean = {k: (v if v is not None else 0.0) for k, v in signals.items()}
+        return bool(eval(expr, {"__builtins__": {}}, {**clean, "_sig": clean}))  # noqa: S307
+    except Exception as exc:
+        logger.warning(f"Errore eval condizione '{logic_str}': {exc}")
+        return False
+
+
+def evaluate_indicator(
+    indicator_id: str,
+    cfg: dict[str, Any],
+    signals: SignalBag,
+    location_id: str,
+) -> IndicatorResult | None:
+    """Valuta un singolo indicatore. Restituisce None se non si applica alla location."""
+    location_specific: list[str] | None = cfg.get("location_specific")
+    if location_specific and location_id not in location_specific:
+        return None
+
+    costs = cfg.get("costs", {"fn": 1, "fp": 1})
+    alpha = _compute_alpha(costs)
+    logic: dict[str, str] = cfg.get("logic", {})
+
+    # Valutazione in ordine decrescente di gravità
+    for rule in ("red", "yellow", "green"):
+        condition = logic.get(rule, "")
+        if condition and _eval_condition(condition, signals):
+            verdict_it = {"green": "verde", "yellow": "giallo", "red": "rosso"}[rule]
+            return IndicatorResult(
+                indicator_id=indicator_id,
+                location_id=location_id,
+                verdict=verdict_it,
+                rule_matched=rule,
+                alpha=alpha,
+                cost_fn=float(costs["fn"]),
+                cost_fp=float(costs["fp"]),
+            )
+
+    # Nessuna condizione soddisfatta — fallback conservativo
+    logger.warning(
+        f"[{location_id}] {indicator_id}: nessuna condizione soddisfatta → fallback giallo"
+    )
+    return IndicatorResult(
+        indicator_id=indicator_id,
+        location_id=location_id,
+        verdict="giallo",
+        rule_matched="fallback",
+        alpha=alpha,
+        cost_fn=float(costs["fn"]),
+        cost_fp=float(costs["fp"]),
+    )
+
+
+def evaluate_all(
+    indicators: dict[str, Any],
+    signals: SignalBag,
+    location_id: str,
+) -> list[IndicatorResult]:
+    """Valuta tutti gli indicatori applicabili per una location."""
+    results: list[IndicatorResult] = []
+    for ind_id, cfg in indicators.items():
+        result = evaluate_indicator(ind_id, cfg, signals, location_id)
+        if result is not None:
+            results.append(result)
+    return results
+
+
+# ── Persistenza ───────────────────────────────────────────────────────────────
+
+
+def log_results(
+    db: DuckDBClient,
+    results: list[IndicatorResult],
+    input_summary: dict[str, Any] | None = None,
+) -> None:
+    """Salva i risultati DLE in indicator_log. Idempotente per stessa (ts, location, indicator)."""
+    if not results:
+        return
+
+    summary_json = json.dumps(input_summary or {})
+
+    db.executemany(
+        """
+        INSERT INTO indicator_log
+            (ts, location_id, indicator_id, input_summary, rule_matched,
+             verdict, probability, alpha, cost_fn, cost_fp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (ts, location_id, indicator_id) DO UPDATE SET
+            rule_matched = excluded.rule_matched,
+            verdict      = excluded.verdict,
+            probability  = excluded.probability,
+            alpha        = excluded.alpha,
+            cost_fn      = excluded.cost_fn,
+            cost_fp      = excluded.cost_fp
+        """,
+        [
+            [
+                r.ts, r.location_id, r.indicator_id, summary_json,
+                r.rule_matched, r.verdict, r.probability,
+                r.alpha, r.cost_fn, r.cost_fp,
+            ]
+            for r in results
+        ],
+    )
+    logger.info(
+        f"indicator_log: {len(results)} record salvati "
+        f"[{results[0].location_id} @ {results[0].ts:%Y-%m-%dT%H:%M}]"
+    )
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+import typer  # noqa: E402
+
+app = typer.Typer(help="Decision Logic Engine — valutazione manuale indicatori.")
+
+
+@app.command("evaluate")
+def cmd_evaluate(
+    location: str = typer.Option(..., help="ID location (es. casa_campi)"),
+    signals_json: str = typer.Option("{}", "--signals", help="JSON con SignalBag"),
+    config_dir: str = typer.Option(str(_DEFAULT_INDICATORS_YAML.parent), "--config-dir"),
+) -> None:
+    """Valuta tutti gli indicatori per una location con i segnali forniti."""
+    signals: SignalBag = json.loads(signals_json)
+    indicators = load_indicators(Path(config_dir) / "indicators.yaml")
+    results = evaluate_all(indicators, signals, location)
+
+    verdict_icon = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴"}
+    typer.echo(f"\n{location} — {len(results)} indicatori:")
+    for r in results:
+        icon = verdict_icon.get(r.verdict, "⚪")
+        typer.echo(
+            f"  {icon} {r.indicator_id:<12} {r.verdict:<6}  "
+            f"alpha={r.alpha:.2f}  rule={r.rule_matched}"
+        )
+
+
+if __name__ == "__main__":
+    app()

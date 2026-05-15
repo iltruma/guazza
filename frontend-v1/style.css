@@ -1,0 +1,77 @@
+/* Guazza — stile base (placeholder Sprint 1) */
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f4f6f8;
+    color: #1a1a2e;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    background: #0f3460;
+    color: #fff;
+    padding: 2rem 1.5rem 1.5rem;
+    text-align: center;
+}
+
+header h1 {
+    font-size: 2rem;
+    letter-spacing: 0.05em;
+}
+
+header .subtitle {
+    margin-top: 0.4rem;
+    opacity: 0.8;
+    font-size: 0.95rem;
+}
+
+header .version {
+    margin-top: 0.25rem;
+    opacity: 0.5;
+    font-size: 0.8rem;
+}
+
+main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+}
+
+.placeholder {
+    background: #fff;
+    border-radius: 12px;
+    padding: 2rem 2.5rem;
+    max-width: 560px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    line-height: 1.7;
+}
+
+.placeholder p + p {
+    margin-top: 0.75rem;
+}
+
+.placeholder ul {
+    margin: 0.75rem 0 0.75rem 1.5rem;
+}
+
+footer {
+    text-align: center;
+    padding: 1rem;
+    font-size: 0.8rem;
+    color: #888;
+    border-top: 1px solid #e0e0e0;
+}
+
+footer a {
+    color: #0f3460;
+}

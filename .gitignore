@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# uv
+.python-version
+
+# Ambiente
+.env
+
+# DuckDB
+*.duckdb
+*.duckdb.lock
+*.duckdb.wal
+
+# Parquet raw
+nwp_raw/
+
+# Modelli serializzati
+models/
+
+# Log
+*.log
+logs/
+
+# Output JSON (generati a runtime)
+data/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/

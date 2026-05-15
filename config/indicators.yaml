@@ -1,0 +1,178 @@
+# Guazza — Decision Logic Engine — configurazione indicatori
+#
+# Soglie: BEST-GUESS iniziali, DA CALIBRARE nei primi 30-60 giorni di operatività.
+# Vedi docs/status.md "Aperto 3" e "Aperto 4".
+# Modifica soglie senza toccare codice: il DLE carica questo file a runtime.
+#
+# costs.fn:  costo falso negativo — dici "ok" quando è rischioso (segnale mancato)
+# costs.fp:  costo falso positivo — dici "attenzione" quando è ok (falso allarme)
+# alpha:     calcolato dal DLE come fp / (fp + fn) → soglia quantile LightGBM
+#
+# Logic syntax:
+#   P(precip > X mm)        = probabilità precipitazione > X mm nel periodo
+#   P(wind > X kmh)         = probabilità vento > X km/h
+#   P(RH > X%)              = probabilità umidità relativa > X%
+#   P(Tmin < X°C)           = probabilità temperatura minima < X°C
+#   level_sir               = livello idrometrico attuale da SIR idrometria (solo casa_campi)
+#   pm10_predicted          = PM10 previsto da ARPAT + correzione ML
+
+indicators:
+
+  panni:
+    label: "Posso stendere i panni?"
+    icon: "basket"
+    horizon_h: 8          # ore da ora corrente
+    costs:
+      fn: 5   # bucato bagnato — danni materiali + lavaggio da rifare
+      fp: 1   # giornata persa senza stendere — inconveniente minore
+      # alpha = 1/6 ≈ 0.17 → soglia bassa = molto conservativo
+    logic:
+      green: "P(precip > 0.2mm) < 0.15 AND P(RH > 80%) < 0.20"
+      yellow: "P(precip > 0.2mm) >= 0.15 AND P(precip > 0.2mm) <= 0.40"
+      red: "P(precip > 0.2mm) > 0.40"
+    notes: "Soglie conservative per non rovinare bucato. Calibrare dopo 30gg."
+
+  motorino:
+    label: "Vado al lavoro in motorino?"
+    icon: "scooter"
+    horizon_h: 6
+    costs:
+      fn: 3   # viaggio in pioggia/ghiaccio — disagio e rischio moderato
+      fp: 1   # prendo altro mezzo inutilmente — perdita di tempo
+      # alpha = 1/4 = 0.25
+    logic:
+      green: "P(precip > 0.2mm) < 0.20 AND P(wind > 40kmh) < 0.10 AND Tmin_p10 > 4.0"
+      yellow: "P(precip > 0.2mm) >= 0.20 AND P(precip > 0.2mm) <= 0.45"
+      red: "P(precip > 0.2mm) > 0.45 OR Tmin_p10 < 2.0"
+    notes: >
+      Tmin_p10 = percentile 10 della temperatura minima (worst case).
+      Soglia freddo: < 2°C → pericolo ghiaccio. Da discutere con utente.
+
+  gelata:
+    label: "Rischio gelata stanotte"
+    icon: "snowflake"
+    horizon_h: [12, 36]   # finestra: dalle 12h alle 36h future
+    costs:
+      fn: 8   # piante/tubature danneggiate — costo economico reale
+      fp: 1   # copri le piante inutilmente — 10 minuti persi
+      # alpha = 1/9 ≈ 0.11 → molto conservativo
+    logic:
+      green: "P(Tmin < 2.0°C) < 0.10"
+      yellow: "P(Tmin < 2.0°C) >= 0.10 AND P(Tmin < 2.0°C) < 0.30"
+      red: "P(Tmin < 0.0°C) > 0.30 AND P(wind < 5kmh) > 0.50"
+    notes: >
+      La gelata radiativa richiede sia temperatura < 0°C che vento calmo
+      (sky view factor alto + notte serena). Per casa_cesto soglie da abbassare
+      di ~3°C rispetto a pianura (drenaggio aria fredda).
+      DA RIVEDERE con utente per location-specific thresholds.
+
+  temporale:
+    label: "Rischio temporale oggi"
+    icon: "lightning"
+    horizon_h: 6
+    costs:
+      fn: 6   # sorpreso fuori da temporale — disagio importante / pericolo fulmini
+      fp: 1   # evito uscita inutilmente — inconveniente minore
+      # alpha = 1/7 ≈ 0.14 → conservativo
+    logic:
+      green: "P(precip > 5mm/h) < 0.15"
+      yellow: "P(precip > 5mm/h) >= 0.15 AND P(precip > 5mm/h) <= 0.40"
+      red: "P(precip > 5mm/h) > 0.40"
+    notes: "5mm/h come soglia convettiva. QPF è best-effort, CI larghi attesi."
+
+  nebbia:
+    label: "Nebbia prevista"
+    icon: "fog"
+    horizon_h: 12
+    costs:
+      fn: 4   # guido in nebbia densa senza preavviso — pericoloso
+      fp: 1   # parto più tardi/strada alternativa inutilmente
+      # alpha = 1/5 = 0.20
+    logic:
+      green: "P(RH > 95% AND wind < 3kmh) < 0.20"
+      yellow: "P(RH > 95% AND wind < 3kmh) >= 0.20 AND P(RH > 95% AND wind < 3kmh) < 0.50"
+      red: "P(RH > 95% AND wind < 3kmh) > 0.50"
+    notes: >
+      Rilevante soprattutto per casa_campi e lavoro_madda (conche fluviali).
+      Nebbia mattutina autunno/inverno è il fenomeno microclimatico principale.
+      Attiva solo in stagione fredda (ottobre-marzo) — da implementare nel DLE.
+
+  bisenzio:
+    label: "Livello Bisenzio"
+    icon: "waves"
+    horizon_h: 0          # real-time da SIR idrometria
+    location_specific: ["casa_campi"]
+    costs:
+      fn: 10  # allerta mancata — rischio esondazione
+      fp: 1   # allerta inutile — disagio trascurabile
+      # alpha = 1/11 ≈ 0.09 → massimamente conservativo
+    logic:
+      green: "level_sir < threshold_1"
+      yellow: "level_sir >= threshold_1 AND level_sir < threshold_2"
+      red: "level_sir >= threshold_2"
+    notes: >
+      Soglie threshold_1/threshold_2/threshold_3 lette da SIR idrometria
+      (stazione TOS01004791 — S. Piero a Ponti, Bisenzio, 1.8km da casa_campi).
+      Questo indicatore è REAL-TIME, non previsionale. Mostra stato attuale idrometria.
+
+  aria:
+    label: "Qualita aria PM10"
+    icon: "wind"
+    horizon_h: 24
+    costs:
+      fn: 3   # esposizione a aria inquinata — impatto salute cronico
+      fp: 1   # evito uscita con aria ok — inconveniente minore
+      # alpha = 1/4 = 0.25
+    logic:
+      green: "pm10_predicted < 30"      # µg/m³
+      yellow: "pm10_predicted >= 30 AND pm10_predicted < 50"
+      red: "pm10_predicted >= 50"
+    notes: >
+      Soglie WHO 2021: valore giornaliero 15 µg/m³ (raccomandazione),
+      limite EU 50 µg/m³. Uso 50 come soglia "rosso" per pragmatismo.
+      pm10_predicted = interpolazione ARPAT + eventuale correzione ML futura.
+      DA DISCUTERE con utente se abbassare a 30 µg/m³ per giallo.
+
+  annaffia:
+    label: "Devo annaffiare le piante?"
+    icon: "droplet"
+    horizon_h: 24
+    costs:
+      fn: 3   # non annaffio e non piove → piante soffrono
+      fp: 1   # annaffio inutilmente perché piove → spreco acqua, nessun danno
+      # alpha = 1/4 = 0.25 → soglia: > 25% prob pioggia = "non annaffiare"
+    logic:
+      green: "P(precip > 3mm) > 0.50"    # pioggia quasi certa → non serve
+      yellow: "P(precip > 3mm) >= 0.25 AND P(precip > 3mm) <= 0.50"
+      red: "P(precip > 3mm) < 0.25"      # poca pioggia attesa → annaffia
+    notes: >
+      Logica invertita rispetto ad altri indicatori: rosso = azione richiesta (annaffia),
+      verde = nessuna azione (pioggia in arrivo). Soglia 3mm: quantità minima utile
+      per irrigazione naturale. Rilevante in estate (giugno-settembre).
+
+  clima:
+    label: "Com'è il tempo oggi?"
+    icon: "sun"
+    horizon_h: 12
+    costs:
+      fn: 2   # sottostimo il disagio → mi vesto male / esco impreparato
+      fp: 2   # sovrastimo il disagio → mi vesto pesante / resto in casa inutilmente
+      # alpha = 2/4 = 0.50 → soglia simmetrica, nessuna preferenza
+    logic:
+      green: "P(precip > 0.2mm) < 0.15 AND T2m_p50 > 12 AND T2m_p50 < 30 AND P(wind > 40kmh) < 0.10"
+      yellow: "P(precip > 0.2mm) >= 0.15 AND P(precip > 0.2mm) <= 0.50 OR T2m_p50 <= 12 OR T2m_p50 >= 30"
+      red: "P(precip > 0.2mm) > 0.50 OR T2m_p50 < 5 OR T2m_p50 > 35"
+    notes: >
+      Indicatore di comfort generale: sintetizza temperatura, precipitazione e vento.
+      T2m_p50 = mediana temperatura 2m. Soglie comfort: [12-30°C] = verde.
+      Costi simmetrici: nessun bias verso conservativo/ottimista.
+      DA CALIBRARE sulle preferenze personali (soglie freddo/caldo).
+
+# ── Configurazione globale DLE ───────────────────────────────────────────────
+dle_config:
+  # Produce un log entry in indicator_log per ogni invocazione
+  structured_logging: true
+  # Output JSON include coverage_empirical_30d per ogni indicatore
+  include_coverage: true
+  # Lingua output explanation (per frontend)
+  explanation_lang: "it"

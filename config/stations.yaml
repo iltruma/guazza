@@ -1,0 +1,352 @@
+# Guazza — anagrafica stazioni di monitoraggio
+#
+# Fonte: API SIR ajax_stations.php — 2026-05-13; IDST CSV verificati — 2026-05-14
+# Campi sir_stations:
+#   quota_m:  quota stazione slm (null se non restituita dall'API)
+#   sensors:  sensori confermati da ajax_stations.php (nomi fisici)
+#   hysto:    storico disponibile
+#   type:     meteo | idro | meteo+idro
+#
+# Per determinare quali IDST scaricare per una stazione, intersecare
+# sensors con sir_idst_map. barometro, radiometro_*, evaporimetro sono
+# solo realtime — nessuno storico CSV disponibile per quei sensori.
+
+# Mappatura sensore fisico → IDST endpoint CSV storico download.php
+# Endpoint: GET https://www.sir.toscana.it/archivio/download.php?IDST=<idst>&IDS=<station_id>
+# Nota: barometro, radiometro_*, evaporimetro sono SOLO realtime — nessuno storico CSV disponibile.
+sir_idst_map:
+  termometro:  termo_csv
+  pluviometro: pluvio0_24
+  igrometro:   igro0_24
+  anemometro:  anemo0_24
+  idrometro:   idro_l
+
+sir_stations:
+
+  # ── Primarie (ground truth principale per ogni location) ──────────────────
+
+  TOS01001225:
+    nome: "Case Passerini"
+    comune: "Sesto Fiorentino (FI)"
+    lat: 43.81975
+    lon: 11.16823
+    quota_m: 33
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, anemometro, pluviometro, barometro, radiometro_diretta, radiometro_UV]
+    used_by: [casa_campi]
+    notes: "Stazione primaria casa_campi. ΔQ=-9m."
+
+  TOS01001215:
+    nome: "S. Giusto"
+    comune: "Scandicci (FI)"
+    lat: 43.75995
+    lon: 11.19376
+    quota_m: 42
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, anemometro, pluviometro, barometro, radiometro_diretta, radiometro_UV]
+    used_by: [lavoro_cosimo]
+    notes: "Stazione primaria lavoro_cosimo. ΔQ=0m. Eccellente."
+
+  TOS01001205:
+    nome: "Prato Università"
+    comune: "Prato (PO)"
+    lat: 43.88556
+    lon: 11.09921
+    quota_m: 65
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, anemometro, pluviometro]
+    used_by: [lavoro_madda, casa_campi]
+    notes: "Stazione primaria lavoro_madda. ΔQ=-3m. Eccellente."
+
+  TOS11000516:
+    nome: "Casa Rota"
+    comune: "Terranuova Bracciolini (AR)"
+    lat: 43.58551
+    lon: 11.54329
+    quota_m: 200
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, anemometro, pluviometro, barometro, evaporimetro, radiometro_solare]
+    used_by: [casa_cesto]
+    notes: "Stazione primaria casa_cesto. ΔQ=+40m. Accettabile."
+
+  # ── Secondarie meteo (in uso come backup o per triangolazione) ────────────
+
+  TOS11000076:
+    nome: "Artimino"
+    comune: "Carmignano (PO)"
+    lat: 43.76771
+    lon: 11.04835
+    quota_m: 107
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, anemometro, pluviometro, radiometro_solare]
+    used_by: [casa_campi, lavoro_cosimo]
+
+  TOS03001099:
+    nome: "Firenze Giardino di Boboli"
+    comune: "Firenze (FI)"
+    lat: 43.76194
+    lon: 11.25139
+    quota_m: 112
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, anemometro, pluviometro, radiometro_solare]
+    used_by: [lavoro_cosimo]
+
+  TOS03001097:
+    nome: "Firenze Orto Botanico"
+    comune: "Firenze (FI)"
+    lat: 43.77950
+    lon: 11.26081
+    quota_m: 48
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, pluviometro, radiometro_solare]
+    used_by: [lavoro_cosimo]
+    notes: "NO anemometro — esclusa da lista anemo."
+
+  TOS01001096:
+    nome: "Firenze Università"
+    comune: "Firenze (FI)"
+    lat: 43.79879
+    lon: 11.25114
+    quota_m: 84
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, anemometro, pluviometro, radiometro_diretta]
+    used_by: [lavoro_cosimo]
+
+  TOS01001269:
+    nome: "La Ferruccia"
+    comune: "Agliana (PT)"
+    lat: 43.88455
+    lon: 11.00385
+    quota_m: 40
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, anemometro, pluviometro, barometro, radiometro_diretta]
+    used_by: [lavoro_madda]
+
+  TOS11000503:
+    nome: "Vaiano acquedotto"
+    comune: "Vaiano (PO)"
+    lat: 43.96483
+    lon: 11.14720
+    quota_m: 322
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, anemometro, pluviometro, radiometro_solare]
+    used_by: []
+    notes: "ESCLUSA: quota 322m, ΔQ>250m rispetto a tutte le location in pianura."
+
+  TOS01004571:
+    nome: "Montevarchi"
+    comune: "Montevarchi (AR)"
+    lat: 43.54121
+    lon: 11.56621
+    quota_m: 134
+    hysto: true
+    type: meteo+idro
+    sensors: [termometro, igrometro, anemometro, pluviometro, idrometro]
+    used_by: [casa_cesto]
+    notes: "Secondaria casa_cesto. ΔQ=-26m. Ha anche idrometro (Arno)."
+
+  TOS03001135:
+    nome: "Poggio alla Croce"
+    comune: "Figline e Incisa Valdarno (FI)"
+    lat: 43.65009
+    lon: 11.39247
+    quota_m: 500
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, anemometro, pluviometro]
+    used_by: [casa_cesto]
+    notes: "SOLO PLUVIO per casa_cesto: quota 500m, ΔQ=+340m inaccettabile per temp."
+
+  TOS11000023:
+    nome: "Lamole"
+    comune: "Greve in Chianti (FI)"
+    lat: 43.54209
+    lon: 11.35548
+    quota_m: 536
+    hysto: true
+    type: meteo
+    sensors: [termometro, igrometro, anemometro, pluviometro, radiometro_solare]
+    used_by: [casa_cesto]
+    notes: "Solo pluvio per casa_cesto (quota 536m, ΔQ+376m esclude termo/anemo/igro)."
+
+  # ── Pluvio-only ───────────────────────────────────────────────────────────
+
+  TOS03001145:
+    nome: "Vingone"
+    comune: "Scandicci (FI)"
+    lat: 43.743
+    lon: 11.182
+    quota_m: 54
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: [lavoro_cosimo]
+    notes: "1.2km da lavoro_cosimo. Solo pioggia."
+
+  TOS01004784:
+    nome: "Calenzano"
+    comune: "Calenzano (FI)"
+    lat: 43.86
+    lon: 11.17
+    quota_m: 60
+    hysto: true
+    type: meteo+idro
+    sensors: [pluviometro, idrometro]
+    used_by: [casa_campi, lavoro_madda]
+
+  TOS01004811:
+    nome: "Ponte a Signa"
+    comune: "Signa (FI)"
+    lat: 43.78
+    lon: 11.10
+    quota_m: 32
+    hysto: true
+    type: meteo+idro
+    sensors: [pluviometro, idrometro]
+    used_by: [casa_campi, lavoro_cosimo]
+
+  TOS01004779:
+    nome: "Gamberame"
+    comune: "Prato (PO)"
+    lat: 43.89
+    lon: 11.04
+    quota_m: 107
+    hysto: true
+    type: meteo+idro
+    sensors: [pluviometro, idrometro]
+    used_by: [lavoro_madda]
+
+  TOS01000891:
+    nome: "Il Palagio"
+    comune: "Figline e Incisa Valdarno (FI)"
+    lat: 43.62
+    lon: 11.49
+    quota_m: 315
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: [casa_cesto]
+    notes: "3.6km da casa_cesto. Quota 315m: ΔQ+155m accettabile per precipitazioni."
+
+  # ── Idrometriche ─────────────────────────────────────────────────────────
+
+  TOS01004791:
+    nome: "S. Piero a Ponti"
+    comune: "Campi Bisenzio (FI)"
+    lat: 43.82
+    lon: 11.15
+    quota_m: 40
+    hysto: true
+    type: idro
+    fiume: "Bisenzio"
+    sensors: [idrometro]
+    used_by: [casa_campi]
+
+  TOS01004731:
+    nome: "Ponte di Scandicci"
+    comune: "Scandicci (FI)"
+    lat: 43.75
+    lon: 11.19
+    quota_m: null    # non restituita dall'API SIR
+    hysto: true
+    type: idro
+    fiume: "Greve"
+    sensors: [idrometro]
+    used_by: [lavoro_cosimo]
+
+  TOS01004782:
+    nome: "Prato"
+    comune: "Prato (PO)"
+    lat: 43.88
+    lon: 11.10
+    quota_m: null    # non restituita dall'API SIR
+    hysto: true
+    type: idro
+    fiume: "Bisenzio"
+    sensors: [idrometro]
+    used_by: [lavoro_madda]
+
+  TOS01004591:
+    nome: "Incisa Valle"
+    comune: "Figline e Incisa Valdarno (FI)"
+    lat: 43.56
+    lon: 11.46
+    quota_m: 108
+    hysto: true
+    type: idro
+    fiume: "Arno"
+    sensors: [idrometro, pluviometro]
+    used_by: [casa_cesto]
+    notes: "11.1km da casa_cesto — più vicina disponibile. Monitoraggio Arno indicativo."
+
+# cfr_stations: rimosso — CFR e SIR condividono la stessa rete fisica di stazioni.
+
+arpat_stations:
+
+  # Fonte API ARPAT — 2026-05-13:
+  #   real-time (oraria):  https://api.arpat.toscana.it/app/air/nrt/valori_last
+  #   bollettino (giorn.): https://api.arpat.toscana.it/app/air/bollettini/dati
+  # Coordinate non disponibili via API (metadata-catalog richiede auth 401).
+  # zona_omogenea: campo restituito dal bollettino.
+
+  FI-SIGNA:
+    nome: "Signa"
+    comune: "Signa (FI)"
+    zona_omogenea: "Agglomerato di Firenze"
+    sensors_nrt:   [NO2, O3]
+    sensors_daily: [NO2, O3, PM10]
+    used_by: [casa_campi]
+    notes: "Comune confinante con Campi Bisenzio, ~5km. Suburbana."
+
+  FI-SCANDICCI:
+    nome: "Scandicci"
+    comune: "Scandicci (FI)"
+    zona_omogenea: "Agglomerato di Firenze"
+    sensors_nrt:   [NO2]
+    sensors_daily: [NO2, PM10]
+    used_by: [lavoro_cosimo]
+    notes: "Stesso comune di lavoro_cosimo, ~2km."
+
+  PO-ROMA:
+    nome: "Prato Via Roma"
+    comune: "Prato (PO)"
+    sensors_nrt:   [BENZENE, NO2]
+    sensors_daily: [BENZENE, NO2, PM10, PM2.5]
+    used_by: [lavoro_madda]
+    notes: "Prato centro, ~1km da lavoro_madda. Primaria."
+
+  PO-FERRUCCI:
+    nome: "Prato Via Ferrucci"
+    comune: "Prato (PO)"
+    sensors_nrt:   [CO, NO2]
+    sensors_daily: [CO, NO2, PM10, PM2.5]
+    used_by: [lavoro_madda]
+    notes: "Prato nord. CO e PM2.5 complementari a PO-ROMA."
+
+  FI-FIGLINE:
+    nome: "Figline Valdarno"
+    comune: "Figline e Incisa Valdarno (FI)"
+    zona_omogenea: "Zona Valdarno Aretino e Valdichiana"
+    sensors_nrt:   [NO2]
+    sensors_daily: [NO2, PM10]
+    used_by: [casa_cesto]
+    notes: "Stesso comune di casa_cesto, ~2km. Primaria."
+
+  AR-ENELSB-SANGIOVANNI:
+    nome: "San Giovanni Valdarno (ENEL)"
+    comune: "San Giovanni Valdarno (AR)"
+    sensors_nrt:   [BENZENE, CO, NO2]
+    sensors_daily: [BENZENE, CO, NO2, PM10, PM2.5]
+    used_by: [casa_cesto]
+    notes: "Stazione industriale ENEL, ~8km. Unica fonte PM2.5 e BENZENE per area Valdarno."
+

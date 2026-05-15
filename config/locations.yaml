@@ -1,0 +1,150 @@
+# Guazza — configurazione location
+#
+# sir_station_id:   stazione primaria SIR (termo/anemo/igro) — ground truth validato
+# sir_stations:     set completo per tipo sensore, ordinato per preferenza
+# sir_idro_id:      stazione idrometrica più vicina per allerte fiumi
+# netatmo:          fetch dinamico via getpublicdata (bbox calcolata da lat/lon).
+#                   Stazioni selezionate al runtime, pesi calcolati sul posto,
+#                   log in netatmo_fetch_log. Nessuna lista MAC fissa.
+# NB: cfr_station_id rimosso — CFR e SIR condividono la stessa rete fisica.
+
+locations:
+
+  casa_campi:
+    label: "Casa - Campi Bisenzio"
+    address: "Campi Bisenzio (FI)"
+    lat: 43.82
+    lon: 11.13
+    elevation_m: 42
+    # SIR primaria: Case Passerini — 3.1km, 33m, ΔQ=-9m
+    sir_station_id: TOS01001225
+    sir_stations:
+      termo:  [TOS01001225, TOS01001205, TOS01001215, TOS11000076]
+      # Case Passerini 3.1km 33m | Prato Università 7.7km 65m | S. Giusto 8.4km 42m | Artimino 8.8km 107m
+      pluvio: [TOS01001225, TOS01004784, TOS01004811, TOS01001205]
+      # Case Passerini 3.1km | Calenzano 5.0km | Ponte a Signa 6.0km | Prato Università 7.7km
+      anemo:  [TOS01001225, TOS01001205, TOS01001215, TOS11000076]
+      igro:   [TOS01001225, TOS01001205, TOS01001215, TOS11000076]
+    sir_idro_id: TOS01004791    # S. Piero a Ponti (Bisenzio) — 1.8km
+    arpat_station_id: FI-SIGNA
+    arpat_stations:
+      - id: FI-SIGNA
+        weight: 1.0    # ~5km, suburbana | nrt: NO2, O3 | daily: NO2, O3, PM10
+    arpat_zone: "agglomerato_firenze"
+    extras:
+      - bisenzio_level    # → sir_idro_id TOS01004791 (S. Piero a Ponti, Bisenzio)
+      - aria_qualita
+    notes: >
+      Piana fluviale, nebbie invernali, isola di calore moderata.
+      SIR: Case Passerini (TOS01001225) 3.1km ΔQ=-9m.
+      Netatmo: stazione a 0.32km ΔQ=-3m — ottima copertura iperlocale.
+      Idro Bisenzio a 1.8km: rilevante per allerte esondazione.
+
+  lavoro_cosimo:
+    label: "Lavoro Cosimo - Scandicci"
+    address: "Scandicci (FI)"
+    lat: 43.75
+    lon: 11.17
+    elevation_m: 42
+    # SIR primaria: S. Giusto (Scandicci) — 2.2km, 42m, ΔQ=0m
+    sir_station_id: TOS01001215
+    sir_stations:
+      termo:  [TOS01001215, TOS03001099, TOS01001225, TOS03001097]
+      # S. Giusto 2.2km 42m | Firenze Boboli 6.7km 112m | Case Passerini 7.8km 33m | Firenze OrtoBotanico 8.0km 48m
+      pluvio: [TOS03001145, TOS01001215, TOS03001099, TOS01004811]
+      # Vingone 1.2km 54m | S. Giusto 2.2km | Firenze Boboli 6.7km | Ponte a Signa 6.7km
+      anemo:  [TOS01001215, TOS03001099, TOS01001225, TOS01001096]
+      # TOS03001097 (Orto Botanico) ESCLUSA: no anemometro
+      igro:   [TOS01001215, TOS03001099, TOS01001225, TOS03001097]
+    sir_idro_id: TOS01004731    # Ponte di Scandicci (Greve) — 2.0km
+    arpat_station_id: FI-SCANDICCI
+    arpat_stations:
+      - id: FI-SCANDICCI
+        weight: 1.0    # ~2km, stesso comune | nrt: NO2 | daily: NO2, PM10
+    arpat_zone: "agglomerato_firenze"
+    extras:
+      - aria_qualita
+    notes: >
+      Conca FI sud, isola di calore urbana, molto vicino a Firenze.
+      SIR: S. Giusto (TOS01001215) 2.2km ΔQ=0m.
+      Netatmo: 5 stazioni entro 1.4km tutte ΔQ<15m — copertura eccellente.
+      Idro Greve a 2.0km (Ponte di Scandicci).
+
+  lavoro_madda:
+    label: "Lavoro Madda - Prato"
+    address: "Prato (PO)"
+    lat: 43.88
+    lon: 11.09
+    elevation_m: 68
+    # SIR primaria: Prato Università — 1.0km, 65m, ΔQ=-3m
+    sir_station_id: TOS01001205
+    sir_stations:
+      termo:  [TOS01001205, TOS01001269, TOS01001225]
+      # Prato Università 1.0km 65m | La Ferruccia 6.9km 40m | Case Passerini 9.2km 33m
+      # Vaiano acquedotto ESCLUSA: 322m, ΔQ=+254m inaccettabile
+      pluvio: [TOS01001205, TOS01004779, TOS01004784, TOS01001269]
+      # Prato Università 1.0km | Gamberame 5.6km 107m | Calenzano 5.6km 60m | La Ferruccia 6.9km
+      anemo:  [TOS01001205, TOS01001269, TOS01001225]
+      igro:   [TOS01001205, TOS01001269, TOS01001225]
+    sir_idro_id: TOS01004782    # Prato (Bisenzio) — 1.2km
+    arpat_station_id: PO-ROMA
+    arpat_stations:
+      - id: PO-ROMA
+        weight: 0.7    # ~1km, traff. urbano  | nrt: BENZENE, NO2      | daily: BENZENE, NO2, PM10, PM2.5
+      - id: PO-FERRUCCI
+        weight: 0.3    # traff./industriale    | nrt: CO, NO2           | daily: CO, NO2, PM10, PM2.5
+    # Unione nrt: BENZENE, CO, NO2 | Unione daily: BENZENE, CO, NO2, PM10, PM2.5
+    arpat_zone: "zona_prato_pistoia"
+    extras:
+      - aria_qualita
+    notes: >
+      Conca pratese, brezza canalizzata lungo il Bisenzio.
+      SIR: Prato Università (TOS01001205) 1.0km ΔQ=-3m.
+      Netatmo: stazione a 0.44km ΔQ=-4m — copertura eccellente.
+      Idro Bisenzio a Prato a 1.2km.
+
+  casa_cesto:
+    label: "Casa Cesto - Figline Valdarno"
+    address: "Figline e Incisa Valdarno (FI)"
+    lat: 43.59
+    lon: 11.46
+    elevation_m: 160
+    # SIR primaria: Casa Rota — 6.7km, 200m, ΔQ=+40m (migliore disponibile in rete SIR)
+    sir_station_id: TOS11000516
+    sir_stations:
+      termo:  [TOS11000516, TOS01004571]
+      # Casa Rota 6.7km 200m | Montevarchi 10.1km 134m
+      # Poggio alla Croce (500m) e Lamole (536m) ESCLUSE per termo: ΔQ>300m
+      pluvio: [TOS01000891, TOS11000516, TOS03001135, TOS01004571, TOS11000023]
+      # Il Palagio 3.6km | Casa Rota 6.7km | Poggio alla Croce 8.6km | Montevarchi 10.1km | Lamole 10.0km
+      anemo:  [TOS11000516, TOS01004571]
+      igro:   [TOS11000516, TOS01004571]
+    sir_idro_id: TOS01004591    # Incisa Valle (Arno) — 11.1km (più vicina disponibile)
+    arpat_station_id: FI-FIGLINE
+    arpat_stations:
+      - id: FI-FIGLINE
+        weight: 0.8    # ~2km, urbana          | nrt: NO2              | daily: NO2, PM10
+      - id: AR-ENELSB-SANGIOVANNI
+        weight: 0.2    # ~8km, industriale ENEL| nrt: BENZENE, CO, NO2 | daily: BENZENE, CO, NO2, PM10, PM2.5
+    # Unione nrt: BENZENE, CO, NO2 | Unione daily: BENZENE, CO, NO2, PM10, PM2.5
+    arpat_zone: "zona_valdarno_aretino_valdichiana"
+    extras:
+      - aria_qualita
+    notes: >
+      Valdarno collinare, drenaggio aria fredda notturno significativo.
+      SIR: Casa Rota (TOS11000516) 6.7km ΔQ=+40m — unica opzione SIR accettabile.
+      Netatmo risolve il gap: stazione a 0.81km ΔQ=-15m con pioggia.
+      Idro Arno a Incisa (11.1km): monitoraggio indicativo, non allerta locale.
+
+# ── Metadati globali ────────────────────────────────────────────────────────
+metadata:
+  coordinate_source: "geocoding manuale"
+  sir_station_source: "API SIR Toscana actions.php?action=list — 2026-05-13"
+  netatmo_note: >
+    Fetch Netatmo dinamico via getpublicdata per bbox intorno a ogni location.
+    Stazioni selezionate al runtime (no lista MAC fissa): più robusto a offline/privacy.
+    Pesi calcolati on-the-fly (decay distanza + quota). Log in netatmo_fetch_log.
+  ground_truth_note: >
+    Ground truth primario = SIR (validato, storico lungo).
+    Netatmo = iperlocale, real-time, non validato.
+    Per casa_cesto Netatmo è il riferimento più vicino disponibile.
