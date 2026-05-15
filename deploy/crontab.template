@@ -4,53 +4,47 @@
 #   crontab deploy/crontab.template
 #
 # Prerequisiti:
-#   - uv installato in /home/guazza/.local/bin/uv (o PATH configurato)
-#   - Package guazza installato: uv sync
-#   - .env compilato in /opt/guazza/.env
-#   - Directory log esistenti: /var/log/guazza/
+#   - uv installato e in PATH
+#   - Repo clonato in /opt/guazza con `uv sync` eseguito
+#   - .env compilato in /opt/guazza/.env (Netatmo, Healthchecks)
+#   - DB_PATH e HEALTHCHECKS_URL esportati (o in .env)
 #
-# Convenzione log: ogni job scrive su /var/log/guazza/<job>.log
-# con rotazione via logrotate (vedi deploy/logrotate.conf — da creare).
+# Logging: ogni job scrive JSON su stdout, rediretto in /var/log/guazza/<job>.jsonl
+# Logrotate consigliato: rotation daily, retention 30 days.
 #
-# Healthchecks.io: ogni job pinga l'URL /start all'inizio e l'URL base al termine.
-# Se il job non termina, Healthchecks.io manda notifica dopo il timeout configurato.
+# Lock DuckDB (KI001): single writer alla volta.
+# I job sono schedulati con gap sufficienti per non sovrapporsi.
+# Il lock file in storage.py serializza comunque in caso di overlap accidentale.
 
 SHELL=/bin/bash
 PATH=/home/guazza/.local/bin:/usr/local/bin:/usr/bin:/bin
 GUAZZA_DIR=/opt/guazza
 
-# ── Ogni ora: ingestion real-time (CFR + idrometria) ─────────────────────────
-# Offset di 5 minuti per non collidere con job 6h
-5 * * * *   guazza  cd $GUAZZA_DIR && uv run guazza-ingest-realtime >> /var/log/guazza/ingest_realtime.log 2>&1
+# Variabili d'ambiente per i job
+DB_PATH=/var/lib/guazza/guazza.duckdb
+# HEALTHCHECKS_URL=https://hc-ping.com/<uuid>  # decommentare e compilare
 
-# ── Ogni 6 ore: ingestion NWP (Open-Meteo) + inference ML ────────────────────
-# Eseguiti in sequenza: prima ingestion, poi predict
-# 00:10, 06:10, 12:10, 18:10
-10 0,6,12,18 * * *   guazza  cd $GUAZZA_DIR && uv run guazza-ingest-forecasts --location casa_campi    >> /var/log/guazza/ingest_forecasts.log 2>&1
-11 0,6,12,18 * * *   guazza  cd $GUAZZA_DIR && uv run guazza-ingest-forecasts --location lavoro_cosimo >> /var/log/guazza/ingest_forecasts.log 2>&1
-12 0,6,12,18 * * *   guazza  cd $GUAZZA_DIR && uv run guazza-ingest-forecasts --location lavoro_madda  >> /var/log/guazza/ingest_forecasts.log 2>&1
-13 0,6,12,18 * * *   guazza  cd $GUAZZA_DIR && uv run guazza-ingest-forecasts --location casa_cesto    >> /var/log/guazza/ingest_forecasts.log 2>&1
-30 0,6,12,18 * * *   guazza  cd $GUAZZA_DIR && uv run guazza-predict >> /var/log/guazza/predict.log 2>&1
+# ── Ogni 15 min: realtime (SIR actions.php + Netatmo) ─────────────────────────
+# SIR aggiorna ogni ~15 min, Netatmo ogni ~10 min.
+# Offset :02 per evitare il minuto esatto (carico infrastruttura)
+2,17,32,47 * * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.ingest realtime >> /var/log/guazza/realtime.jsonl 2>&1
 
-# ── Ogni 24 ore: qualità aria ARPAT ──────────────────────────────────────────
-45 7 * * *   guazza  cd $GUAZZA_DIR && uv run guazza-ingest-realtime --source arpat >> /var/log/guazza/ingest_arpat.log 2>&1
+# ── Ogni 6 ore: forecast NWP (Open-Meteo multi-modello) ──────────────────────
+# Allineato ai run ECMWF (00/06/12/18 UTC) + lag ~2h per disponibilità dati.
+# Esecuzione a 02:10, 08:10, 14:10, 20:10 UTC.
+10 2,8,14,20 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.ingest forecasts >> /var/log/guazza/forecasts.jsonl 2>&1
 
-# ── Ogni 24 ore: validazione accuracy ────────────────────────────────────────
-# Eseguita alle 08:00, quando le osservazioni della notte sono disponibili
-0 8 * * *   guazza  cd $GUAZZA_DIR && uv run guazza-validate >> /var/log/guazza/validate.log 2>&1
+# ── Ogni giorno alle 06:00 UTC: delta giornaliero (SIR CSV + Open-Meteo ieri) ─
+# SIR pubblica i dati validati del giorno precedente entro le 03:00-05:00 UTC.
+0 6 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.ingest daily >> /var/log/guazza/daily.jsonl 2>&1
 
-# ── Ogni 24 ore: backup DuckDB → Cloudflare R2 ───────────────────────────────
-# Ore 03:00 — traffico minimo, dopo ingestion notturna
-0 3 * * *   guazza  cd $GUAZZA_DIR && uv run guazza-backup >> /var/log/guazza/backup.log 2>&1
+# ── FUTURI (decommentare quando implementati) ─────────────────────────────────
 
-# ── Settimanale: retraining LightGBM ─────────────────────────────────────────
-# Domenica notte ore 02:00 — dopo backup, prima di ingestion
-0 2 * * 0   guazza  cd $GUAZZA_DIR && uv run guazza-retrain >> /var/log/guazza/retrain.log 2>&1
+# Backup DuckDB → Cloudflare R2 (ogni notte alle 03:00)
+# 0 3 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.backup >> /var/log/guazza/backup.jsonl 2>&1
 
-# ── Nota sui gap tra job ──────────────────────────────────────────────────────
-# Workaround KI001 (DuckDB single writer): i job che scrivono su DuckDB
-# sono schedulati con gap di almeno 1 minuto tra loro.
-# ingest_forecasts (4 location): minuti 10-13
-# predict: minuto 30 (17 minuti dopo l'ultimo ingest)
-# I job orari (ingest_realtime) partono al minuto 5: nessuna sovrapposizione
-# con i job 6h (che partono al minuto 10+).
+# Validazione accuracy (ogni giorno alle 08:00, dopo che obs della notte sono disponibili)
+# 0 8 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.validate >> /var/log/guazza/validate.jsonl 2>&1
+
+# Retraining LightGBM (domenica notte 02:00)
+# 0 2 * * 0   cd $GUAZZA_DIR && uv run python -m guazza.jobs.retrain >> /var/log/guazza/retrain.jsonl 2>&1
