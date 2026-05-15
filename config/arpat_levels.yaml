@@ -1,0 +1,233 @@
+# Guazza — Scala livelli qualità aria ARPAT Toscana
+#
+# Fonte: https://api.arpat.toscana.it/app/air/config
+# Aggiornato: 2026-05-15
+#
+# Usato dal DLE (Sprint 5) per classificare i valori ARPAT con le soglie ufficiali.
+# Non interrogare l'API a runtime — questa config è statica, aggiornare manualmente
+# se ARPAT modifica le scale (raro).
+#
+# levelValue semantica:
+#   1 = Minima   2 = Bassa   3 = Media   4 = Media-alta   5 = Alta
+#   6 = Molto alta   7 = Oltre il limite
+#
+# Nota unità: CO in mg/m³, tutti gli altri in µg/m³.
+
+inquinanti:
+
+  pm10:
+    label: "Particolato PM10"
+    unita: "µg/m³"
+    aggregazione: "media giornaliera"
+    limite_normativo: 50
+    norma: "D.Lgs.155/2010 - Allegato XI"
+    livelli:
+      - value: 1
+        label: "Minima"
+        min: 0
+        max: 9
+      - value: 2
+        label: "Bassa"
+        min: 10
+        max: 19
+      - value: 3
+        label: "Media"
+        min: 20
+        max: 29
+      - value: 4
+        label: "Media-alta"
+        min: 30
+        max: 39
+      - value: 5
+        label: "Alta"
+        min: 40
+        max: 50
+      - value: 7
+        label: "Oltre il limite"
+        min: 50
+
+  pm25:
+    label: "Particolato PM2.5"
+    unita: "µg/m³"
+    aggregazione: "media giornaliera"
+    limite_normativo: 25
+    norma: "D.Lgs.155/2010 - Allegato XI"
+    livelli:
+      - value: 1
+        label: "Minima"
+        min: 0
+        max: 4
+      - value: 2
+        label: "Bassa"
+        min: 5
+        max: 9
+      - value: 3
+        label: "Media"
+        min: 10
+        max: 14
+      - value: 4
+        label: "Media-alta"
+        min: 15
+        max: 19
+      - value: 5
+        label: "Alta"
+        min: 20
+        max: 25
+      - value: 6
+        label: "Molto alta"
+        min: 25
+
+  no2:
+    label: "NO2 - Biossido di azoto"
+    unita: "µg/m³"
+    aggregazione: "max orario"
+    limite_normativo: 200
+    norma: "D.Lgs.155/2010 - Allegato XI"
+    livelli:
+      - value: 1
+        label: "Minima"
+        min: 0
+        max: 39
+      - value: 2
+        label: "Bassa"
+        min: 40
+        max: 79
+      - value: 3
+        label: "Media"
+        min: 80
+        max: 119
+      - value: 4
+        label: "Media-alta"
+        min: 120
+        max: 159
+      - value: 5
+        label: "Alta"
+        min: 160
+        max: 200
+      - value: 7
+        label: "Oltre il limite"
+        min: 200
+
+  o3:
+    label: "O3 - Ozono"
+    unita: "µg/m³"
+    aggregazione: "max orario"
+    soglia_informazione: 180
+    norma: "D.Lgs.155/2010 - Allegato XII"
+    livelli:
+      - value: 1
+        label: "Minima"
+        min: 0
+        max: 35
+      - value: 2
+        label: "Bassa"
+        min: 36
+        max: 71
+      - value: 3
+        label: "Media"
+        min: 72
+        max: 107
+      - value: 4
+        label: "Media-alta"
+        min: 108
+        max: 143
+      - value: 5
+        label: "Alta"
+        min: 144
+        max: 180
+      - value: 7
+        label: "Oltre il limite"
+        min: 180
+
+  co:
+    label: "CO - Monossido di carbonio"
+    unita: "mg/m³"   # diverso dagli altri!
+    aggregazione: "max media mobile 8h"
+    limite_normativo: 10
+    norma: "D.Lgs.155/2010 - Allegato XI"
+    livelli:
+      - value: 1
+        label: "Minima"
+        min: 0
+        max: 1.9
+      - value: 2
+        label: "Bassa"
+        min: 2
+        max: 3.9
+      - value: 3
+        label: "Media"
+        min: 4
+        max: 5.9
+      - value: 4
+        label: "Media-alta"
+        min: 6
+        max: 7.9
+      - value: 5
+        label: "Alta"
+        min: 8
+        max: 10
+      - value: 7
+        label: "Oltre il limite"
+        min: 10
+
+  benzene:
+    label: "C6H6 - Benzene"
+    unita: "µg/m³"
+    aggregazione: "media giornaliera"
+    limite_normativo: 5
+    norma: "D.Lgs.155/2010 - Allegato XI"
+    livelli:
+      - value: 1
+        label: "Minima"
+        min: 0
+        max: 0.9
+      - value: 2
+        label: "Bassa"
+        min: 1
+        max: 1.9
+      - value: 3
+        label: "Media"
+        min: 2
+        max: 2.9
+      - value: 4
+        label: "Media-alta"
+        min: 3
+        max: 3.9
+      - value: 5
+        label: "Alta"
+        min: 4
+        max: 5
+      - value: 6
+        label: "Molto alta"
+        min: 5
+
+  so2:
+    label: "SO2 - Biossido di zolfo"
+    unita: "µg/m³"
+    aggregazione: "max orario"
+    limite_normativo: 350
+    norma: "D.Lgs.155/2010 - Allegato XI"
+    livelli:
+      - value: 1
+        label: "Minima"
+        min: 0
+        max: 69
+      - value: 2
+        label: "Bassa"
+        min: 70
+        max: 139
+      - value: 3
+        label: "Media"
+        min: 140
+        max: 209
+      - value: 4
+        label: "Media-alta"
+        min: 210
+        max: 279
+      - value: 5
+        label: "Alta"
+        min: 280
+        max: 350
+      - value: 7
+        label: "Oltre il limite"
+        min: 350
