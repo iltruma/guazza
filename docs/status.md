@@ -87,7 +87,102 @@ Ogni job: `--dry-run`, Healthchecks.io ping (start/ok/fail), log JSON strutturat
 
 ## Prossimi passi (in ordine)
 
-1. **Deploy VPS**: provisioning Hetzner CX22, setup crontab con i 4 job, configurazione `.env` produzione
-2. **Backfill storico**: eseguire `historical` sul VPS per caricare SIR + Open-Meteo 2022→oggi
-3. **Feature engineering (Sprint 2)**: lag temporali + join `observations` ↔ `forecasts` per training set LightGBM
-4. **Modello ML**: LightGBM quantile regression + CQR calibration
+### Sprint 1b — Sorgenti dati aggiuntive
+**Dipendenza**: ingestion funzionante (Sprint 1 completato)
+
+- **CFR Toscana**: scraper HTML con `tenacity` (3 tentativi, backoff 60s/300s/600s)
+- **ARPAT**: fetcher qualità aria (PM10, NO2, O3) da API/stazioni ARPAT Toscana
+- **RainViewer**: fetcher radar precipitazioni in tempo reale
+- Log strutturato `loguru` su ogni fetcher, ping `Healthchecks.io` a fine run
+
+### Sprint 2b — Backfill SIR pre-2022
+**Dipendenza**: ingestion funzionante (Sprint 1 completato)
+
+- Estendere `fetch_sir_historical` per scaricare CSV SIR oltre il 2022 (endpoint download.php supporta date precedenti)
+- Verificare limite effettivo disponibilità archivio SIR per ogni stazione
+- Caricare in DuckDB con stessa logica upsert esistente
+
+### Sprint 2c — Check qualitativo dati SIR
+**Dipendenza**: backfill pre-2022 completato (Sprint 2b)
+
+- **Copertura temporale**: % timestamp attesi con dato presente, per stazione × sensore × anno/mese
+- **Outlier fisici**: valori fuori range plausibile (temp < -20°C o > 50°C, umidità > 100%, vento < 0, ecc.) — flaggare in DuckDB, non eliminare
+- **Spike detection**: ΔT > 10°C in 1h o equivalente per altri sensori — flaggare
+- **Correlazione inter-stazione**: per ogni location, correlazione tra stazioni vicine; bassa correlazione segnala stazione problematica
+- **Report per location**: copertura ottimale per periodo, gap rilevanti evidenziati
+- Output: tabella `quality_flags` in DuckDB + report Markdown statico
+- Decisioni di esclusione stazioni/periodi: manuali, non automatiche
+
+### Sprint 3 — Feature Engineering
+**Dipendenza**: dati in DuckDB validati (`observations` + `forecasts`)
+
+- Join `observations ↔ forecasts` per ogni `(location_id, ts, lead_time_h)`
+- Feature NWP: temperatura prevista, umidità, vento, precipitazioni × 4 modelli × lead time
+- Feature osservativa: valori SIR pesati per location (`weights.py`)
+- Feature climatologiche statiche: media/std mensile SIR multi-anno (mai ERA5 dinamico — D-001)
+- `location_id` categorica (D-005), `lead_time_h` come feature numerica
+- Output: training set materializzato in Parquet o DuckDB view
+
+🟡 **Punto aperto**: copertura storica SIR per le 4 location da verificare in Sprint 2c
+(minimo ~200 esempi per bucket lead time per CQR stabile — D-003)
+
+### Sprint 4 — Modello ML
+**Dipendenza**: training set Sprint 3
+
+- LightGBM quantile regression (α = 0.05, 0.10, 0.50, 0.90, 0.95)
+- Cross-validation temporale walk-forward con embargo 7 giorni (D-002)
+- CQR calibration stratificata per 5 bucket lead time: `0-6h`, `6-12h`, `12-24h`, `24-48h`, `48-72h` (D-003)
+- Metriche: CRPS, coverage empirica, skill score vs NWP grezzo come benchmark
+- **Benchmark formale in produzione**: popolare tabella `benchmark_forecasts` in DuckDB con NWP grezzo (Open-Meteo senza post-processing) per confronto sistematico nel tempo
+- Persistenza modello + artefatti calibrazione su disco
+
+### Sprint 5 — Output JSON + Decision Logic Engine
+**Dipendenza**: modello calibrato Sprint 4
+
+- JSON writer per ogni location: punto mediano + CI80 + CI90 + `coverage_empirical_30d` (D-004)
+- `coverage_empirical_30d`: rolling window 30 giorni osservazioni vs CI; se dati insufficienti → `null`
+- Decision Logic Engine: regole su distribuzione probabilistica → indicatori operativi
+  (`panni`, `motorino`, `gelata`, ecc.)
+- Logging obbligatorio in `indicator_log` DuckDB per ogni invocazione DLE (D-009)
+- Job cron `predict` che chiama modello → JSON → DLE → `indicator_log`
+
+### Sprint 6 — Frontend
+**Dipendenza**: JSON output Sprint 5 stabile
+
+- HTML + JS vanilla, zero dipendenze JS
+- Una pagina per location: indicatori operativi prominenti + CI meteo
+- Badge `coverage_empirical_30d` visibile ("calibrazione in corso" se null)
+- Nginx statico, Cloudflare CDN/WAF
+- Nessun framework, nessun bundler
+
+### Sprint 7 — Deploy VPS
+**Dipendenza**: tutto funzionante e testato in locale
+
+- Provisioning Hetzner CX22, Ubuntu 24.04 LTS
+- Backfill storico (`historical`) per caricare SIR + Open-Meteo 2022→oggi
+- Crontab con i 4 job ingestion + job `predict`
+- Configurazione `.env` produzione, Healthchecks.io, UptimeRobot
+- **Backup Cloudflare R2**: job cron periodico per backup `.duckdb` + Parquet su Cloudflare R2 (10GB free tier, egress gratis) via `rclone` o `boto3`
+- GitHub Actions → deploy SSH
+
+### Sprint 8 — Model monitoring
+**Dipendenza**: Deploy VPS completato (Sprint 7)
+
+- Job cron che calcola `coverage_empirical_30d` rolling e la confronta con target (80% per CI80, 90% per CI90)
+- Alert se coverage scende sotto soglia: log `ERROR` + ping `Healthchecks.io` fail
+- Requisito obbligatorio D-004
+
+### Sprint 9 — Calibrazione soglie DLE post-deploy
+**Dipendenza**: 30-60 giorni di operatività in produzione (Sprint 7+8)
+
+- Analisi log `indicator_log` in DuckDB dopo 30-60 giorni di produzione
+- Validare e ritunare soglie in `config/indicators.yaml` (attualmente "BEST-GUESS iniziali")
+- Documentare soglie calibrate con motivazione in `docs/decisions.md`
+
+### Sprint 10 — Case study / pubblicazione
+**Dipendenza**: sistema stabile in produzione con dati sufficienti (Sprint 7-9)
+
+- Raccolta risultati: figure CRPS, coverage, skill score vs NWP grezzo
+- Pulizia repo per release pubblica (rimuovere credenziali, aggiungere LICENSE, README pubblico)
+- Documentazione replica: come rieseguire l'esperimento
+- Scrittura articolo LinkedIn/Medium
