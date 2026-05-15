@@ -31,9 +31,14 @@ from typing import Any
 import httpx
 import typer
 import yaml
+from dotenv import load_dotenv
 from loguru import logger
 
-from guazza.fetchers import (
+# Carica .env prima di leggere variabili d'ambiente (es. DB_PATH)
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(_REPO_ROOT / ".env")
+
+from guazza.fetchers import (  # noqa: E402
     _log_scrape,
     fetch_arpat_all_locations,
     fetch_arpat_bollettini_range,
@@ -43,11 +48,10 @@ from guazza.fetchers import (
     fetch_sir_historical,
     fetch_sir_stations_realtime,
 )
-from guazza.storage import DuckDBClient
+from guazza.storage import DuckDBClient  # noqa: E402
 
 # ── Costanti ─────────────────────────────────────────────────────────────────
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = Path(os.environ.get("DB_PATH", "/var/lib/guazza/guazza.duckdb"))
 _DEFAULT_CFG = Path(os.environ.get("CONFIG_DIR", str(_REPO_ROOT / "config")))
 
