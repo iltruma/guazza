@@ -127,9 +127,6 @@ guazza/
 │   ├── evaluation/         # metriche, calibrazione, significatività
 │   ├── output/             # JSON writer
 │   └── jobs/               # entry point cron
-├── scripts/                # helper Task 0 ricognizione
-├── frontend-v1/            # HTML+JS statico
-├── notebooks/              # esplorazione e outreach
 ├── deploy/                 # nginx, caddy, crontab template
 ├── tests/
 └── docs/
@@ -161,7 +158,7 @@ Attendo conferma prima di procedere.
 
 ### 🟢 Zona verde — procedere autonomamente
 
-- Scrivere/modificare codice in `src/`, `tests/`, `scripts/`
+- Scrivere/modificare codice in `src/`, `tests/`
 - Leggere qualsiasi file
 - Eseguire pytest, ruff, mypy
 - Scrivere/aggiornare `docs/`
@@ -279,17 +276,14 @@ uv run pytest
 # Lint
 uv run ruff check src/ && uv run mypy src/
 
-# Helper Task 0
-uv run python scripts/01_find_sir_stations.py
-uv run python scripts/02_find_arpat_stations.py
-uv run python scripts/03_probe_data_sources.py
-uv run python scripts/04_check_benchmark_scrapers.py
-
-# Ingestion manuale (dopo Sprint 1)
-uv run python -m guazza.jobs.ingest --location casa_campi
+# Ingestion manuale
+uv run python -m guazza.jobs.ingest historical --dry-run
+uv run python -m guazza.jobs.ingest daily
+uv run python -m guazza.jobs.ingest realtime
+uv run python -m guazza.jobs.ingest forecasts
 
 # Validazione schema DuckDB
-uv run python -m guazza.storage --verify-schema
+uv run python -m guazza.storage verify-schema
 ```
 
 ## Regole OpenRouter — ottimizzazione costi
