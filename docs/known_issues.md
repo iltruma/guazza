@@ -106,3 +106,32 @@ il refresh automatico.
 `fetch_netatmo_location` inizia a restituire dati vuoti.
 
 **Da fare**: implementare refresh token flow in `fetchers.py::_netatmo_refresh`.
+
+---
+
+## KI-007 — SIR `pluvio0_24`: finestra 08:00–08:00 CEST, non mezzanotte UTC
+
+**Severità**: media (impatta allineamento con Open-Meteo e feature engineering)
+**Stato**: confermato empiricamente
+
+**Problema**: il CSV storico SIR (`pluvio0_24`) aggrega la precipitazione sulla
+finestra **08:00–08:00 ora locale** (CEST = UTC+2 in estate). La riga con data
+`YYYY-MM-DD` contiene la pioggia caduta tra le 06:00 UTC del giorno corrente
+e le 06:00 UTC del giorno successivo.
+
+**Esempio osservato** (2026-05-14, TOS01001215 Scandicci):
+- CSV storico `pluvio0_24`: `0,0 mm` (flag `P` = prevalidato)
+- Portale SIR realtime: 2.2 mm cumulativi giornalieri
+- Spiegazione: i 2.2 mm sono caduti dopo le 06:00 UTC del 14/05, quindi
+  ricadono nella riga del **15/05** nel CSV storico.
+
+**Conseguenza per il feature engineering**:
+- Il join `observations.precip_mm` (SIR, finestra 08-08) ↔ `forecasts.precip_mm`
+  (Open-Meteo, finestra 00-00 UTC) introduce un offset sistematico di ~6h.
+- Per il training LightGBM: usare `precip_mm` SIR come target giornaliero
+  richiede di allineare la finestra (es. aggregare le 24h di forecast dalla
+  06:00 UTC, non dalla 00:00 UTC).
+
+**Workaround**: in fase di feature engineering, shiftare la finestra di
+aggregazione delle precipitazioni forecast di +6h per allinearla alla
+finestra SIR. Documentare esplicitamente nell'artefatto di training.
