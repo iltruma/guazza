@@ -8,7 +8,8 @@
 
 ### Spiegazioni orientate alla manutenibilità
 
-Quando spieghi una modifica (vedi regola in AGENTS.md), calibra la spiegazione così:
+Quando spieghi una modifica (vedi "Spiegazione obbligatoria prima di modificare file" in AGENTS.md),
+calibra la spiegazione così:
 - **Perché**: il problema tecnico concreto, non la descrizione astratta
 - **Come**: le scelte implementative rilevanti — cosa hai considerato, cosa hai scartato e perché
 - **Impatto**: cosa cambia per chi legge o modifica il codice dopo

@@ -217,19 +217,22 @@ Preferire commit atomici (un task = un commit). Se il task ha sotto-step, un com
 7. **Suggerire aggiornamento a `docs/status.md`** a fine sessione
 8. Non assumere che l'ambiente sia pulito — verificare che i test passino prima di nuove feature
 
-### Spiegazione obbligatoria prima di modificare codice
+### Spiegazione obbligatoria prima di modificare file
 
-Per ogni modifica non banale (tocca >5 righe, interfacce pubbliche, schema DB, o dipendenze):
+Per ogni modifica non banale a qualsiasi file del progetto
+(codice, docs, config YAML, README, AGENTS.md):
 
-1. **Cosa cambia** — descrivi il problema che la modifica risolve
-2. **Come pensi di implementarlo** — approccio ad alto livello (non pseudocodice)
+1. **Cosa cambia** — il problema che la modifica risolve
+2. **Come** — approccio ad alto livello
 3. **Alternative scartate** — solo se la scelta non è ovvia
-4. **Aspetta conferma** prima di scrivere codice
+4. **Aspetta conferma** prima di procedere
 
-Eccezioni che non richiedono conferma:
-- Fix banali: typo, rename locale, 1-2 righe senza effetti collaterali
+Eccezioni (procedere direttamente):
+- Fix banali: typo, 1-2 righe senza effetti collaterali
 - Task con istruzione esplicita "vai" o "implementa direttamente"
-- Correzioni richieste da lint/mypy/test che non cambiano semantica
+- Correzioni lint/mypy/test che non cambiano semantica
+- `docs/known_issues.md` e `docs/status.md` a fine sessione
+  (aggiornamento di routine — ma comunicare cosa si sta scrivendo prima di farlo)
 
 ### Scraper fragili (CFR Toscana, ARPAT)
 
