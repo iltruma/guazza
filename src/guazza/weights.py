@@ -118,7 +118,7 @@ def refresh_station_weights(
             if s_lat is None or s_lon is None:
                 logger.warning(f"[{loc_id}] SIR {station_id} senza coordinate — skip")
                 continue
-            s_elev: float = s.get("quota_m") or target_elev
+            s_elev: float = s["quota_m"] if s.get("quota_m") is not None else target_elev
             weight, dist_km, delta_elev = compute_station_weight(
                 s_lat, s_lon, s_elev,
                 target_lat, target_lon, target_elev,

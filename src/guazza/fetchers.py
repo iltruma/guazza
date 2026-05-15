@@ -28,6 +28,25 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 
 from guazza.weights import compute_station_weight
 
+# ── Logging strutturato ───────────────────────────────────────────────────────
+
+def _log_scrape(scraper: str, status: str, rows: int | None = None, detail: str = "") -> None:
+    """Emette un log JSON strutturato per ogni run scraper.
+
+    Formato: {"scraper": ..., "status": "ok|fail", "ts": ..., "rows": N}
+    Compatibile con AGENTS.md §Scraper fragili.
+    """
+    payload: dict[str, Any] = {
+        "scraper": scraper,
+        "status": status,
+        "ts": datetime.now(tz=UTC).isoformat(),
+    }
+    if rows is not None:
+        payload["rows"] = rows
+    if detail:
+        payload["detail"] = detail
+    logger.info(payload)
+
 # ── Costanti SIR ────────────────────────────────────────────────────────────
 
 _SIR_BASE_URL = "https://www.sir.toscana.it/archivio/download.php"
@@ -205,6 +224,12 @@ def fetch_sir_historical(
 
         records.append(record)
 
+    # precip_interval_h: solo per pluvio0_24 (24h) e idro_l non ha precip
+    if sensor_type == "pluvio0_24":
+        for r in records:
+            r["precip_interval_h"] = 24
+
+    _log_scrape(f"sir_historical:{station_id}:{sensor_type}", "ok", rows=len(records))
     logger.info(f"SIR CSV: {station_id} {sensor_type} → {len(records)} righe")
     return records
 
@@ -218,6 +243,32 @@ _SIR_RT_HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
     "Referer": "https://www.sir.toscana.it/",
 }
+
+# Formati data noti nella risposta SIR realtime
+_SIR_RT_DATE_FORMATS = ["%d/%m/%Y %H:%M", "%d/%m/%Y %H:%M:%S"]
+
+
+def _parse_sir_realtime_ts(data: dict[str, Any]) -> datetime:
+    """Estrae il timestamp dalla risposta JSON SIR realtime.
+
+    Tenta di parsare il campo "date" dal primo sensore disponibile (termo, igro, anemo).
+    Fallback a now(UTC) se il campo è assente o non parsabile.
+    """
+    for sensor_key in ("termo", "igro", "anemo"):
+        sensor = data.get(sensor_key)
+        if not sensor:
+            continue
+        date_str = sensor.get("date", "").strip()
+        if not date_str:
+            continue
+        for fmt in _SIR_RT_DATE_FORMATS:
+            try:
+                return datetime.strptime(date_str, fmt).replace(tzinfo=UTC)
+            except ValueError:
+                continue
+        logger.debug(f"SIR realtime: date non parsabile: {date_str!r}")
+        break
+    return datetime.now(tz=UTC)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -243,7 +294,11 @@ def fetch_sir_realtime(station_id: str) -> dict[str, Any]:
         r.raise_for_status()
     data = r.json()
 
-    ts = datetime.now(tz=UTC)
+    # ts: proviamo a parsare il timestamp dalla risposta (primo sensore con campo "date").
+    # Formato SIR atteso: "DD/MM/YYYY HH:MM" (locale Italy, ma SIR pubblica UTC+1 senza TZ).
+    # Per sicurezza trattiamo come naive e aggiungiamo UTC (approssimazione accettabile per
+    # osservazioni realtime dove il lag è già 10-15 min).
+    ts = _parse_sir_realtime_ts(data)
     record: dict[str, Any] = {
         "source": "sir_toscana",
         "station_id": station_id,
@@ -286,6 +341,7 @@ def fetch_sir_realtime(station_id: str) -> dict[str, Any]:
         if cum01 is not None and cum01 != "-":
             try:
                 record["precip_mm"] = float(cum01)
+                record["precip_interval_h"] = 1
             except ValueError:
                 pass
 
@@ -309,6 +365,8 @@ def fetch_sir_stations_realtime(
             results[sid] = fetch_sir_realtime(sid)
         except Exception as e:
             logger.warning(f"SIR realtime fallito per {sid}: {e}")
+            _log_scrape(f"sir_realtime:{sid}", "fail", detail=str(e))
+    _log_scrape("sir_realtime_batch", "ok", rows=len(results))
     return results
 
 
@@ -441,15 +499,15 @@ def _get_recent_sir_temp(db: Any, location_id: str, max_age_min: int = 60) -> fl
     """Legge l'ultima temperatura SIR da observations (entro max_age_min minuti)."""
     try:
         row = db.execute(
-            """
+            f"""
             SELECT temp_c FROM observations
             WHERE source = 'sir_toscana'
               AND location_id = ?
-              AND ts >= (CURRENT_TIMESTAMP - INTERVAL (? || ' minutes'))
+              AND ts >= (CURRENT_TIMESTAMP - INTERVAL '{max_age_min} minutes')
             ORDER BY ts DESC
             LIMIT 1
             """,
-            [location_id, str(max_age_min)],
+            [location_id],
         ).fetchone()
         return float(row[0]) if row else None
     except Exception as exc:
@@ -614,6 +672,7 @@ def save_netatmo_to_db(
             None,  # tmax_c
             sd.measures.get("humidity_pct"),
             sd.measures.get("rain_1h"),
+            1 if sd.measures.get("rain_1h") is not None else None,  # precip_interval_h
             sd.measures.get("wind_speed_ms"),
             None,  # wind_dir_deg
             None,  # wind_gust_ms
@@ -632,16 +691,17 @@ def save_netatmo_to_db(
             """
             INSERT INTO observations
                 (source, station_id, location_id, ts,
-                 temp_c, tmin_c, tmax_c, humidity_pct, precip_mm,
+                 temp_c, tmin_c, tmax_c, humidity_pct, precip_mm, precip_interval_h,
                  wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa, level_m,
                  pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3,
                  weight, qc_pass)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (source, station_id, ts) DO UPDATE SET
                 location_id = excluded.location_id,
                 temp_c        = excluded.temp_c,
                 humidity_pct  = excluded.humidity_pct,
                 precip_mm     = excluded.precip_mm,
+                precip_interval_h = excluded.precip_interval_h,
                 wind_speed_ms = excluded.wind_speed_ms,
                 weight        = excluded.weight,
                 qc_pass       = excluded.qc_pass
@@ -653,6 +713,7 @@ def save_netatmo_to_db(
         f"[{location_id}] Salvate {len(stations)} stazioni in netatmo_fetch_log, "
         f"{len(obs_rows)} osservazioni in observations"
     )
+    _log_scrape(f"netatmo:{location_id}", "ok", rows=len(obs_rows))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -828,8 +889,10 @@ def fetch_openmeteo_forecast(
             data = _fetch_om_json(_OM_FORECAST_URL, params)
             records = _parse_om_response(data, model, location_id, ts_run)
             results[model] = records
+            _log_scrape(f"openmeteo_forecast:{location_id}:{model}", "ok", rows=len(records))
         except Exception as e:
             logger.error(f"Open-Meteo forecast [{model}] [{location_id}] fallito: {e}")
+            _log_scrape(f"openmeteo_forecast:{location_id}:{model}", "fail", detail=str(e))
             results[model] = []
         time.sleep(0.5)  # throttle gentile tra modelli
 
@@ -881,8 +944,10 @@ def fetch_openmeteo_historical(
                 f"Open-Meteo historical [{model}] [{location_id}] "
                 f"→ {len(records)} righe ({start_date}→{end_date})"
             )
+            _log_scrape(f"openmeteo_historical:{location_id}:{model}", "ok", rows=len(records))
         except Exception as e:
             logger.error(f"Open-Meteo historical [{model}] [{location_id}] fallito: {e}")
+            _log_scrape(f"openmeteo_historical:{location_id}:{model}", "fail", detail=str(e))
             results[model] = []
         time.sleep(0.5)
 

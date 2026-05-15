@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS observations (
     tmax_c          DOUBLE,
     humidity_pct    DOUBLE,
     precip_mm       DOUBLE,
+    precip_interval_h TINYINT, -- granularità: 1=1h, 24=24h. NULL se ignota.
     wind_speed_ms   DOUBLE,
     wind_dir_deg    DOUBLE,
     wind_gust_ms    DOUBLE,

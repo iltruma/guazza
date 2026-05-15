@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -697,3 +697,76 @@ def test_upsert_forecasts_batch_historical(seeded_db_forecasts: Path) -> None:
         ).fetchone()
     assert row is not None
     assert row[0] == 0
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# precip_interval_h — SIR storico e SIR realtime
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_sir_historical_pluvio_has_precip_interval_24() -> None:
+    """pluvio0_24 deve produrre precip_interval_h=24 in ogni record."""
+    csv_text = _make_csv('"precip [mm]";"flag"', ['15/06/2024;2,4;V', '16/06/2024;0,0;V'])
+    rows = _patched_sir_fetch("TOS00000001", "pluvio0_24", csv_text)
+    assert len(rows) == 2
+    assert all(r.get("precip_interval_h") == 24 for r in rows), \
+        "pluvio0_24 deve avere precip_interval_h=24"
+
+
+def test_sir_historical_termo_no_precip_interval() -> None:
+    """termo_csv non deve avere precip_interval_h."""
+    csv_text = _make_csv('"Tmax [°C]";"Tmin [°C]"', ['15/06/2024;31,0;14,5'])
+    rows = _patched_sir_fetch("TOS00000001", "termo_csv", csv_text)
+    assert len(rows) == 1
+    assert all(r.get("precip_interval_h") is None for r in rows), \
+        "termo_csv non deve avere precip_interval_h"
+
+
+def test_sir_realtime_precip_interval_1() -> None:
+    """CUM01 in SIR realtime deve produrre precip_interval_h=1."""
+    from guazza.fetchers import fetch_sir_realtime
+    mock_json = {
+        "pluvio": {"CUM01": "3.4", "CUM24": "5.4"},
+        "termo": {"value": "18.0", "date": "15/05/2026 10:30"},
+    }
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = mock_json
+    mock_resp.raise_for_status = MagicMock()
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.get = MagicMock(return_value=mock_resp)
+    with patch("guazza.fetchers.httpx.Client", return_value=mock_client):
+        rec = fetch_sir_realtime("TOS99999999")
+    assert rec["precip_mm"] == pytest.approx(3.4)
+    assert rec["precip_interval_h"] == 1
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# _parse_sir_realtime_ts — timestamp da campo date
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_parse_sir_realtime_ts_from_termo() -> None:
+    """Deve parsare la data dal campo termo.date."""
+    from guazza.fetchers import _parse_sir_realtime_ts
+    data = {"termo": {"value": "18.0", "date": "15/05/2026 10:30"}}
+    ts = _parse_sir_realtime_ts(data)
+    assert ts == datetime(2026, 5, 15, 10, 30, tzinfo=UTC)
+
+
+def test_parse_sir_realtime_ts_fallback_now() -> None:
+    """Senza campo date deve tornare un ts vicino a now(UTC)."""
+    from guazza.fetchers import _parse_sir_realtime_ts
+    before = datetime.now(tz=UTC)
+    ts = _parse_sir_realtime_ts({})
+    after = datetime.now(tz=UTC)
+    assert before <= ts <= after
+
+
+def test_parse_sir_realtime_ts_unparsable_fallback() -> None:
+    """Se date non è parsabile deve tornare un ts vicino a now(UTC)."""
+    from guazza.fetchers import _parse_sir_realtime_ts
+    data = {"termo": {"value": "18.0", "date": "invalid-date"}}
+    before = datetime.now(tz=UTC)
+    ts = _parse_sir_realtime_ts(data)
+    after = datetime.now(tz=UTC)
+    assert before <= ts <= after
