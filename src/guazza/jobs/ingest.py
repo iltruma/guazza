@@ -222,23 +222,55 @@ def cmd_historical(
     config_dir: str = _CFG_OPT,
     start_date: str = typer.Option("2022-01-01", "--start-date", help="Inizio intervallo YYYY-MM-DD"),
     end_date: str = typer.Option("", "--end-date", help="Fine intervallo YYYY-MM-DD (default: oggi)"),
+    only_sir: bool = typer.Option(False, "--only-sir", help="Scarica solo SIR CSV, salta Open-Meteo"),
+    only_openmeteo: bool = typer.Option(False, "--only-openmeteo", help="Scarica solo Open-Meteo, salta SIR"),
+    location: list[str] | None = typer.Option(None, "--location", help="Limita a questa location (ripetibile)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Stampa cosa farebbe senza scrivere"),
 ) -> None:
     """Backfill completo: SIR CSV + Open-Meteo historical (one-shot, lento).
 
     Da eseguire una volta sola per caricare lo storico di training.
     Non schedulare come cron — usa 'daily' per il delta incrementale.
+
+    Esempi:
+        # Solo Open-Meteo per una location
+        historical --only-openmeteo --location casa_campi
+
+        # Solo SIR, intervallo ridotto
+        historical --only-sir --start-date 2024-01-01
+
+        # Tutte le sorgenti, tutte le location
+        historical --start-date 2022-01-01
     """
     _setup_logging()
+    if only_sir and only_openmeteo:
+        typer.echo("Errore: --only-sir e --only-openmeteo sono mutualmente esclusivi.")
+        raise typer.Exit(1)
     if not end_date:
         end_date = datetime.now(tz=UTC).strftime("%Y-%m-%d")
 
     cfg = Path(config_dir)
-    locations, stations = _load_config(cfg)
+    locations_all, stations = _load_config(cfg)
+
+    # Filtra location se specificate
+    if location:
+        unknown = set(location) - set(locations_all)
+        if unknown:
+            typer.echo(f"Errore: location sconosciute: {sorted(unknown)}")
+            typer.echo(f"Disponibili: {list(locations_all.keys())}")
+            raise typer.Exit(1)
+        locations = {k: v for k, v in locations_all.items() if k in location}
+    else:
+        locations = locations_all
+
+    run_sir = not only_openmeteo
+    run_om = not only_sir
 
     typer.echo(f"Historical backfill: {start_date} → {end_date}")
-    typer.echo(f"Stazioni SIR: {len(_all_sir_station_ids(locations))}")
     typer.echo(f"Location: {list(locations.keys())}")
+    typer.echo(f"Sorgenti: {'SIR ' if run_sir else ''}{'Open-Meteo' if run_om else ''}")
+    if run_sir:
+        typer.echo(f"Stazioni SIR: {len(_all_sir_station_ids(locations))}")
 
     if dry_run:
         typer.echo("[dry-run] Nessuna scrittura effettuata.")
@@ -247,34 +279,34 @@ def cmd_historical(
     _ping_healthchecks("/start")
     t0 = time.monotonic()
     ok = True
+    sir_total = 0
+    om_total = 0
 
     try:
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
 
-            # 1. SIR storico CSV
-            typer.echo("\n--- SIR storico CSV ---")
-            sir_total = _ingest_sir_historical_range(
-                db, locations, stations, start_date, end_date
-            )
-            typer.echo(f"SIR CSV: {sir_total} record inseriti")
-
-            # 2. Open-Meteo historical
-            typer.echo("\n--- Open-Meteo historical ---")
-            om_total = 0
-            for loc_id, loc in locations.items():
-                results = fetch_openmeteo_historical(
-                    location_id=loc_id,
-                    lat=loc["lat"],
-                    lon=loc["lon"],
-                    start_date=start_date,
-                    end_date=end_date,
+            if run_sir:
+                typer.echo("\n--- SIR storico CSV ---")
+                sir_total = _ingest_sir_historical_range(
+                    db, locations, stations, start_date, end_date
                 )
-                for _model, records in results.items():
-                    if records:
-                        n = db.upsert_forecasts(records)
-                        om_total += n
-            typer.echo(f"Open-Meteo historical: {om_total} record inseriti")
+                typer.echo(f"SIR CSV: {sir_total} record inseriti")
+
+            if run_om:
+                typer.echo("\n--- Open-Meteo historical ---")
+                for loc_id, loc in locations.items():
+                    results = fetch_openmeteo_historical(
+                        location_id=loc_id,
+                        lat=loc["lat"],
+                        lon=loc["lon"],
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                    for _model, records in results.items():
+                        if records:
+                            om_total += db.upsert_forecasts(records)
+                typer.echo(f"Open-Meteo historical: {om_total} record inseriti")
 
     except Exception as e:
         logger.error(f"historical fallito: {e}")
@@ -294,6 +326,9 @@ def cmd_daily(
     db_path: Path = _DB_OPT,
     config_dir: str = _CFG_OPT,
     date: str = typer.Option("", "--date", help="Giorno da caricare YYYY-MM-DD (default: ieri)"),
+    only_sir: bool = typer.Option(False, "--only-sir", help="Scarica solo SIR CSV, salta Open-Meteo"),
+    only_openmeteo: bool = typer.Option(False, "--only-openmeteo", help="Scarica solo Open-Meteo, salta SIR"),
+    location: list[str] | None = typer.Option(None, "--location", help="Limita a questa location (ripetibile)"),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
     """Delta incrementale giornaliero: SIR CSV + Open-Meteo per il giorno indicato.
@@ -302,13 +337,28 @@ def cmd_daily(
     tipicamente entro le 03:00-05:00 UTC).
     """
     _setup_logging()
+    if only_sir and only_openmeteo:
+        typer.echo("Errore: --only-sir e --only-openmeteo sono mutualmente esclusivi.")
+        raise typer.Exit(1)
     if not date:
         date = (datetime.now(tz=UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
 
     cfg = Path(config_dir)
-    locations, stations = _load_config(cfg)
+    locations_all, stations = _load_config(cfg)
 
-    typer.echo(f"Daily delta: {date}")
+    if location:
+        unknown = set(location) - set(locations_all)
+        if unknown:
+            typer.echo(f"Errore: location sconosciute: {sorted(unknown)}")
+            raise typer.Exit(1)
+        locations = {k: v for k, v in locations_all.items() if k in location}
+    else:
+        locations = locations_all
+
+    run_sir = not only_openmeteo
+    run_om = not only_sir
+
+    typer.echo(f"Daily delta: {date} | location: {list(locations.keys())}")
 
     if dry_run:
         typer.echo("[dry-run] Nessuna scrittura effettuata.")
@@ -324,25 +374,25 @@ def cmd_daily(
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
 
-            # 1. SIR delta
-            sir_total = _ingest_sir_historical_range(
-                db, locations, stations, date, date
-            )
-            logger.info(f"daily SIR: {sir_total} record")
-
-            # 2. Open-Meteo historical per il giorno indicato
-            for loc_id, loc in locations.items():
-                results = fetch_openmeteo_historical(
-                    location_id=loc_id,
-                    lat=loc["lat"],
-                    lon=loc["lon"],
-                    start_date=date,
-                    end_date=date,
+            if run_sir:
+                sir_total = _ingest_sir_historical_range(
+                    db, locations, stations, date, date
                 )
-                for _model, records in results.items():
-                    if records:
-                        om_total += db.upsert_forecasts(records)
-            logger.info(f"daily Open-Meteo: {om_total} record")
+                logger.info(f"daily SIR: {sir_total} record")
+
+            if run_om:
+                for loc_id, loc in locations.items():
+                    results = fetch_openmeteo_historical(
+                        location_id=loc_id,
+                        lat=loc["lat"],
+                        lon=loc["lon"],
+                        start_date=date,
+                        end_date=date,
+                    )
+                    for _model, records in results.items():
+                        if records:
+                            om_total += db.upsert_forecasts(records)
+                logger.info(f"daily Open-Meteo: {om_total} record")
 
     except Exception as e:
         logger.error(f"daily fallito: {e}")

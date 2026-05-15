@@ -146,6 +146,43 @@ def test_historical_dry_run(cfg_dir: Path, tmp_path: Path) -> None:
     assert not db.exists()
 
 
+def test_historical_dry_run_with_location_filter(cfg_dir: Path, tmp_path: Path) -> None:
+    db = tmp_path / "test.duckdb"
+    result = runner.invoke(app, [
+        "historical", "--dry-run",
+        "--location", "casa_campi",
+        "--db", str(db),
+        "--config-dir", str(cfg_dir),
+    ])
+    assert result.exit_code == 0
+    assert "casa_campi" in result.output
+    assert "lavoro_cosimo" not in result.output
+
+
+def test_historical_dry_run_unknown_location(cfg_dir: Path, tmp_path: Path) -> None:
+    db = tmp_path / "test.duckdb"
+    result = runner.invoke(app, [
+        "historical", "--dry-run",
+        "--location", "location_inesistente",
+        "--db", str(db),
+        "--config-dir", str(cfg_dir),
+    ])
+    assert result.exit_code == 1
+    assert "sconosciute" in result.output
+
+
+def test_historical_only_sir_and_only_openmeteo_exclusive(cfg_dir: Path, tmp_path: Path) -> None:
+    db = tmp_path / "test.duckdb"
+    result = runner.invoke(app, [
+        "historical",
+        "--only-sir", "--only-openmeteo",
+        "--db", str(db),
+        "--config-dir", str(cfg_dir),
+    ])
+    assert result.exit_code == 1
+    assert "mutualmente esclusivi" in result.output
+
+
 def test_daily_dry_run(cfg_dir: Path, tmp_path: Path) -> None:
     db = tmp_path / "test.duckdb"
     result = runner.invoke(app, [
@@ -156,6 +193,18 @@ def test_daily_dry_run(cfg_dir: Path, tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "dry-run" in result.output
     assert not db.exists()
+
+
+def test_daily_dry_run_with_location_filter(cfg_dir: Path, tmp_path: Path) -> None:
+    db = tmp_path / "test.duckdb"
+    result = runner.invoke(app, [
+        "daily", "--dry-run",
+        "--location", "lavoro_cosimo",
+        "--db", str(db),
+        "--config-dir", str(cfg_dir),
+    ])
+    assert result.exit_code == 0
+    assert "lavoro_cosimo" in result.output
 
 
 def test_realtime_dry_run(cfg_dir: Path, tmp_path: Path) -> None:
