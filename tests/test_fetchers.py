@@ -182,11 +182,14 @@ def test_invalid_date_row_skipped() -> None:
 
 
 def test_fetch_sir_realtime_parses_json() -> None:
+    # Nuova struttura endpoint /monitoraggio/actions.php
     mock_data = {
-        "termo": {"valore": 22.5},
-        "igro": {"valore": 65.0},
-        "anemo": {"vel_media": 1.5, "dir_media": "NE", "vel_max": 6.2},
-        "pluvio": {"valore": 0.0},
+        "termo":  {"date": "15/05/2026 12:15:00", "value": "22.5", "id": "TOS01001215"},
+        "igro":   {"date": "15/05/2026 12:15:00", "value": "65",   "id": "TOS01001215"},
+        "anemo":  {"date": "15/05/2026 12:15:00", "speed": "1.5",  "dir": "45.0",
+                   "speed_label": None, "id": "TOS01001215"},
+        "pluvio": {"date": "15/05/2026 12:00:00", "CUM00": "0.2",  "CUM01": "0.0",
+                   "CUM24": "3.6", "id": "TOS01001215"},
     }
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -205,9 +208,29 @@ def test_fetch_sir_realtime_parses_json() -> None:
     assert record["temp_c"] == pytest.approx(22.5)
     assert record["humidity_pct"] == pytest.approx(65.0)
     assert record["wind_speed_ms"] == pytest.approx(1.5)
-    assert record["wind_dir_deg"] == pytest.approx(45.0)
-    assert record["wind_gust_ms"] == pytest.approx(6.2)
+    assert record["wind_dir_deg"] == pytest.approx(45.0)   # dir già in gradi, no lookup
     assert record["precip_mm"] == pytest.approx(0.0)
+    assert "wind_gust_ms" not in record                     # non esposta dal nuovo endpoint
+
+
+def test_fetch_sir_realtime_dash_precip() -> None:
+    """CUM01 = '-' (dato non disponibile) → precip_mm assente nel record."""
+    mock_data = {
+        "termo":  {"value": "10.0"},
+        "pluvio": {"CUM01": "-", "CUM24": "-"},
+    }
+    mock_resp = MagicMock()
+    mock_resp.json = MagicMock(return_value=mock_data)
+    mock_resp.raise_for_status = MagicMock()
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.get = MagicMock(return_value=mock_resp)
+
+    with patch("guazza.fetchers.httpx.Client", return_value=mock_client):
+        record = fetch_sir_realtime("TOS01001215")
+
+    assert "precip_mm" not in record
 
 
 # ═════════════════════════════════════════════════════════════════════════════

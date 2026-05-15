@@ -56,15 +56,22 @@ sources:
     auth: none
     headers:
       X-Requested-With: "XMLHttpRequest"
+      Referer: "https://www.sir.toscana.it/"
     format: JSON
-    update_freq: "~10 min"
+    update_freq: "~15 min"
     rate_limit: "~1 req/s (429 se parallelo)"
     sensor_types: [termo, pluvio, anemo, igro, idro]
+    json_structure:
+      termo:  '{"value": "13.0", "date": "DD/MM/YYYY HH:MM:SS"}'
+      igro:   '{"value": "90",   "date": "..."}'
+      anemo:  '{"speed": "0.2",  "dir": "287", "speed_label": null}'   # dir in gradi decimali
+      pluvio: '{"CUM00": "0.2",  "CUM01": "3.4", "CUM24": "5.4", ...}' # CUM01=ultima ora
     notes: >
-      Endpoint scoperti via analisi HAR (2026-05-13). Nessuna documentazione ufficiale.
-      Stesso endpoint per meteo e idrometria (tipo=idro per Bisenzio).
-      Stazione idrometrica Bisenzio: TOS01004791 (S. Piero a Ponti, 1.8km da casa_campi).
-      Fetcher: src/guazza/ingestion/sir_realtime.py
+      Endpoint corretto: /monitoraggio/actions.php (non /open_layers/actions.php che è deprecato).
+      Struttura JSON cambiata rispetto alla versione precedente: value invece di valore,
+      dir in gradi decimali invece di stringa cardinale, pluvio con cumulativi multipli.
+      CUM01 usato come precip_mm realtime (cumulativo ultima ora).
+      wind_gust_ms non esposta dal nuovo endpoint.
 
   sir_toscana_historical:
     label: "SIR Toscana — serie storiche validate"

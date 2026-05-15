@@ -213,7 +213,7 @@ def fetch_sir_historical(
 # SIR — Realtime JSON
 # ═════════════════════════════════════════════════════════════════════════════
 
-_SIR_REALTIME_BASE = "https://www.sir.toscana.it/open_layers"
+_SIR_REALTIME_BASE = "https://www.sir.toscana.it/monitoraggio"
 _SIR_RT_HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
     "Referer": "https://www.sir.toscana.it/",
@@ -223,6 +223,14 @@ _SIR_RT_HEADERS = {
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def fetch_sir_realtime(station_id: str) -> dict[str, Any]:
     """Recupera letture real-time per una stazione SIR.
+
+    Endpoint: /monitoraggio/actions.php?action=station&id=<station_id>
+
+    Struttura JSON risposta:
+      termo:  {"value": "13.0", "date": "..."}
+      igro:   {"value": "90",   "date": "..."}
+      anemo:  {"speed": "0.2",  "dir": "287", "date": "..."}   # dir già in gradi
+      pluvio: {"CUM01": "3.4",  "CUM24": "5.4", ...}           # cumulativi multipli
 
     Returns:
         Dict wide con source, station_id, ts, e colonne meteo popolate.
@@ -240,32 +248,46 @@ def fetch_sir_realtime(station_id: str) -> dict[str, Any]:
         "source": "sir_toscana",
         "station_id": station_id,
         "ts": ts,
-        # location_id non è noto qui; il caller lo aggiunge
     }
 
     # termo
     if termo := data.get("termo"):
-        if v := termo.get("valore"):
-            record["temp_c"] = float(v)
+        if v := termo.get("value"):
+            try:
+                record["temp_c"] = float(v)
+            except ValueError:
+                pass
 
     # igro
     if igro := data.get("igro"):
-        if v := igro.get("valore"):
-            record["humidity_pct"] = float(v)
+        if v := igro.get("value"):
+            try:
+                record["humidity_pct"] = float(v)
+            except ValueError:
+                pass
 
-    # anemo
+    # anemo — dir è già in gradi decimali (no lookup _WIND_DIR_DEG)
     if anemo := data.get("anemo"):
-        if v := anemo.get("vel_media"):
-            record["wind_speed_ms"] = float(v)
-        if d := anemo.get("dir_media"):
-            record["wind_dir_deg"] = _WIND_DIR_DEG.get(str(d).upper())
-        if v := anemo.get("vel_max"):
-            record["wind_gust_ms"] = float(v)
+        if v := anemo.get("speed"):
+            try:
+                record["wind_speed_ms"] = float(v)
+            except ValueError:
+                pass
+        if d := anemo.get("dir"):
+            try:
+                record["wind_dir_deg"] = float(d)
+            except ValueError:
+                pass
+        # vel_max non esposta dal nuovo endpoint — wind_gust_ms non popolata
 
-    # pluvio
+    # pluvio — CUM01 = cumulativo ultima ora, usato come precip_mm realtime
     if pluvio := data.get("pluvio"):
-        if (v := pluvio.get("valore")) is not None:
-            record["precip_mm"] = float(v)
+        cum01 = pluvio.get("CUM01")
+        if cum01 is not None and cum01 != "-":
+            try:
+                record["precip_mm"] = float(cum01)
+            except ValueError:
+                pass
 
     return record
 
