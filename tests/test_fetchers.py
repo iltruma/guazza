@@ -800,14 +800,15 @@ def _patch_arpat_json_error(exc: Exception) -> Any:
 
 # ── NRT ──────────────────────────────────────────────────────────────────────
 
-def test_arpat_nrt_single_station_list_format() -> None:
-    """Formato lista: una stazione → un record con NO2 e O3."""
-    payload = [
-        {
-            "codice_stazione": "FI-SIGNA",
-            "misurazioni": {"NO2": "25.3", "O3": "48.7", "CO": "0.4"},
-        }
-    ]
+def test_arpat_nrt_single_station_real_format() -> None:
+    """Formato reale API: dict con chiave 'items', una riga per (stazione, inquinante)."""
+    payload = {
+        "items": [
+            {"stazione": "FI-SIGNA", "inquinante": "NO2", "valore": 25.3, "data_ora_osservazione": "2026-05-15T15:00"},
+            {"stazione": "FI-SIGNA", "inquinante": "O3",  "valore": 48.7, "data_ora_osservazione": "2026-05-15T15:00"},
+            {"stazione": "FI-SIGNA", "inquinante": "CO",  "valore": 0.4,  "data_ora_osservazione": "2026-05-15T15:00"},
+        ]
+    }
     with _patch_arpat_json(payload):
         records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
 
@@ -820,31 +821,31 @@ def test_arpat_nrt_single_station_list_format() -> None:
     assert r["no2_ugm3"] == pytest.approx(25.3)
     assert r["o3_ugm3"] == pytest.approx(48.7)
     assert r["weight"] == pytest.approx(1.0)
+    assert r["ts"] == datetime(2026, 5, 15, 15, 0, tzinfo=UTC)
 
 
-def test_arpat_nrt_dict_format_stazioni_key() -> None:
-    """Formato dict con chiave 'stazioni'."""
-    payload = {
-        "stazioni": [
-            {
-                "codice_stazione": "FI-SIGNA",
-                "misurazioni": {"NO2": "10.0", "O3": "60.0"},
-            }
-        ]
-    }
+def test_arpat_nrt_list_format_fallback() -> None:
+    """Formato lista diretta (fallback) — una riga per (stazione, inquinante)."""
+    payload = [
+        {"stazione": "FI-SIGNA", "inquinante": "NO2", "valore": 10.0, "data_ora_osservazione": "2026-05-15T10:00"},
+        {"stazione": "FI-SIGNA", "inquinante": "O3",  "valore": 60.0, "data_ora_osservazione": "2026-05-15T10:00"},
+    ]
     with _patch_arpat_json(payload):
         records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
 
     assert len(records) == 1
     assert records[0]["no2_ugm3"] == pytest.approx(10.0)
+    assert records[0]["o3_ugm3"] == pytest.approx(60.0)
 
 
 def test_arpat_nrt_multi_station_weights() -> None:
     """Due stazioni con pesi diversi → due record."""
-    payload = [
-        {"codice_stazione": "PO-ROMA",     "misurazioni": {"NO2": "30.0"}},
-        {"codice_stazione": "PO-FERRUCCI", "misurazioni": {"NO2": "45.0"}},
-    ]
+    payload = {
+        "items": [
+            {"stazione": "PO-ROMA",     "inquinante": "NO2", "valore": 30.0, "data_ora_osservazione": "2026-05-15T15:00"},
+            {"stazione": "PO-FERRUCCI", "inquinante": "NO2", "valore": 45.0, "data_ora_osservazione": "2026-05-15T15:00"},
+        ]
+    }
     with _patch_arpat_json(payload):
         records = fetch_arpat_nrt("lavoro_madda", _ARPAT_STATIONS_MULTI)
 
@@ -856,9 +857,11 @@ def test_arpat_nrt_multi_station_weights() -> None:
 
 def test_arpat_nrt_station_not_in_response() -> None:
     """Stazione nella config ma assente dalla risposta → record saltato."""
-    payload = [
-        {"codice_stazione": "ALTRA-STAZIONE", "misurazioni": {"NO2": "10.0"}},
-    ]
+    payload = {
+        "items": [
+            {"stazione": "ALTRA-STAZIONE", "inquinante": "NO2", "valore": 10.0, "data_ora_osservazione": "2026-05-15T15:00"},
+        ]
+    }
     with _patch_arpat_json(payload):
         records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
 
@@ -866,10 +869,12 @@ def test_arpat_nrt_station_not_in_response() -> None:
 
 
 def test_arpat_nrt_null_values() -> None:
-    """Valori null/assenti → colonne None, non eccezione."""
-    payload = [
-        {"codice_stazione": "FI-SIGNA", "misurazioni": {"NO2": None, "O3": ""}},
-    ]
+    """Inquinanti non presenti per una stazione → colonne None, non eccezione."""
+    payload = {
+        "items": [
+            {"stazione": "FI-SIGNA", "inquinante": "PM10", "valore": 12.0, "data_ora_osservazione": "2026-05-15T15:00"},
+        ]
+    }
     with _patch_arpat_json(payload):
         records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
 
@@ -886,20 +891,18 @@ def test_arpat_nrt_http_error_returns_empty() -> None:
     assert records == []
 
 
-def test_arpat_nrt_ts_from_response() -> None:
-    """Timestamp dalla risposta deve essere parsato correttamente."""
-    payload = [
-        {
-            "codice_stazione": "FI-SIGNA",
-            "data": "2026-05-15T10:00:00",
-            "misurazioni": {"NO2": "20.0"},
-        }
-    ]
+def test_arpat_nrt_ts_from_data_ora_osservazione() -> None:
+    """Timestamp da campo data_ora_osservazione deve essere parsato correttamente."""
+    payload = {
+        "items": [
+            {"stazione": "FI-SIGNA", "inquinante": "NO2", "valore": 20.0, "data_ora_osservazione": "2026-05-15T10:00"},
+        ]
+    }
     with _patch_arpat_json(payload):
         records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
 
     assert len(records) == 1
-    assert records[0]["ts"] == datetime(2026, 5, 15, 10, 0, 0, tzinfo=UTC)
+    assert records[0]["ts"] == datetime(2026, 5, 15, 10, 0, tzinfo=UTC)
 
 
 # ── Bollettini ────────────────────────────────────────────────────────────────

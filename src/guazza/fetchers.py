@@ -1061,6 +1061,11 @@ def fetch_arpat_nrt(
 ) -> list[dict[str, Any]]:
     """Fetch valori NRT orari ARPAT (NO2, O3) per una location.
 
+    La risposta reale è {"items": [{"stazione": "FI-SIGNA", "inquinante": "NO2",
+    "valore": 3, "data_ora_osservazione": "2026-05-15T15:00", ...}, ...]}.
+    Una riga per (stazione, inquinante) — aggrega per stazione prima di costruire
+    il record wide.
+
     Args:
         location_id: ID location Guazza.
         arpat_stations: lista di {"id": str, "weight": float} da locations.yaml.
@@ -1081,49 +1086,51 @@ def fetch_arpat_nrt(
         logger.debug(f"ARPAT NRT raw response (first 200): {str(data)[:200]}")
         _arpat_nrt_first_call_logged = True
 
-    # data è una lista di stazioni: [{"codice_stazione": "FI-SIGNA", "misurazioni": {...}, ...}]
-    # Struttura effettiva non verificata su endpoint reale — parsing difensivo
-    station_index: dict[str, dict[str, Any]] = {}
+    # Risposta reale: {"items": [{"stazione": ..., "inquinante": ..., "valore": ...,
+    #   "data_ora_osservazione": ..., "unita_di_misura": ...}, ...]}
+    # Aggrega per stazione: {station_id: {inquinante: (valore, ts)}}
+    raw_items: list[Any] = []
     if isinstance(data, list):
-        for item in data:
-            sid = item.get("codice_stazione") or item.get("stazione") or item.get("id", "")
-            if sid:
-                station_index[str(sid).upper()] = item
+        raw_items = data
     elif isinstance(data, dict):
-        # Alcune API ARPAT restituiscono {"stazioni": [...]}
-        items_list: list[Any] = data.get("stazioni") or data.get("data") or []
-        for item in items_list:
-            sid = item.get("codice_stazione") or item.get("stazione") or item.get("id", "")
-            if sid:
-                station_index[str(sid).upper()] = item
+        raw_items = data.get("items") or data.get("stazioni") or data.get("data") or []
 
-    records: list[dict[str, Any]] = []
+    # {station_id_upper: {inquinante_upper: (valore, ts_str)}}
+    by_station: dict[str, dict[str, tuple[Any, str]]] = {}
+    for item in raw_items:
+        sid = str(item.get("stazione") or item.get("codice_stazione") or item.get("id") or "").upper()
+        inq = str(item.get("inquinante") or "").upper()
+        if not sid or not inq:
+            continue
+        val = item.get("valore")
+        ts_str = str(item.get("data_ora_osservazione") or item.get("data") or item.get("timestamp") or "")
+        if sid not in by_station:
+            by_station[sid] = {}
+        by_station[sid][inq] = (val, ts_str)
+
     now_utc = datetime.now(tz=UTC).replace(minute=0, second=0, microsecond=0)
+    records: list[dict[str, Any]] = []
 
     for st in arpat_stations:
         station_id = str(st["id"]).upper()
         weight = float(st.get("weight", 1.0))
-        item = station_index.get(station_id)
-        if item is None:
+        inq_map = by_station.get(station_id)
+        if inq_map is None:
             logger.debug(f"ARPAT NRT: stazione {station_id} non trovata nella risposta")
             continue
 
-        # Estrai timestamp dalla risposta se presente, fallback a ora corrente troncata
-        raw_ts = item.get("data") or item.get("timestamp") or item.get("ora")
-        ts: datetime
-        if raw_ts:
-            try:
-                ts = datetime.fromisoformat(str(raw_ts).replace(" ", "T"))
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=UTC)
-            except ValueError:
-                ts = now_utc
-        else:
-            ts = now_utc
-
-        misurazioni: dict[str, Any] = (
-            item.get("misurazioni") or item.get("valori") or item
-        )
+        # Timestamp: usa il più recente tra gli inquinanti disponibili
+        ts: datetime = now_utc
+        for _inq, (_, ts_str) in inq_map.items():
+            if ts_str:
+                try:
+                    parsed = datetime.fromisoformat(ts_str.replace(" ", "T"))
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=UTC)
+                    if parsed > ts or ts is now_utc:
+                        ts = parsed
+                except ValueError:
+                    pass
 
         rec: dict[str, Any] = {
             "source": "arpat",
@@ -1137,7 +1144,8 @@ def fetch_arpat_nrt(
         for arpat_var, col in _ARPAT_NRT_VAR_MAP.items():
             if col is None:
                 continue
-            raw = misurazioni.get(arpat_var) or misurazioni.get(arpat_var.lower())
+            entry = inq_map.get(arpat_var.upper())
+            raw = entry[0] if entry is not None else None
             try:
                 rec[col] = float(raw) if raw is not None else None
             except (TypeError, ValueError):
