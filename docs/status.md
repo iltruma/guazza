@@ -87,13 +87,18 @@ Ogni job: `--dry-run`, Healthchecks.io ping (start/ok/fail), log JSON strutturat
 
 ## Prossimi passi (in ordine)
 
-### Sprint 1b — Sorgenti dati aggiuntive
-**Dipendenza**: ingestion funzionante (Sprint 1 completato)
+### Sprint 1b — ARPAT qualità aria (completato — 2026-05-15)
+- `fetch_arpat_nrt()`: valori orari NO2/O3 da endpoint NRT ARPAT, `granularity='hourly'`
+- `fetch_arpat_bollettini()`: PM10/PM2.5 giornalieri da endpoint bollettini, `granularity='daily'`
+- `fetch_arpat_all_locations()`: wrapper per tutte le location con `arpat_stations` in config
+- Integrato in job `realtime` (NRT) e `daily` (bollettini)
+- Parsing difensivo: supporta formato lista e dict `{"stazioni": [...]}`
+- 11 test pytest, tutti verdi
+- CFR Toscana rimosso da `sources.yaml` (coperto da SIR idrometria)
+- RainViewer marcato `scope: frontend_only` (nessun fetcher, usato solo in Sprint 6)
 
-- **CFR Toscana**: scraper HTML con `tenacity` (3 tentativi, backoff 60s/300s/600s)
-- **ARPAT**: fetcher qualità aria (PM10, NO2, O3) da API/stazioni ARPAT Toscana
-- **RainViewer**: fetcher radar precipitazioni in tempo reale
-- Log strutturato `loguru` su ogni fetcher, ping `Healthchecks.io` a fine run
+🟡 **Punto aperto**: struttura JSON reale degli endpoint ARPAT non verificata su rete reale.
+Il parsing è difensivo (supporta più formati), ma da verificare al primo run su VPS.
 
 ### Sprint 2b — Backfill SIR pre-2022
 **Dipendenza**: ingestion funzionante (Sprint 1 completato)
