@@ -237,7 +237,6 @@ def fetch_sir_historical(
             r["precip_interval_h"] = 24
 
     _log_scrape(f"sir_historical:{station_id}:{sensor_type}", "ok", rows=len(records))
-    logger.info(f"SIR CSV: {station_id} {sensor_type} → {len(records)} righe")
     return records
 
 
@@ -366,15 +365,19 @@ def fetch_sir_stations_realtime(
         Dict {station_id: record_wide} — le stazioni con errore vengono omesse.
     """
     results: dict[str, dict[str, Any]] = {}
+    n_fail = 0
     for i, sid in enumerate(station_ids):
         if i > 0:
             time.sleep(delay)
         try:
             results[sid] = fetch_sir_realtime(sid)
         except Exception as e:
+            n_fail += 1
             logger.warning(f"SIR realtime fallito per {sid}: {e}")
-            _log_scrape(f"sir_realtime:{sid}", "fail", detail=str(e))
-    _log_scrape("sir_realtime_batch", "ok", rows=len(results))
+
+    status = "ok" if results else "fail"
+    detail = f"{n_fail} stazioni fallite" if n_fail else ""
+    _log_scrape("sir_realtime", status, rows=len(results), detail=detail)
     return results
 
 
@@ -874,7 +877,7 @@ def _parse_om_response(
     hourly = data.get("hourly", {})
     times: list[str] = hourly.get("time", [])
     if not times:
-        logger.warning(f"Open-Meteo [{model}] risposta senza dati hourly")
+        logger.warning(f"Open-Meteo [{location_id}] [{model}] risposta senza dati hourly")
         return []
 
     records: list[dict[str, Any]] = []
@@ -904,8 +907,8 @@ def _parse_om_response(
 
         records.append(rec)
 
-    logger.info(
-        f"Open-Meteo [{model}] [{location_id}] → {len(records)} righe"
+    logger.debug(
+        f"Open-Meteo [{location_id}] [{model}] → {len(records)} righe"
         + (f" (ts_run={ts_run})" if ts_run is not None else " (ts_run=inferita per riga)")
     )
     return records
@@ -955,7 +958,7 @@ def fetch_openmeteo_forecast(
             results[model] = records
             _log_scrape(f"openmeteo_forecast:{location_id}:{model}", "ok", rows=len(records))
         except Exception as e:
-            logger.error(f"Open-Meteo forecast [{model}] [{location_id}] fallito: {e}")
+            logger.error(f"Open-Meteo forecast [{location_id}] [{model}] fallito: {e}")
             _log_scrape(f"openmeteo_forecast:{location_id}:{model}", "fail", detail=str(e))
             results[model] = []
         time.sleep(0.5)  # throttle gentile tra modelli
@@ -1004,13 +1007,14 @@ def fetch_openmeteo_historical(
             # ts_run=None → inferita per ogni riga in _parse_om_response
             records = _parse_om_response(data, model, location_id, ts_run=None)
             results[model] = records
-            logger.info(
-                f"Open-Meteo historical [{model}] [{location_id}] "
-                f"→ {len(records)} righe ({start_date}→{end_date})"
+            _log_scrape(
+                f"openmeteo_historical:{location_id}:{model}",
+                "ok",
+                rows=len(records),
+                detail=f"{start_date} to {end_date}",
             )
-            _log_scrape(f"openmeteo_historical:{location_id}:{model}", "ok", rows=len(records))
         except Exception as e:
-            logger.error(f"Open-Meteo historical [{model}] [{location_id}] fallito: {e}")
+            logger.error(f"Open-Meteo historical [{location_id}] [{model}] fallito: {e}")
             _log_scrape(f"openmeteo_historical:{location_id}:{model}", "fail", detail=str(e))
             results[model] = []
         time.sleep(0.5)
@@ -1070,12 +1074,12 @@ def fetch_openmeteo_forecast_batch(
             for lid, resp in zip(loc_ids, responses, strict=True):
                 records = _parse_om_response(resp, model, lid, ts_run)
                 results[lid][model] = records
-                _log_scrape(f"openmeteo_forecast_batch:{lid}:{model}", "ok", rows=len(records))
+                _log_scrape(f"openmeteo_forecast:{lid}:{model}", "ok", rows=len(records))
 
         except Exception as e:
             logger.error(f"Open-Meteo forecast batch [{model}] fallito: {e}")
             for lid in loc_ids:
-                _log_scrape(f"openmeteo_forecast_batch:{lid}:{model}", "fail", detail=str(e))
+                _log_scrape(f"openmeteo_forecast:{lid}:{model}", "fail", detail=str(e))
 
         time.sleep(0.5)
 
@@ -1146,7 +1150,7 @@ def fetch_openmeteo_historical_batch(
                     records = _parse_om_response(resp, model, lid, ts_run=None)
                     results[lid][model].extend(records)
                     _log_scrape(
-                        f"openmeteo_historical_batch:{lid}:{model}",
+                        f"openmeteo_historical:{lid}:{model}",
                         "ok",
                         rows=len(records),
                         detail=f"{c_start} to {c_end}",
@@ -1154,7 +1158,7 @@ def fetch_openmeteo_historical_batch(
             except Exception as e:
                 logger.error(f"Open-Meteo historical batch [{model}] [{c_start}→{c_end}] fallito: {e}")
                 for lid in loc_ids:
-                    _log_scrape(f"openmeteo_historical_batch:{lid}:{model}", "fail", detail=str(e))
+                    _log_scrape(f"openmeteo_historical:{lid}:{model}", "fail", detail=str(e))
 
             time.sleep(12.0)
 
@@ -1203,6 +1207,7 @@ def fetch_netatmo_all_locations(
             results[loc_id] = stations
         except Exception as e:
             logger.error(f"[{loc_id}] Fetch fallito: {e}")
+            _log_scrape(f"netatmo:{loc_id}", "fail", detail=str(e))
             results[loc_id] = []
         if not target_location:
             time.sleep(_NETATMO_DELAY)
@@ -1383,6 +1388,7 @@ def fetch_arpat_bollettini(
         raise ValueError(f"date deve essere YYYY-MM-DD, ricevuto: {date!r}") from e
 
     records: list[dict[str, Any]] = []
+    n_fail = 0
 
     for st in arpat_stations:
         station_id = str(st["id"]).upper()
@@ -1399,6 +1405,7 @@ def fetch_arpat_bollettini(
                 },
             )
         except Exception as e:
+            n_fail += 1
             logger.warning(
                 f"ARPAT bollettini [{location_id}] stazione {station_id} fallito: {e}"
             )
@@ -1443,7 +1450,9 @@ def fetch_arpat_bollettini(
 
         records.append(rec)
 
-    _log_scrape(f"arpat_bollettini:{location_id}", "ok", rows=len(records))
+    status = "fail" if (not records and n_fail) else "ok"
+    detail = f"{n_fail} stazioni fallite" if n_fail else ""
+    _log_scrape(f"arpat_bollettini:{location_id}", status, rows=len(records), detail=detail)
     return records
 
 
@@ -1551,14 +1560,11 @@ def fetch_arpat_bollettini_range(
 
             records.append(rec)
 
-        logger.info(
-            f"ARPAT bollettini range [{location_id}] {station_id}: "
-            f"{len(by_date)} giorni ({start_date}→{end_date})"
-        )
         _log_scrape(
             f"arpat_bollettini_range:{location_id}:{station_id}",
             "ok",
             rows=len(by_date),
+            detail=f"{start_date} to {end_date}",
         )
         time.sleep(0.5)
 
