@@ -58,20 +58,6 @@ def compute_station_weight(
     return base * distance_decay * elevation_penalty, distance_km, delta_elev
 
 
-def _weight_from_precalc_dist(
-    distance_km: float,
-    station_elevation_m: float,
-    target_elevation_m: float,
-    source: str,
-) -> tuple[float, float, float]:
-    """Variante per stazioni con distanza già calcolata."""
-    base = _SOURCE_WEIGHT.get(source, 1.0)
-    distance_decay = math.exp(-distance_km / _HALF_DECAY_KM)
-    delta_elev = abs(station_elevation_m - target_elevation_m)
-    elevation_penalty = math.exp(-delta_elev / _HALF_DECAY_ELEV)
-    return base * distance_decay * elevation_penalty, distance_km, delta_elev
-
-
 def load_configs(
     config_dir: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -159,6 +145,13 @@ def refresh_station_weights(
     return records
 
 
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+import typer  # noqa: E402
+
+app = typer.Typer(help="Gestione pesi stazioni per location.")
+
+
 def print_weights_report(
     records: list[dict[str, Any]],
     locations: dict[str, Any],
@@ -171,7 +164,7 @@ def print_weights_report(
     for loc_id in locations:
         loc_records = by_loc.get(loc_id, [])
         loc_label = locations[loc_id].get("label", loc_id)
-        print(f"\n{loc_id} — {loc_label}:")
+        typer.echo(f"\n{loc_id} — {loc_label}:")
 
         sir_recs = sorted(
             [r for r in loc_records if r["source"] == "sir"],
@@ -180,20 +173,13 @@ def print_weights_report(
         )
         for r in sir_recs:
             marker = " ✓" if r["weight"] >= 0.5 else ""
-            print(
+            typer.echo(
                 f"  SIR     {r['station_id']} ({r['nome'][:24]:<24}): "
                 f"peso={r['weight']:.3f}  dist={r['distance_km']:.1f}km  "
                 f"Δq={r['delta_elev_m']:+.0f}m{marker}"
             )
         if not loc_records:
-            print("  (nessuna stazione)")
-
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
-
-import typer  # noqa: E402
-
-app = typer.Typer(help="Gestione pesi stazioni per location.")
+            typer.echo("  (nessuna stazione)")
 
 _DB_OPTION = typer.Option(
     os.environ.get("DB_PATH", "/var/lib/guazza/guazza.duckdb"),

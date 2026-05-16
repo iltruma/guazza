@@ -9,7 +9,6 @@ import pytest
 
 from guazza.storage import DuckDBClient
 from guazza.weights import (
-    _weight_from_precalc_dist,
     compute_station_weight,
     refresh_station_weights,
 )
@@ -82,13 +81,6 @@ def test_weight_sir_gt_netatmo_same_position() -> None:
     w_sir, _, _ = compute_station_weight(43.82, 11.14, 42, 43.82, 11.13, 42, "sir")
     w_net, _, _ = compute_station_weight(43.82, 11.14, 42, 43.82, 11.13, 42, "netatmo")
     assert w_sir > w_net
-
-
-def test_weight_from_precalc_dist_matches() -> None:
-    _, dist, _ = compute_station_weight(43.82, 11.14, 50, 43.82, 11.13, 42, "netatmo")
-    w1, _, _ = compute_station_weight(43.82, 11.14, 50, 43.82, 11.13, 42, "netatmo")
-    w2, _, _ = _weight_from_precalc_dist(dist, 50, 42, "netatmo")
-    assert math.isclose(w1, w2, rel_tol=1e-6)
 
 
 def test_refresh_inserts_records(seeded_db: Path) -> None:
