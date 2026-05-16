@@ -238,19 +238,14 @@ def build_features_daily(db: DuckDBClient) -> int:
     Returns:
         Numero di righe scritte in features_daily.
     """
-    if db._conn is None:
-        raise RuntimeError("DuckDBClient non è nel context manager.")
-
-    n_weights = db._conn.execute(
-        "SELECT COUNT(*) FROM station_weights"
-    ).fetchone()
+    n_weights = db.execute("SELECT COUNT(*) FROM station_weights").fetchone()
     if not n_weights or n_weights[0] == 0:
         raise ValueError(
             "station_weights è vuota. "
             "Esegui prima: uv run python -m guazza.weights refresh"
         )
 
-    db._conn.execute(_BUILD_SQL)
+    db.execute(_BUILD_SQL)
 
-    row = db._conn.execute("SELECT COUNT(*) FROM features_daily").fetchone()
+    row = db.execute("SELECT COUNT(*) FROM features_daily").fetchone()
     return int(row[0]) if row else 0

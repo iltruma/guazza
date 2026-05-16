@@ -32,11 +32,8 @@ def compute_quality_flags(db: DuckDBClient) -> dict[str, int]:
     Returns:
         Dict con total e breakdown per flag_type.
     """
-    if db._conn is None:
-        raise RuntimeError("DuckDBClient non è nel context manager.")
-
-    db._conn.execute("BEGIN TRANSACTION")
-    db._conn.execute("DELETE FROM quality_flags")
+    db.execute("BEGIN TRANSACTION")
+    db.execute("DELETE FROM quality_flags")
 
     _insert_spike_flags(db, "tmin_c", "spike_tmin")
     _insert_spike_flags(db, "tmax_c", "spike_tmax")
@@ -47,19 +44,18 @@ def compute_quality_flags(db: DuckDBClient) -> dict[str, int]:
     _insert_range_arpat_flags(db, "no2_ugm3", "range_no2_high", NO2_HIGH_UGM3)
     _insert_range_arpat_flags(db, "o3_ugm3", "range_o3_high", O3_HIGH_UGM3)
 
-    rows = db._conn.execute(
+    rows = db.execute(
         "SELECT flag_type, COUNT(*) FROM quality_flags GROUP BY flag_type ORDER BY flag_type"
     ).fetchall()
     breakdown = {str(r[0]): int(r[1]) for r in rows}
     breakdown["total"] = sum(breakdown.values())
-    db._conn.execute("COMMIT")
+    db.execute("COMMIT")
     return breakdown
 
 
 def _insert_spike_flags(db: DuckDBClient, col: str, flag_type: str) -> None:
     """Flag spike su colonna temperatura: |val[t] - val[t-1]| > SPIKE_TEMP_C."""
-    assert db._conn is not None
-    db._conn.execute(f"""
+    db.execute(f"""
         INSERT INTO quality_flags
             (source, station_id, ts, granularity, flag_type, column_name, value, detail)
         SELECT
@@ -88,8 +84,7 @@ def _insert_spike_flags(db: DuckDBClient, col: str, flag_type: str) -> None:
 
 def _insert_inversion_flags(db: DuckDBClient) -> None:
     """Flag inversione termica: tmin_c > tmax_c."""
-    assert db._conn is not None
-    db._conn.execute("""
+    db.execute("""
         INSERT INTO quality_flags
             (source, station_id, ts, granularity, flag_type, column_name, value, detail)
         SELECT
@@ -109,8 +104,7 @@ def _insert_inversion_flags(db: DuckDBClient) -> None:
 
 def _insert_range_precip_flags(db: DuckDBClient) -> None:
     """Flag precipitazione estrema: precip_mm > PRECIP_HIGH_MM (daily + realtime)."""
-    assert db._conn is not None
-    db._conn.execute(f"""
+    db.execute(f"""
         INSERT INTO quality_flags
             (source, station_id, ts, granularity, flag_type, column_name, value, detail)
         SELECT
@@ -127,8 +121,7 @@ def _insert_range_precip_flags(db: DuckDBClient) -> None:
 
 def _insert_range_arpat_flags(db: DuckDBClient, col: str, flag_type: str, threshold: float) -> None:
     """Flag range per inquinante ARPAT: valore > threshold."""
-    assert db._conn is not None
-    db._conn.execute(f"""
+    db.execute(f"""
         INSERT INTO quality_flags
             (source, station_id, ts, granularity, flag_type, column_name, value, detail)
         SELECT
