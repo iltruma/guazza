@@ -285,6 +285,11 @@ uv run python -m guazza.jobs.ingest daily
 uv run python -m guazza.jobs.ingest realtime
 uv run python -m guazza.jobs.ingest forecasts
 
+# Quality control
+uv run python -m guazza.jobs.qc run
+uv run python -m guazza.jobs.qc run --dry-run
+uv run python -m guazza.jobs.qc report
+
 # Validazione schema DuckDB
 uv run python -m guazza.storage verify-schema
 ```

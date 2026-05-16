@@ -47,13 +47,15 @@ guazza/
 │   ├── sources.yaml        # Endpoint sorgenti dati e stato
 │   └── stations.yaml       # Anagrafica stazioni SIR e ARPAT
 ├── src/guazza/             # Codice sorgente Python
-│   ├── fetchers.py         # Fetcher SIR (storico + realtime) + Netatmo + Open-Meteo
+│   ├── fetchers.py         # Fetcher SIR (storico + realtime) + Netatmo + Open-Meteo + ARPAT
 │   ├── storage.py          # DuckDB client + upsert wide
 │   ├── weights.py          # Calcolo pesi stazioni per location
 │   ├── indicators.py       # Decision Logic Engine (DLE)
+│   ├── qc.py               # Quality control osservazioni (SIR + ARPAT)
 │   ├── schema.sql          # Schema DuckDB (unica source of truth)
 │   └── jobs/
-│       └── ingest.py       # Entry point cron: historical/daily/realtime/forecasts
+│       ├── ingest.py       # Entry point cron: historical/daily/realtime/forecasts
+│       └── qc.py           # QC run/report CLI
 ├── deploy/                 # Template nginx, crontab
 ├── tests/                  # Test pytest
 └── docs/
@@ -67,13 +69,18 @@ guazza/
 ## Roadmap
 
 | Sprint | Obiettivo | Stato |
-|---|---|---|
+|---|---|---|---|
 | Sprint 0 | Ricognizione sorgenti, config stazioni, struttura repo | Completato |
-| Sprint 1 | Ingestion SIR + Netatmo + Open-Meteo, schema DuckDB, job cron | In corso |
-| Sprint 2 | LightGBM quantile, CQR, indicatori MVP, frontend base | — |
-| Sprint 3 | RH, vento, ARPAT, gelata/nebbia, idrometria, allerte | — |
-| Sprint 4 | Benchmark provider, Diebold-Mariano, confronto modelli | — |
-| Sprint 5 | Articolo LinkedIn/Medium, cleanup repo, open data | — |
+| Sprint 1 | Ingestion SIR + Netatmo + Open-Meteo + ARPAT, schema DuckDB, job cron | Completato |
+| Sprint 2 | Backfill SIR pre-2022, quality control (SIR + ARPAT), flag qualità | Completato |
+| Sprint 3 | Feature engineering, training set materializzato | In corso |
+| Sprint 4 | LightGBM quantile, CQR, benchmark NWP | — |
+| Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | — |
+| Sprint 6 | Frontend HTML+JS vanilla | — |
+| Sprint 7 | Deploy VPS, backup R2, crontab | — |
+| Sprint 8 | Model monitoring, coverage alert | — |
+| Sprint 9 | Calibrazione soglie DLE post-deploy | — |
+| Sprint 10 | Case study / pubblicazione | — |
 
 ---
 
@@ -105,6 +112,11 @@ uv run python -m guazza.jobs.ingest realtime
 
 # Forecast NWP — schedulare ogni 6h (02/08/14/20 UTC)
 uv run python -m guazza.jobs.ingest forecasts
+
+# Quality control — ricalcolo flag qualità (idempotente)
+uv run python -m guazza.jobs.qc run
+uv run python -m guazza.jobs.qc run --dry-run
+uv run python -m guazza.jobs.qc report
 
 # Opzioni comuni
 --dry-run          # Simula senza scrivere

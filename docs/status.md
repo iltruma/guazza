@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-15
+> Aggiornato: 2026-05-16
 
 ## Cosa è stato fatto
 
@@ -82,7 +82,7 @@ Ogni job: `--dry-run`, Healthchecks.io ping (start/ok/fail), log JSON strutturat
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **118 test**, tutti verdi
+- **156 test**, tutti verdi
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -110,12 +110,34 @@ Il parsing è difensivo (supporta più formati), ma da verificare al primo run s
 
 - Eliminati dati pre-2004 (31.918 righe): pluviometro SIR non disponibile prima del 2004
 - Tabella `quality_flags` in DuckDB: spike_tmin, spike_tmax, inversion_temp, range_precip_high
-- `src/guazza/qc.py` + `src/guazza/jobs/qc.py` (CLI `run` / `report`) — full-replace idempotente
+- `src/guazza/qc.py` + `src/guazza/jobs/qc.py` (CLI `run` / `report`)
 - 153 flag su 166k righe (~0.09%): tutti meteorologicamente plausibili, nessun errore strumentale
 - Nessuna inversione termica (tmin > tmax) — dati SIR sostanzialmente puliti
 - 4 eventi precip > 150mm: eventi estremi reali (alluvione marzo 2015 inclusa)
 - `temp_c` sempre NULL by design: SIR daily dà solo tmin/tmax — Sprint 3 usa tmin_c/tmax_c
 - Finestra temporale utile per training: 2004–oggi (stazioni FI), 2007–oggi (casa_cesto/TOS11000516)
+
+#### Miglioramenti QC (2026-05-16)
+
+- **Transazione**: `compute_quality_flags` ora in `BEGIN TRANSACTION` / `COMMIT` / `ROLLBACK`
+- **ARPAT flags**: 4 nuovi flag — `range_pm10_high` (>200 µg/m³), `range_pm25_high` (>100 µg/m³),
+  `range_no2_high` (>400 µg/m³), `range_o3_high` (>300 µg/m³)
+- **Realtime precip**: `range_precip_high` esteso a `granularity='realtime'` (CUM01, 1h cumulate)
+- **Breakdown dict**: `compute_quality_flags` restituisce `{"total": N, "spike_tmin": M, ...}`
+- **`--dry-run`**: aggiunto a `jobs/qc.py run`
+- **Breakdown log**: il job logga il dettaglio per tipo flag
+- 7 nuovi test (156 totali), mypy e ruff OK
+
+#### Miglioramenti QC (2026-05-16)
+
+- **Transazione**: `compute_quality_flags` ora in `BEGIN TRANSACTION` / `COMMIT` / `ROLLBACK`
+- **ARPAT flags**: 4 nuovi flag — `range_pm10_high` (>200 µg/m³), `range_pm25_high` (>100 µg/m³),
+  `range_no2_high` (>400 µg/m³), `range_o3_high` (>300 µg/m³)
+- **Realtime precip**: `range_precip_high` esteso a `granularity='realtime'` (CUM01, 1h cumulate)
+- **Breakdown dict**: `compute_quality_flags` restituisce `{"total": N, "spike_tmin": M, ...}`
+- **`--dry-run`**: aggiunto a `jobs/qc.py run`
+- **Breakdown log**: il job logga il dettaglio per tipo flag
+- 7 nuovi test (156 totali), mypy e ruff OK
 
 ### Sprint 3 — Feature Engineering
 **Dipendenza**: dati in DuckDB validati (`observations` + `forecasts`)
@@ -134,6 +156,12 @@ Il parsing è difensivo (supporta più formati), ma da verificare al primo run s
 
 🟡 **Punto aperto**: copertura storica SIR per le 4 location da verificare in Sprint 2c
 (minimo ~200 esempi per bucket lead time per CQR stabile — D-003)
+
+🟡 **Punto aperto**: feature upstream pluviometriche — aggiungere stazioni a `stations.yaml`
+prima di costruire il training set
+
+🟡 **Punto aperto**: feature upstream pluviometriche — aggiungere stazioni a `stations.yaml`
+prima di costruire il training set
 
 ### Sprint 4 — Modello ML
 **Dipendenza**: training set Sprint 3

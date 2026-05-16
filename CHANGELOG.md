@@ -8,6 +8,15 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Added
+- **QC ARPAT flags**: `range_pm10_high`, `range_pm25_high`, `range_no2_high`, `range_o3_high`
+- **QC realtime precip**: `range_precip_high` esteso a `granularity='realtime'`
+- **Transazione**: `compute_quality_flags` in `BEGIN/COMMIT/ROLLBACK`
+- **Breakdown dict**: `compute_quality_flags` restituisce `{"total": N, "spike_tmin": M, ...}`
+- **`--dry-run`**: aggiunto a `jobs/qc.py run`
+- **Breakdown log**: il job logga il dettaglio per tipo flag
+- **7 nuovi test** (156 totali), mypy e ruff OK
+
 ---
 
 ## [0.1.0] — 2026-05-15
