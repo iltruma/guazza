@@ -802,9 +802,9 @@ def _fetch_om_json(url: str, params: dict[str, str | int | float | list[str]]) -
 
 
 def _is_retryable_http(exc: BaseException) -> bool:
-    """Ritenta solo su 5xx e network error — i 4xx sono errori permanenti."""
+    """Ritenta su 429 (rate limit) e 5xx. I 4xx permanenti (400, 404, 422) non si ritentano."""
     if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code >= 500
+        return exc.response.status_code == 429 or exc.response.status_code >= 500
     return True
 
 
@@ -1135,7 +1135,7 @@ def fetch_openmeteo_historical_batch(
                 for lid in loc_ids:
                     _log_scrape(f"openmeteo_historical_batch:{lid}:{model}", "fail", detail=str(e))
 
-            time.sleep(1.0)
+            time.sleep(5.0)
 
     return results
 
