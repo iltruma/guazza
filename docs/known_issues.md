@@ -109,6 +109,28 @@ il refresh automatico.
 
 ---
 
+## KI-008 — DuckDB: DELETE su tabella con indice grande fallisce
+
+**Severità**: media (operazione una-tantum, non impatta produzione)
+**Stato**: workaround stabile
+
+**Problema**: `DELETE FROM forecasts WHERE source = '...'` su tabelle con molte
+righe e PRIMARY KEY fallisce con `FATAL Error: Failed to delete all rows from index`.
+Bug noto DuckDB con ART index e grandi eliminazioni.
+
+**Workaround**:
+```python
+c.execute('CREATE TABLE forecasts_keep AS SELECT * FROM forecasts WHERE source != <da_eliminare>')
+c.execute('DROP TABLE forecasts')
+# Ricrea con schema completo (PRIMARY KEY + indici)
+c.execute('INSERT INTO forecasts SELECT * FROM forecasts_keep')
+c.execute('DROP TABLE forecasts_keep')
+```
+
+**Nota**: applicato il 2026-05-16 per eliminare 153.248 righe `open_meteo_ecmwf_ifs025`.
+
+---
+
 ## KI-007 — ECMWF falso allarme precipitazioni su Toscana (osservazione preliminare)
 
 **Severità**: informativa
