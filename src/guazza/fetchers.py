@@ -25,6 +25,7 @@ import yaml
 from dotenv import load_dotenv
 from loguru import logger
 from tenacity import (
+    RetryCallState,
     retry,
     retry_if_exception,
     stop_after_attempt,
@@ -808,8 +809,23 @@ def _is_retryable_http(exc: BaseException) -> bool:
     return True
 
 
-def _log_http_error(retry_state: Any) -> None:
-    exc = retry_state.outcome.exception()
+def _wait_historical(retry_state: RetryCallState) -> float:
+    """Rispetta Retry-After dal 429; fallback exponential backoff."""
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        retry_after = exc.response.headers.get("Retry-After")
+        if retry_after:
+            try:
+                return float(retry_after) + 1.0
+            except ValueError:
+                pass
+        return 60.0
+    # exponential backoff per 5xx e altri errori
+    return min(60.0, 5.0 * (2.0 ** (retry_state.attempt_number - 1)))
+
+
+def _log_http_error(retry_state: RetryCallState) -> None:
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
     if isinstance(exc, httpx.HTTPStatusError):
         logger.warning(
             f"Open-Meteo historical HTTP {exc.response.status_code} "
@@ -821,13 +837,19 @@ def _log_http_error(retry_state: Any) -> None:
 
 @retry(
     stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=2, min=5, max=60),
+    wait=_wait_historical,
     retry=retry_if_exception(_is_retryable_http),
     before_sleep=_log_http_error,
 )
 def _fetch_om_json_historical(url: str, params: dict[str, str | int | float | list[str]]) -> dict[str, Any]:
     logger.debug(f"Open-Meteo historical fetch: {url} params={params}")
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; guazza/1.0; personal weather research)"}
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/125.0.0.0 Safari/537.36"
+        )
+    }
     with httpx.Client(timeout=90, headers=headers) as client:
         r = client.get(url, params=params)
         r.raise_for_status()
@@ -1136,7 +1158,7 @@ def fetch_openmeteo_historical_batch(
                 for lid in loc_ids:
                     _log_scrape(f"openmeteo_historical_batch:{lid}:{model}", "fail", detail=str(e))
 
-            time.sleep(5.0)
+            time.sleep(12.0)
 
     return results
 
