@@ -1029,8 +1029,12 @@ def fetch_openmeteo_historical_batch(
     start_date: str,
     end_date: str,
     models: list[str] | None = None,
+    chunk_days: int = 180,
 ) -> dict[str, dict[str, list[dict[str, Any]]]]:
     """Fetch storico forecast da Open-Meteo Historical Forecast API in batch.
+
+    Divide la richiesta in chunk temporali (default 180gg) per evitare timeout
+    lato server su intervalli lunghi e modelli ad alta risoluzione.
 
     Returns:
         Dict {location_id: {model: [record_wide, ...]}}
@@ -1038,7 +1042,6 @@ def fetch_openmeteo_historical_batch(
     if models is None:
         models = _OM_MODELS
 
-    # Inizializza risultati
     results: dict[str, dict[str, list[dict[str, Any]]]] = {
         loc_id: {model: [] for model in models} for loc_id in locations
     }
@@ -1047,37 +1050,48 @@ def fetch_openmeteo_historical_batch(
     lats = [locations[lid]["lat"] for lid in loc_ids]
     lons = [locations[lid]["lon"] for lid in loc_ids]
 
+    # Genera intervalli temporali
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+    
+    chunks: list[tuple[str, str]] = []
+    curr_start = start_dt
+    while curr_start <= end_dt:
+        curr_end = min(curr_start + timedelta(days=chunk_days - 1), end_dt)
+        chunks.append((curr_start.isoformat(), curr_end.isoformat()))
+        curr_start = curr_end + timedelta(days=1)
+
     for model in models:
-        params: dict[str, str | int | float | list[str]] = {
-            "latitude": ",".join(map(str, lats)),
-            "longitude": ",".join(map(str, lons)),
-            "hourly": ",".join(_OM_HOURLY_VARS),
-            "models": model,
-            "start_date": start_date,
-            "end_date": end_date,
-            "timezone": "UTC",
-            "wind_speed_unit": "ms",
-        }
-        try:
-            data = _fetch_om_json(_OM_HISTORICAL_URL, params)
+        for c_start, c_end in chunks:
+            params: dict[str, str | int | float | list[str]] = {
+                "latitude": ",".join(map(str, lats)),
+                "longitude": ",".join(map(str, lons)),
+                "hourly": ",".join(_OM_HOURLY_VARS),
+                "models": model,
+                "start_date": c_start,
+                "end_date": c_end,
+                "timezone": "UTC",
+                "wind_speed_unit": "ms",
+            }
+            try:
+                data = _fetch_om_json(_OM_HISTORICAL_URL, params)
+                responses = data if isinstance(data, list) else [data]
 
-            if isinstance(data, list):
-                responses = data
-            else:
-                responses = [data]
-
-            for lid, resp in zip(loc_ids, responses, strict=True):
-                # ts_run=None → inferita per ogni riga
-                records = _parse_om_response(resp, model, lid, ts_run=None)
-                results[lid][model] = records
-                _log_scrape(f"openmeteo_historical_batch:{lid}:{model}", "ok", rows=len(records))
-
-        except Exception as e:
-            logger.error(f"Open-Meteo historical batch [{model}] fallito: {e}")
-            for lid in loc_ids:
-                _log_scrape(f"openmeteo_historical_batch:{lid}:{model}", "fail", detail=str(e))
-
-        time.sleep(0.5)
+                for lid, resp in zip(loc_ids, responses, strict=True):
+                    records = _parse_om_response(resp, model, lid, ts_run=None)
+                    results[lid][model].extend(records)
+                    _log_scrape(
+                        f"openmeteo_historical_batch:{lid}:{model}", 
+                        "ok", 
+                        rows=len(records),
+                        detail=f"{c_start} to {c_end}"
+                    )
+            except Exception as e:
+                logger.error(f"Open-Meteo historical batch [{model}] [{c_start}→{c_end}] fallito: {e}")
+                for lid in loc_ids:
+                    _log_scrape(f"openmeteo_historical_batch:{lid}:{model}", "fail", detail=str(e))
+            
+            time.sleep(1.0)  # Throttling più prudente per lo storico
 
     return results
 
