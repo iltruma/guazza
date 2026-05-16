@@ -142,26 +142,29 @@ Il parsing è difensivo (supporta più formati), ma da verificare al primo run s
 - **Breakdown log**: il job logga il dettaglio per tipo flag
 - 7 nuovi test (156 totali), mypy e ruff OK
 
-### Sprint 3 — Feature Engineering
-**Dipendenza**: dati in DuckDB validati (`observations` + `forecasts`)
+### Sprint 3 — Feature Engineering (completato — 2026-05-16)
 
-- Join `observations ↔ forecasts` per ogni `(location_id, ts, lead_time_h)`
-- Feature NWP: temperatura prevista, umidità, vento, precipitazioni × 4 modelli × lead time
-- Feature osservativa: valori SIR pesati per location (`weights.py`)
-- Feature climatologiche statiche: media/std mensile SIR multi-anno (mai ERA5 dinamico — D-001)
-- `location_id` categorica (D-005), `lead_time_h` come feature numerica
-- **Feature upstream precipitazioni**: stazioni SIR pluviometriche a ovest/nord-ovest del bacino
-  fiorentino (Lucca, Pistoia, Versilia) come feature raw separate — non pesate per distanza, ma
-  come lag spaziali espliciti (`pluvio_lucca_lag_1h`, ecc.). Il libeccio colpisce quella fascia
-  1-3h prima di Firenze/Prato. Da aggiungere a `stations.yaml` come categoria `upstream_pluvio`
-  (senza `used_by`) prima di costruire il training set. Stesso fetcher, stesso schema DuckDB.
-- Output: training set materializzato in Parquet o DuckDB view
+- `src/guazza/features.py`: `build_features_daily(db)` — training set materializzato in DuckDB
+- `src/guazza/jobs/features.py`: CLI `build` / `info`
+- Schema training set: `(location_id, target_date, lead_time_h)` con:
+  - NWP: 4 modelli × 5 variabili (tmin, tmax, precip, humidity, wind) — pivot wide
+  - Ensemble stats: media null-safe + spread (DuckDB GREATEST/LEAST ignora NULL)
+  - NWP orario → daily: MIN(temp)=tmin, MAX(temp)=tmax, SUM(precip), AVG(humidity/wind)
+  - Obs features: SIR pesato del giorno precedente (lookahead-safe)
+  - Climatologia: media/std mensile multi-anno da obs_weighted
+  - Calendario: month, day_of_year
+  - Target: SIR pesato a target_date (ground truth)
+- 10 test pytest, tutti verdi
+- **Risultato live**: 19.155 righe, 4 location, 2022-01-02→oggi, >99% target coverage
 
-🟡 **Punto aperto**: copertura storica SIR per le 4 location da verificare in Sprint 2c
-(minimo ~200 esempi per bucket lead time per CQR stabile — D-003)
+🟡 **Punto aperto — lead_time_h range 1-11h** (atteso fino a 168h):
+il backfill Open-Meteo ha salvato solo il run più recente per valid time, non la storia dei run.
+In produzione il fetch giornaliero accumulerà run a distanze crescenti. Da verificare dopo
+il primo mese di operatività sul VPS (Sprint 7).
 
-🟡 **Punto aperto**: feature upstream pluviometriche — aggiungere stazioni a `stations.yaml`
-prima di costruire il training set
+🟡 **Punto aperto — feature upstream pluviometriche**: aggiungere stazioni Lucca/Pistoia/Versilia
+a `stations.yaml` come `upstream_pluvio` (senza `used_by`) e rieseguire `features build`.
+Non bloccante per Sprint 4 — si aggiungono come feature incrementali.
 
 ### Sprint 4 — Modello ML
 **Dipendenza**: training set Sprint 3
