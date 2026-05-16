@@ -199,6 +199,19 @@ Scope: modulo o componente (`ingestion`, `storage`, `indicators`, `config`)
 
 **Non committare mai:** `.env`, file con credenziali, dati grezzi (`*.parquet`, `*.db`), output temporanei.
 
+### Tag versione — proporre quando opportuno
+
+Proporre un tag semantico (`v0.X.0`) al completamento di uno sprint funzionale
+completo o di una milestone significativa (es. primo modello trainato, prima
+previsione in produzione). Non taggare refactoring, fix o migliorie minori.
+
+Formato proposta:
+```
+Propongo tag v0.X.0 — <milestone raggiunta>. Confermo?
+```
+
+Non creare il tag senza conferma esplicita dell'utente.
+
 ### Push: vietato incondizionatamente
 
 `git push` non va mai eseguito. L'utente gestisce il push manualmente.
@@ -237,10 +250,24 @@ Eccezioni (procedere direttamente):
 - `docs/known_issues.md` e `docs/status.md` a fine sessione
   (aggiornamento di routine — ma comunicare cosa si sta scrivendo prima di farlo)
 
+### Logging — regole obbligatorie
+
+**Setup**: ogni job CLI deve chiamare `setup_logging()` da `guazza._logging` prima
+di emettere qualsiasi log. Mai `print()` nei job; mai `logger.add()` diretto fuori
+da `_logging.py`. Il comportamento è automatico:
+- TTY interattivo → formato colorato human-readable su stderr (`HH:mm:ss | LEVEL | messaggio`)
+- Cron / pipe (non-TTY) → JSON strutturato su stdout, una riga per evento
+
+**Pattern `_log_scrape`**: ogni fetcher emette `_log_scrape("<sorgente>:<id>", "ok"|"fail", rows=N)`
+sia su successo sia su fallimento — è l'unico log machine-readable per evento di scraping.
+Chiave formato `<sorgente>:<identificatore>`, senza suffissi `_batch`.
+
+**Niente duplicati**: dove c'è `_log_scrape`, il `logger.info` discorsivo non
+ripete le stesse informazioni (es. conteggio righe già in `rows=`).
+
 ### Scraper fragili (CFR Toscana, ARPAT)
 
 - `try/except` con `tenacity` exponential backoff (3 tentativi, delay 60s, 300s, 600s)
-- Log strutturato `loguru`: ogni run → `{"scraper": "...", "status": "ok|fail", "ts": ..., "rows": N}`
 - Ping Healthchecks.io a fine run riuscito
 - Se fallisce dopo tutti i retry: log ERROR, ping fail, non crashare — il prossimo cron riprova
 
@@ -259,13 +286,28 @@ Ogni invocazione DLE deve produrre log in DuckDB (`indicator_log`):
 ```
 Rolling window 30 giorni. Se dati insufficienti → `null`, dashboard mostra "calibrazione in corso".
 
+### Qualità del codice
+
+- **Leggibile da un mid developer**: nomi espliciti (no abbreviazioni criptiche),
+  funzioni corte con un solo scopo, niente magie implicite non ovvie.
+- **Niente dead code**: funzioni, variabili, import non usati si rimuovono subito.
+  Non lasciare codice "forse utile in futuro".
+- **Niente codice sperimentale residuo**: se qualcosa è stato scritto per una prova
+  o debug e non è più necessario, si elimina prima del commit. Non committare
+  `print()` di debug, variabili temporanee, rami commentati.
+- **Niente helper prematuri**: tre righe simili non giustificano un'astrazione.
+  Estrarre una funzione solo quando il riuso è concreto e immediato.
+- **Commenti solo sul "perché"**: non sul "cosa" (il codice lo dice già).
+  Un commento che descrive ciò che fa la riga è rumore — va rimosso.
+
 ### Checklist completamento task
 
 - [ ] Codice tipato, mypy passa
 - [ ] Test pytest scritti e verdi
 - [ ] `ruff check` passa (zero warning)
-- [ ] Log strutturato dove rilevante
+- [ ] `setup_logging()` chiamato in ogni nuovo job CLI
 - [ ] Healthchecks.io ping se è un job cron
+- [ ] Nessun dead code, nessun codice sperimentale residuo
 - [ ] Punto aperto segnalato se il task ne dipende
 - [ ] `docs/known_issues.md` aggiornato se workaround
 - [ ] Commit creato con formato `tipo(scope): descrizione`
