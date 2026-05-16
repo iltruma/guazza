@@ -827,7 +827,8 @@ def _log_http_error(retry_state: Any) -> None:
 )
 def _fetch_om_json_historical(url: str, params: dict[str, str | int | float | list[str]]) -> dict[str, Any]:
     logger.debug(f"Open-Meteo historical fetch: {url} params={params}")
-    with httpx.Client(timeout=90) as client:
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; guazza/1.0; personal weather research)"}
+    with httpx.Client(timeout=90, headers=headers) as client:
         r = client.get(url, params=params)
         r.raise_for_status()
     return r.json()  # type: ignore[no-any-return]
