@@ -60,7 +60,7 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 | Monitoring | Healthchecks.io + UptimeRobot | Free tier, dead-man switch |
 | Retry scraper | tenacity | Exponential backoff, standard |
 | Logging | loguru | JSON strutturato |
-| Validation | pydantic v2 | Type safety |
+| Validation | pydantic v2 | Solo ai boundary: config YAML in ingresso, JSON in uscita |
 | HTTP | httpx (sync) | Niente async overhead per cron |
 
 ## Anti-pattern — non proporre mai
@@ -228,7 +228,9 @@ Preferire commit atomici (un task = un commit). Se il task ha sotto-step, un com
 2. **Un task alla volta** — non saltare avanti se ci sono dipendenze non risolte
 3. **Fermarsi sui punti aperti** — non inventare valori per soglie, coordinate, o endpoint non testati. Segnalare e proporre un default. Aspettare conferma se bloccante.
 4. **Test prima di considerare completato** — almeno happy path + edge case principale
-5. **Codice tipato** — type hints ovunque, mypy deve passare, pydantic v2 per modelli dati
+5. **Codice tipato** — type hints ovunque, mypy deve passare. `pydantic v2` solo ai
+   boundary di sistema (validazione config YAML in ingresso, JSON di output verso il
+   frontend); `@dataclass` per gli oggetti interni fidati — non validare codice interno
 6. **Aggiornare `docs/known_issues.md`** se si trovano workaround non ovvi
 7. **Suggerire aggiornamento a `docs/status.md`** a fine sessione
 8. Non assumere che l'ambiente sia pulito — verificare che i test passino prima di nuove feature
