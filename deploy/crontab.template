@@ -34,6 +34,10 @@ DB_PATH=/var/lib/guazza/guazza.duckdb
 # Esecuzione a 02:10, 08:10, 14:10, 20:10 UTC.
 10 2,8,14,20 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.ingest forecasts >> /var/log/guazza/forecasts.jsonl 2>&1
 
+# ── Ogni giorno alle 07:00 UTC: quality control (dopo che daily ha completato) ──────
+# Ricontrolla flag su osservazioni SIR realtime + ARPAT + precip recenti
+0 7 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.qc run >> /var/log/guazza/qc.jsonl 2>&1
+
 # ── Ogni giorno alle 06:00 UTC: delta giornaliero (SIR CSV + Open-Meteo ieri) ─
 # SIR pubblica i dati validati del giorno precedente entro le 03:00-05:00 UTC.
 0 6 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.ingest daily >> /var/log/guazza/daily.jsonl 2>&1

@@ -7,7 +7,7 @@
 ### Sprint 0 — Ricognizione (completato)
 - Identificate 22 stazioni SIR, 6 stazioni ARPAT
 - `config/stations.yaml` completo con coordinate, sensori verificati via API, `used_by` per location
-- `config/sources.yaml`, `config/locations.yaml`, `config/indicators.yaml` presenti
+- `config/sources.yaml`, `config/locations.yaml`, `config/indicators.yaml`, `config/arpat_levels.yaml` presenti
 
 ### Refactoring repo — schema wide + struttura flat (completato — 2026-05-15)
 - **Schema DuckDB wide**: una riga per `(source, station_id, ts, granularity)`
@@ -16,11 +16,15 @@
   - `precip_interval_h TINYINT`: disambigua cumulato 24h (SIR storico) da misura 1h (realtime/Netatmo)
 - **Eliminato sistema migrations**: `schema.sql` unico source of truth
 - **Struttura flat**:
-  - `src/guazza/fetchers.py` — SIR storico + realtime + Netatmo + Open-Meteo
+  - `src/guazza/fetchers.py` — SIR storico + realtime + Netatmo + Open-Meteo + ARPAT
   - `src/guazza/storage.py` — DuckDB client con lock file, `upsert_sir_observations` (batch), `upsert_forecasts`
   - `src/guazza/weights.py` — pesi stazioni (decay distanza + quota)
   - `src/guazza/indicators.py` — DLE (Decision Logic Engine)
+  - `src/guazza/qc.py` — quality control osservazioni (SIR + ARPAT)
   - `src/guazza/jobs/ingest.py` — 4 comandi cron (historical/daily/realtime/forecasts)
+  - `src/guazza/jobs/qc.py` — CLI QC run/report
+  - **Scheletri per sprint futuri**: `models.py`, `output.py`, `jobs/predict.py`, `jobs/backup.py`
+- `deploy/nginx.conf` + `deploy/Caddyfile`: configurazioni per il frontend statico (Sprint 6-7)
 
 ### Note tecniche
 
@@ -65,12 +69,20 @@ Quattro comandi in `src/guazza/jobs/ingest.py`:
 
 | Comando | Schedulazione | Cosa fa |
 |---|---|---|
-| `historical` | one-shot manuale | Backfill SIR CSV + Open-Meteo 2022→oggi |
+| `historical` | one-shot manuale | Backfill SIR CSV + Open-Meteo + ARPAT bollettini |
 | `daily` | cron 06:00 UTC | Delta di ieri: SIR CSV + Open-Meteo historical |
 | `realtime` | cron ogni 15-30 min | SIR actions.php + Netatmo tutte le location |
 | `forecasts` | cron ogni 6h | Open-Meteo forecast multi-modello, 7 giorni |
 
 Ogni job: `--dry-run`, Healthchecks.io ping (start/ok/fail), log JSON strutturato stdout, exit 1 su eccezione.
+
+Flag aggiuntivi in `historical` e `daily`:
+- `--only-sir`, `--only-openmeteo`, `--only-arpat`: esecuzione selettiva per sorgente
+- `--location <id>`: limita a una o più location (ripetibile)
+
+Flag aggiuntivi in `historical` e `daily`:
+- `--only-sir`, `--only-openmeteo`, `--only-arpat`: esecuzione selettiva per sorgente
+- `--location <id>`: limita a una o più location (ripetibile)
 
 ### Logging (completato — 2026-05-15)
 - Loguru configurato con `serialize=True` su stdout nei comandi CLI (`_setup_logging()`)
@@ -93,6 +105,8 @@ Ogni job: `--dry-run`, Healthchecks.io ping (start/ok/fail), log JSON strutturat
 - `fetch_arpat_all_locations()`: wrapper per tutte le location con `arpat_stations` in config
 - Integrato in job `realtime` (NRT) e `daily` (bollettini)
 - Parsing difensivo: supporta formato lista e dict `{"stazioni": [...]}`
+- `config/arpat_levels.yaml`: scale qualità aria ARPAT (PM10, PM2.5, NO2, O3, CO, benzene, SO2)
+  con livelli normativi D.Lgs.155/2010 — usato dal DLE per calcolare il livello qualità aria
 - 11 test pytest, tutti verdi
 - CFR Toscana rimosso da `sources.yaml` (coperto da SIR idrometria)
 - RainViewer marcato `scope: frontend_only` (nessun fetcher, usato solo in Sprint 6)
@@ -128,17 +142,6 @@ Il parsing è difensivo (supporta più formati), ma da verificare al primo run s
 - **Breakdown log**: il job logga il dettaglio per tipo flag
 - 7 nuovi test (156 totali), mypy e ruff OK
 
-#### Miglioramenti QC (2026-05-16)
-
-- **Transazione**: `compute_quality_flags` ora in `BEGIN TRANSACTION` / `COMMIT` / `ROLLBACK`
-- **ARPAT flags**: 4 nuovi flag — `range_pm10_high` (>200 µg/m³), `range_pm25_high` (>100 µg/m³),
-  `range_no2_high` (>400 µg/m³), `range_o3_high` (>300 µg/m³)
-- **Realtime precip**: `range_precip_high` esteso a `granularity='realtime'` (CUM01, 1h cumulate)
-- **Breakdown dict**: `compute_quality_flags` restituisce `{"total": N, "spike_tmin": M, ...}`
-- **`--dry-run`**: aggiunto a `jobs/qc.py run`
-- **Breakdown log**: il job logga il dettaglio per tipo flag
-- 7 nuovi test (156 totali), mypy e ruff OK
-
 ### Sprint 3 — Feature Engineering
 **Dipendenza**: dati in DuckDB validati (`observations` + `forecasts`)
 
@@ -156,9 +159,6 @@ Il parsing è difensivo (supporta più formati), ma da verificare al primo run s
 
 🟡 **Punto aperto**: copertura storica SIR per le 4 location da verificare in Sprint 2c
 (minimo ~200 esempi per bucket lead time per CQR stabile — D-003)
-
-🟡 **Punto aperto**: feature upstream pluviometriche — aggiungere stazioni a `stations.yaml`
-prima di costruire il training set
 
 🟡 **Punto aperto**: feature upstream pluviometriche — aggiungere stazioni a `stations.yaml`
 prima di costruire il training set
@@ -197,8 +197,8 @@ prima di costruire il training set
 
 - Provisioning Hetzner CX22, Ubuntu 24.04 LTS
 - Backfill storico (`historical`) per caricare SIR + Open-Meteo 2022→oggi
-- Crontab con i 4 job ingestion + job `predict`
-- Configurazione `.env` produzione, Healthchecks.io, UptimeRobot
+- Crontab con i 4 job ingestion + `qc run` + job `predict`
+- Configurazione `.env` produzione (Netatmo, Healthchecks.io), `load_dotenv` per lettura DB_PATH e HEALTHCHECKS_URL
 - **Backup Cloudflare R2**: job cron periodico per backup `.duckdb` + Parquet su Cloudflare R2 (10GB free tier, egress gratis) via `rclone` o `boto3`
 - GitHub Actions → deploy SSH
 
