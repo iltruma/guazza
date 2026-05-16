@@ -14,6 +14,7 @@ import csv
 import io
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -31,6 +32,7 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+from tqdm import tqdm
 
 from guazza.weights import compute_station_weight
 
@@ -1131,7 +1133,12 @@ def fetch_openmeteo_historical_batch(
             chunks.append((curr_start.isoformat(), curr_end.isoformat()))
             curr_start = curr_end + timedelta(days=1)
 
-        for c_start, c_end in chunks:
+        for c_start, c_end in tqdm(
+            chunks,
+            desc=f"  {model}",
+            unit="chunk",
+            disable=not sys.stderr.isatty(),
+        ):
             params: dict[str, str | int | float | list[str]] = {
                 "latitude": ",".join(map(str, lats)),
                 "longitude": ",".join(map(str, lons)),

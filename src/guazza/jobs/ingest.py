@@ -207,19 +207,24 @@ _CFG_OPT = typer.Option(str(_DEFAULT_CFG), "--config-dir", help="Directory YAML 
 
 
 def _setup_logging(level: str = "INFO") -> None:
-    """Configura loguru per stdout con output JSON strutturato.
+    """Configura loguru: pretty su stderr se TTY, JSON su stdout se pipe/cron.
 
-    Rimuove il sink di default (testo su stderr) e aggiunge un sink
-    su stdout con serialize=True — ogni evento è una riga JSON valida.
-
-    In produzione sarà sufficiente aggiungere un secondo sink su file:
+    In produzione (cron, non-TTY) ogni riga stdout è JSON valido — aggiungere
+    un secondo sink su file se si vuole persistere:
         logger.add("/var/lib/guazza/logs/guazza.jsonl", serialize=True, rotation="1 day")
 
-    Chiamare solo nei comandi CLI, non a livello di modulo, per non
-    inquinare l'output dei test pytest.
+    Chiamare solo nei comandi CLI, non a livello di modulo.
     """
-    logger.remove()  # rimuove il sink di default (stderr, formato testo)
-    logger.add(sys.stdout, serialize=True, level=level)
+    logger.remove()
+    if sys.stderr.isatty():
+        logger.add(
+            sys.stderr,
+            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}",
+            colorize=True,
+            level=level,
+        )
+    else:
+        logger.add(sys.stdout, serialize=True, level=level)
 
 
 @app.command("historical")
