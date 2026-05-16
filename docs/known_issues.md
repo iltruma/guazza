@@ -64,15 +64,29 @@ point per rilevare sovrapposizioni e loggare WARNING invece di crashare con
 
 ## KI-004 — Open-Meteo rate limit non documentato
 
-**Severità**: bassa
+**Severità**: media (blocca il backfill `historical`)
 **Stato**: da monitorare
 
-**Problema**: Open-Meteo API free tier non documenta esplicitamente il rate
-limit. In pratica ~600 req/min sembrano sicuri. Con 4 location × 5 modelli NWP
-= 20 richieste per run: ampiamente sotto soglia.
+**Problema**: Open-Meteo free tier non documenta esplicitamente il rate limit.
 
-**Workaround**: `tenacity` con exponential backoff già configurato. Se si
-riceve HTTP 429, il backoff gestisce automaticamente.
+- **Forecast API** (`api.open-meteo.com`): job `forecasts` con 4 location ×
+  6 modelli (batch coordinate → 1 richiesta per modello) resta ampiamente sotto
+  soglia. Nessun problema osservato.
+- **Historical Forecast API** (`historical-forecast-api.open-meteo.com`): rate
+  limit per IP molto più aggressivo. Il backfill `historical` (2022→oggi)
+  genera ~70 richieste a causa del temporal chunking (D-012) e satura la quota.
+  Una volta scattato il limite, il 429 arriva immediatamente sulla prima
+  richiesta — non è una questione di frequenza intra-run ma di quota IP
+  cumulativa. Le risposte 429 **non** includono `Retry-After`.
+
+**Workaround**:
+- `tenacity` con backoff già configurato (`_fetch_om_json_historical`: 5
+  tentativi, `_wait_historical` rispetta `Retry-After` se presente).
+- Se l'IP è bloccato: attendere il reset della finestra o eseguire il backfill
+  da un IP diverso (es. direttamente sul VPS in fase di deploy).
+
+**Nota**: WSL in modalità NAT condivide l'IP dell'host Windows — un backfill
+fallito in locale brucia la quota per l'intera macchina.
 
 ---
 
@@ -95,17 +109,18 @@ manualmente il portale CFR.
 
 ## KI-006 — Netatmo token scadenza silente
 
-**Severità**: alta
-**Stato**: da implementare
+**Severità**: bassa
+**Stato**: risolto
 
 **Problema**: il token OAuth Netatmo ha scadenza. Se scade, le chiamate API
-restituiscono HTTP 403 senza messaggio chiaro. Il fetcher attuale non gestisce
-il refresh automatico.
+restituiscono HTTP 401/403 senza messaggio chiaro.
 
-**Workaround temporaneo**: rinnovare manualmente il token in `.env` se
-`fetch_netatmo_location` inizia a restituire dati vuoti.
+**Soluzione**: refresh automatico implementato in `fetchers.py`. `_call_with_refresh`
+intercetta 401/403, chiama `_refresh_token` (grant `refresh_token`) e riscrive
+`NETATMO_ACCESS_TOKEN`/`NETATMO_REFRESH_TOKEN` nel `.env`, poi ritenta la chiamata.
 
-**Da fare**: implementare refresh token flow in `fetchers.py::_netatmo_refresh`.
+**Prerequisito**: `NETATMO_REFRESH_TOKEN` e `NETATMO_CLIENT_ID`/`CLIENT_SECRET`
+devono essere presenti nel `.env`.
 
 ---
 

@@ -44,18 +44,25 @@ guazza/
 ├── config/                 # Configurazione YAML
 │   ├── locations.yaml      # 4 location con coordinate e stazioni SIR associate
 │   ├── indicators.yaml     # Soglie indicatori semaforo (DLE)
+│   ├── arpat_levels.yaml   # Scale qualità aria ARPAT (PM10, NO2, O3, ...)
 │   ├── sources.yaml        # Endpoint sorgenti dati e stato
 │   └── stations.yaml       # Anagrafica stazioni SIR e ARPAT
 ├── src/guazza/             # Codice sorgente Python
 │   ├── fetchers.py         # Fetcher SIR (storico + realtime) + Netatmo + Open-Meteo + ARPAT
 │   ├── storage.py          # DuckDB client + upsert wide
 │   ├── weights.py          # Calcolo pesi stazioni per location
+│   ├── features.py         # Feature engineering — tabella features_daily
 │   ├── indicators.py       # Decision Logic Engine (DLE)
 │   ├── qc.py               # Quality control osservazioni (SIR + ARPAT)
+│   ├── models.py           # ML LightGBM + CQR (placeholder Sprint 4)
+│   ├── output.py           # JSON writer (placeholder Sprint 5)
 │   ├── schema.sql          # Schema DuckDB (unica source of truth)
 │   └── jobs/
 │       ├── ingest.py       # Entry point cron: historical/daily/realtime/forecasts
-│       └── qc.py           # QC run/report CLI
+│       ├── features.py     # CLI build/info features_daily
+│       ├── qc.py           # QC run/report CLI
+│       ├── predict.py      # Entry point cron predizioni (placeholder Sprint 5)
+│       └── backup.py       # Backup DuckDB su R2 (placeholder Sprint 7)
 ├── deploy/                 # Template nginx, crontab
 ├── tests/                  # Test pytest
 └── docs/
@@ -69,11 +76,11 @@ guazza/
 ## Roadmap
 
 | Sprint | Obiettivo | Stato |
-|---|---|---|---|
+|---|---|---|
 | Sprint 0 | Ricognizione sorgenti, config stazioni, struttura repo | Completato |
 | Sprint 1 | Ingestion SIR + Netatmo + Open-Meteo + ARPAT, schema DuckDB, job cron | Completato |
 | Sprint 2 | Backfill SIR pre-2022, quality control (SIR + ARPAT), flag qualità | Completato |
-| Sprint 3 | Feature engineering, training set materializzato | In corso |
+| Sprint 3 | Feature engineering, training set materializzato | Completato |
 | Sprint 4 | LightGBM quantile, CQR, benchmark NWP | — |
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | — |
 | Sprint 6 | Frontend HTML+JS vanilla | — |
@@ -90,7 +97,7 @@ guazza/
 - **Orchestrazione**: cron Linux (no Prefect, no Airflow)
 - **Storage**: DuckDB (colonnare, file singolo) + R2 backup
 - **ML**: LightGBM quantile regression + CQR calibration
-- **Frontend**: HTML+JS vanilla (Sprint 2)
+- **Frontend**: HTML+JS vanilla (Sprint 6)
 - **DNS/CDN/WAF**: Cloudflare (gratis)
 - **Monitoring**: Healthchecks.io + UptimeRobot (free tier)
 

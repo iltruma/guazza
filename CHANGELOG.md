@@ -9,13 +9,33 @@ Versioning: major per sprint, minor per milestone interne.
 ## [Unreleased]
 
 ### Added
+- **Feature engineering** (Sprint 3): `features.py` costruisce `features_daily`,
+  training set materializzato in DuckDB — NWP 6 modelli pivot wide, ensemble
+  mean/spread, obs SIR pesate lookahead-safe, climatologia mensile, target
+  ground truth. CLI `jobs/features.py` (`build`/`info`)
+- **Backfill SIR pre-2022** (Sprint 2b): `fetch_sir_historical` esteso oltre il
+  2022; verificato limite archivio per stazione
+- **Quality control** (Sprint 2c): tabella `quality_flags`, `qc.py` +
+  `jobs/qc.py` (`run`/`report`); eliminati dati pre-2004 (pluviometro SIR
+  non disponibile prima)
 - **QC ARPAT flags**: `range_pm10_high`, `range_pm25_high`, `range_no2_high`, `range_o3_high`
 - **QC realtime precip**: `range_precip_high` esteso a `granularity='realtime'`
 - **Transazione**: `compute_quality_flags` in `BEGIN/COMMIT/ROLLBACK`
 - **Breakdown dict**: `compute_quality_flags` restituisce `{"total": N, "spike_tmin": M, ...}`
 - **`--dry-run`**: aggiunto a `jobs/qc.py run`
 - **Breakdown log**: il job logga il dettaglio per tipo flag
-- **7 nuovi test** (156 totali), mypy e ruff OK
+- **Open-Meteo coordinate batching** (D-011): tutte le location in una chiamata per modello
+- **Open-Meteo temporal chunking** (D-012): backfill storico frazionato in chunk (180gg / 90gg HR)
+
+### Changed
+- **Modelli NWP** (D-013): da 5 a 6 modelli — `ecmwf_ifs025` (25km) sostituito da
+  `ecmwf_ifs` HRES (9km), aggiunto `icon_d2` (2.2km)
+- `_fetch_om_json_historical` separato dal forecast live: timeout 90s, 5 retry,
+  `Retry-After` rispettato sul 429
+
+### Fixed
+- `jobs/ingest.py`: `end_date` Open-Meteo cappato a oggi-2gg (limite archivio)
+- `fetchers.py`: 429 reso retryable, skip retry su 4xx permanenti
 
 ---
 

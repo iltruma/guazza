@@ -172,24 +172,54 @@ Un valore puntuale senza CI è un bug di output, non una feature.
 **Motivazione**: le previsioni sono stime probabilistiche. Presentarle come
 certezze è scientificamente disonesto e operativamente fuorviante.
 
-### D-010: Selezione modelli NWP per post-processing iper-locale
+---
+
+## D-011 — Ottimizzazione fetch Open-Meteo via coordinate batching
+
 **Data**: 2026-05-16
-**Contesto**: La risoluzione spaziale dei modelli globali (25 km) è insufficiente per catturare i microclimi toscani complessi (es. inversione termica nella piana di Campi o Scandicci).
+
+**Contesto**: il download sequenziale per location/modello (24+ chiamate)
+risultava lento e incline a latenze elevate, specialmente nel job historical.
+
+**Decisione**: sfruttare la capacità di Open-Meteo di gestire liste di
+coordinate per scaricare i dati di tutte le location in una sola chiamata per
+modello.
+
+**Motivazione**: riduzione drastica del numero di richieste HTTP (da N_location
+a 1 per modello), minor rischio di throttling, velocità ~4-5x.
+
+---
+
+## D-012 — Temporal chunking per backfill storico
+
+**Data**: 2026-05-16
+
+**Contesto**: le richieste alla Historical Forecast API per lunghi periodi
+(2+ anni) e modelli ad alta risoluzione (AROME, ICON-D2) causano timeout o
+errori 400 per la dimensione eccessiva dell'elaborazione server-side.
+
+**Decisione**: frazionamento automatico delle richieste in chunk (180 giorni
+per i modelli globali, 90 giorni per icon_d2 e arome_france).
+
+**Motivazione**: stabilità del download senza sovraccaricare l'API; recupero
+parziale in caso di fallimenti isolati di un singolo intervallo.
+
+---
+
+## D-013 — Selezione modelli NWP per post-processing iper-locale
+
+**Data**: 2026-05-16
+
+**Contesto**: la risoluzione spaziale dei modelli globali (25 km) è
+insufficiente per catturare i microclimi toscani complessi (es. inversione
+termica nella piana di Campi o Scandicci).
+
 **Decisione**:
 - Sostituire `ecmwf_ifs025` (25 km) con `ecmwf_ifs` (HRES, 9 km). Stessa fisica, orografia molto più dettagliata.
 - Aggiungere `icon_d2` (2.2 km). Modello convective-permitting del DWD che copre il Centro-Nord Italia, fondamentale per la dinamica locale.
 - Mantenere `ecmwf_aifs025` per diversità metodologica (AI-based).
 - Mantenere `arome_france` (2.5 km) e `icon_eu` (7 km) come modelli ad alta risoluzione.
-**Conseguenza**: Il dataset di training `features_daily` passa da 5 a 6 modelli NWP, aumentando la robustezza dell'ensemble probabilistico. Necessario rieseguire backfill `historical` per i nuovi modelli.
 
-### D-011: Ottimizzazione fetch Open-Meteo via Coordinate Batching
-**Data**: 2026-05-16
-**Contesto**: Il download sequenziale per location/modello (24+ chiamate) risultava lento e incline a latenze elevate, specialmente nel job historical.
-**Decisione**: Sfruttare la capacità di Open-Meteo di gestire liste di coordinate () per scaricare i dati di tutte le location in una sola chiamata per modello.
-**Motivazione**: Riduzione drastica del numero di richieste HTTP (da N_location a 1 per modello), minor rischio di throttling e velocità di esecuzione aumentata di circa 4-5x.
-
-### D-012: Temporal Chunking per Backfill Storico
-**Data**: 2026-05-16
-**Contesto**: Le richieste alla Historical Forecast API per lunghi periodi (2+ anni) e modelli ad alta risoluzione (AROME, ICON-D2) causano timeout o errori 400 dovuti alla dimensione eccessiva dell'elaborazione server-side.
-**Decisione**: Implementare un frazionamento automatico delle richieste in blocchi (chunk) di massimo 180 giorni.
-**Motivazione**: Garantire la stabilità del download senza sovraccaricare l'API e permettere il recupero parziale in caso di fallimenti isolati di un singolo intervallo.
+**Conseguenza**: il dataset di training `features_daily` passa da 5 a 6 modelli
+NWP, aumentando la robustezza dell'ensemble probabilistico. Necessario
+rieseguire il backfill `historical` per i nuovi modelli.

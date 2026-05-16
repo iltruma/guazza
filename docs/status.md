@@ -65,7 +65,7 @@ la stessa PK. Valori: `daily`, `realtime`, `hourly` (riservato).
 - **Temporal Chunking**: Aggiunto frazionamento delle richieste storiche (chunk di 180 giorni) per evitare timeout lato server su modelli ad alta risoluzione.
 - **Chunk dinamico per modello**: icon_d2 e arome_france usano chunk da 90gg; gli altri modelli 180gg. Previene HTTP 504 su modelli convettivi ad alta risoluzione.
 - **`_fetch_om_json_historical`**: funzione separata dal forecast live con timeout 90s, 5 retry, backoff max 60s.
-- Sostituito ECMWF 0.25° con HRES 9km e aggiunto ICON-D2 (2.2km) per migliorare risoluzione orografica (D-010).
+- Sostituito ECMWF 0.25° con HRES 9km e aggiunto ICON-D2 (2.2km) per migliorare risoluzione orografica (D-013).
 - `ts_run` inferita per difetto all'ultimo run nominale del modello (ECMWF HRES: ogni 6h, ICON-D2: ogni 3h).
 - `upsert_forecasts`: UPSERT batch, l'ultimo run vince.
 
@@ -83,10 +83,7 @@ Ogni job: `--dry-run`, Healthchecks.io ping (start/ok/fail), log JSON strutturat
 
 Flag aggiuntivi in `historical` e `daily`:
 - `--only-sir`, `--only-openmeteo`, `--only-arpat`: esecuzione selettiva per sorgente
-- `--location <id>`: limita a una o più location (ripetibile)
-
-Flag aggiuntivi in `historical` e `daily`:
-- `--only-sir`, `--only-openmeteo`, `--only-arpat`: esecuzione selettiva per sorgente
+  (`daily` espone solo `--only-sir` e `--only-openmeteo`)
 - `--location <id>`: limita a una o più location (ripetibile)
 
 ### Logging (completato — 2026-05-15)
@@ -99,7 +96,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **156 test**, tutti verdi
+- **166 test**, tutti verdi
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
