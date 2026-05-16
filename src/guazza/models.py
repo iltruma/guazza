@@ -1,4 +1,4 @@
 """Placeholder per il modulo ML (LightGBM + CQR).
 
-Verra' implementato nello Sprint 2.
+Verra' implementato nello Sprint 4.
 """

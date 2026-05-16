@@ -10,6 +10,7 @@ CLI:
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -26,7 +27,7 @@ SignalBag = dict[str, float | None]
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_INDICATORS_YAML = Path(
-    __import__("os").environ.get("CONFIG_DIR", str(_REPO_ROOT / "config"))
+    os.environ.get("CONFIG_DIR", str(_REPO_ROOT / "config"))
 ) / "indicators.yaml"
 
 

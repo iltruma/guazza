@@ -530,9 +530,6 @@ def _apply_sir_qc(stations: list[Any], sir_temp: float, threshold_c: float = _QC
             sd.qc_sir = abs(t - sir_temp) <= threshold_c
 
 
-# Forward reference type workaround
-
-
 @dataclass
 class _StationData:
     mac: str

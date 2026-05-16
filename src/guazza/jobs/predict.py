@@ -1,6 +1,6 @@
 """Entry point cron — predizioni ML.
 
-Verra' implementato nello Sprint 2.
+Verra' implementato nello Sprint 5.
 """
 
 from __future__ import annotations

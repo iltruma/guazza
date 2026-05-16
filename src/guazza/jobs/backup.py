@@ -1,6 +1,6 @@
 """Entry point cron — backup DuckDB su R2.
 
-Verra' implementato nello Sprint 1.
+Verra' implementato nello Sprint 7.
 """
 
 from __future__ import annotations

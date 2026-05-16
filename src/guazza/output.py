@@ -1,4 +1,4 @@
 """Placeholder per il modulo output JSON writer.
 
-Verra' implementato nello Sprint 2.
+Verra' implementato nello Sprint 5.
 """
