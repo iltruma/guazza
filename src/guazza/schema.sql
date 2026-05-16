@@ -148,6 +148,22 @@ CREATE TABLE IF NOT EXISTS netatmo_fetch_log (
     PRIMARY KEY (fetched_at, location_id, station_id)
 );
 
+-- ── Flag qualità dati osservativi ────────────────────────────────────────
+-- Popolata da qc.compute_quality_flags() — ricalcolo idempotente full-replace.
+-- flag_type: 'spike_tmin' | 'spike_tmax' | 'inversion_temp' | 'range_precip_high'
+-- value: valore osservato che ha triggerato il flag (o delta per spike)
+CREATE TABLE IF NOT EXISTS quality_flags (
+    source       VARCHAR   NOT NULL,
+    station_id   VARCHAR   NOT NULL,
+    ts           TIMESTAMP NOT NULL,
+    granularity  VARCHAR   NOT NULL,
+    flag_type    VARCHAR   NOT NULL,
+    column_name  VARCHAR   NOT NULL,
+    value        DOUBLE,
+    detail       VARCHAR,
+    PRIMARY KEY (source, station_id, ts, granularity, flag_type, column_name)
+);
+
 -- ── Log Decision Logic Engine ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS indicator_log (
     ts           TIMESTAMP NOT NULL,

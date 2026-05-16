@@ -101,6 +101,7 @@ class DuckDBClient:
             "station_weights",
             "netatmo_fetch_log",
             "indicator_log",
+            "quality_flags",
         }
         result = self.execute("SHOW TABLES").fetchall()
         existing = {row[0] for row in result}
