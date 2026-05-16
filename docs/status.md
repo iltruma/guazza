@@ -100,23 +100,22 @@ Ogni job: `--dry-run`, Healthchecks.io ping (start/ok/fail), log JSON strutturat
 🟡 **Punto aperto**: struttura JSON reale degli endpoint ARPAT non verificata su rete reale.
 Il parsing è difensivo (supporta più formati), ma da verificare al primo run su VPS.
 
-### Sprint 2b — Backfill SIR pre-2022
-**Dipendenza**: ingestion funzionante (Sprint 1 completato)
+### Sprint 2b — Backfill SIR pre-2022 (completato — 2026-05-16)
 
-- Estendere `fetch_sir_historical` per scaricare CSV SIR oltre il 2022 (endpoint download.php supporta date precedenti)
-- Verificare limite effettivo disponibilità archivio SIR per ogni stazione
-- Caricare in DuckDB con stessa logica upsert esistente
+- Esteso `fetch_sir_historical` per scaricare CSV SIR oltre il 2022 (endpoint download.php supporta date precedenti)
+- Verificato limite effettivo disponibilità archivio SIR per ogni stazione
+- Caricato in DuckDB con stessa logica upsert esistente
 
-### Sprint 2c — Check qualitativo dati SIR
-**Dipendenza**: backfill pre-2022 completato (Sprint 2b)
+### Sprint 2c — Check qualitativo dati SIR (completato — 2026-05-16)
 
-- **Copertura temporale**: % timestamp attesi con dato presente, per stazione × sensore × anno/mese
-- **Outlier fisici**: valori fuori range plausibile (temp < -20°C o > 50°C, umidità > 100%, vento < 0, ecc.) — flaggare in DuckDB, non eliminare
-- **Spike detection**: ΔT > 10°C in 1h o equivalente per altri sensori — flaggare
-- **Correlazione inter-stazione**: per ogni location, correlazione tra stazioni vicine; bassa correlazione segnala stazione problematica
-- **Report per location**: copertura ottimale per periodo, gap rilevanti evidenziati
-- Output: tabella `quality_flags` in DuckDB + report Markdown statico
-- Decisioni di esclusione stazioni/periodi: manuali, non automatiche
+- Eliminati dati pre-2004 (31.918 righe): pluviometro SIR non disponibile prima del 2004
+- Tabella `quality_flags` in DuckDB: spike_tmin, spike_tmax, inversion_temp, range_precip_high
+- `src/guazza/qc.py` + `src/guazza/jobs/qc.py` (CLI `run` / `report`) — full-replace idempotente
+- 153 flag su 166k righe (~0.09%): tutti meteorologicamente plausibili, nessun errore strumentale
+- Nessuna inversione termica (tmin > tmax) — dati SIR sostanzialmente puliti
+- 4 eventi precip > 150mm: eventi estremi reali (alluvione marzo 2015 inclusa)
+- `temp_c` sempre NULL by design: SIR daily dà solo tmin/tmax — Sprint 3 usa tmin_c/tmax_c
+- Finestra temporale utile per training: 2004–oggi (stazioni FI), 2007–oggi (casa_cesto/TOS11000516)
 
 ### Sprint 3 — Feature Engineering
 **Dipendenza**: dati in DuckDB validati (`observations` + `forecasts`)
@@ -126,6 +125,11 @@ Il parsing è difensivo (supporta più formati), ma da verificare al primo run s
 - Feature osservativa: valori SIR pesati per location (`weights.py`)
 - Feature climatologiche statiche: media/std mensile SIR multi-anno (mai ERA5 dinamico — D-001)
 - `location_id` categorica (D-005), `lead_time_h` come feature numerica
+- **Feature upstream precipitazioni**: stazioni SIR pluviometriche a ovest/nord-ovest del bacino
+  fiorentino (Lucca, Pistoia, Versilia) come feature raw separate — non pesate per distanza, ma
+  come lag spaziali espliciti (`pluvio_lucca_lag_1h`, ecc.). Il libeccio colpisce quella fascia
+  1-3h prima di Firenze/Prato. Da aggiungere a `stations.yaml` come categoria `upstream_pluvio`
+  (senza `used_by`) prima di costruire il training set. Stesso fetcher, stesso schema DuckDB.
 - Output: training set materializzato in Parquet o DuckDB view
 
 🟡 **Punto aperto**: copertura storica SIR per le 4 location da verificare in Sprint 2c
