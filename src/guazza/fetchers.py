@@ -824,9 +824,10 @@ def _wait_historical(retry_state: RetryCallState) -> float:
 def _log_http_error(retry_state: RetryCallState) -> None:
     exc = retry_state.outcome.exception() if retry_state.outcome else None
     if isinstance(exc, httpx.HTTPStatusError):
+        body = exc.response.text[:200].replace("\n", " ")
         logger.warning(
             f"Open-Meteo historical HTTP {exc.response.status_code} "
-            f"(attempt {retry_state.attempt_number}): {exc.request.url}"
+            f"(attempt {retry_state.attempt_number}): {exc.request.url} — {body}"
         )
     else:
         logger.warning(f"Open-Meteo historical retry (attempt {retry_state.attempt_number}): {exc}")
