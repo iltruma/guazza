@@ -14,10 +14,16 @@ from pathlib import Path
 import typer
 from loguru import logger
 
+from guazza._logging import setup_logging
 from guazza.features import build_features_daily
 from guazza.storage import DuckDBClient
 
 app = typer.Typer(help="Feature engineering — tabella features_daily.")
+
+
+@app.callback()
+def _callback() -> None:
+    setup_logging()
 
 _DEFAULT_DB = Path(os.environ.get("DB_PATH", "/var/lib/guazza/guazza.duckdb"))
 _DB_OPT = typer.Option(_DEFAULT_DB, "--db", help="Path file DuckDB")

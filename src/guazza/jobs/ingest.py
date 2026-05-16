@@ -39,6 +39,7 @@ from tqdm import tqdm
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(_REPO_ROOT / ".env")
 
+from guazza._logging import setup_logging  # noqa: E402
 from guazza.fetchers import (  # noqa: E402
     _log_scrape,
     fetch_arpat_all_locations,
@@ -208,24 +209,7 @@ _CFG_OPT = typer.Option(str(_DEFAULT_CFG), "--config-dir", help="Directory YAML 
 
 
 def _setup_logging(level: str = "INFO") -> None:
-    """Configura loguru: pretty su stderr se TTY, JSON su stdout se pipe/cron.
-
-    In produzione (cron, non-TTY) ogni riga stdout è JSON valido — aggiungere
-    un secondo sink su file se si vuole persistere:
-        logger.add("/var/lib/guazza/logs/guazza.jsonl", serialize=True, rotation="1 day")
-
-    Chiamare solo nei comandi CLI, non a livello di modulo.
-    """
-    logger.remove()
-    if sys.stderr.isatty():
-        logger.add(
-            sys.stderr,
-            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}",
-            colorize=True,
-            level=level,
-        )
-    else:
-        logger.add(sys.stdout, serialize=True, level=level)
+    setup_logging(level)
 
 
 @app.command("historical")
