@@ -185,12 +185,13 @@ Trigger obbligatori:
 
 **Formato messaggio:**
 ```
-<tipo>(<scope>): <descrizione breve in inglese>
+<tipo>(<scope>): <descrizione breve in italiano>
 
 [corpo opzionale se serve contesto]
 ```
-Lingua del messaggio: **inglese** (coerente con `CLAUDE.md` globale — codice,
-documentazione e commit in inglese). La chat con l'utente resta in italiano.
+Lingua del messaggio: **italiano**. Questa è una scelta specifica di progetto
+che prevale sulla regola globale di `CLAUDE.md` (che vorrebbe i commit in
+inglese). Codice e documentazione restano in inglese; commit e chat in italiano.
 Tipi: `feat`, `fix`, `test`, `docs`, `config`, `refactor`, `chore`
 Scope: modulo o componente (`ingestion`, `storage`, `indicators`, `config`)
 

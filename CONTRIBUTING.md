@@ -43,16 +43,16 @@ Se non passano → fermarsi, non aggiungere complessità sopra un problema apert
 ### Formato commit
 
 ```
-<tipo>(<scope>): <descrizione breve in inglese>
+<tipo>(<scope>): <descrizione breve in italiano>
 ```
 
 Tipi: `feat`, `fix`, `test`, `docs`, `config`, `refactor`, `chore`
 
 Esempi:
 ```
-feat(fetchers): add Open-Meteo multi-model fetch
-fix(storage): fix duplicate upsert in observations
-docs(decisions): document D-011 CV embargo choice
+feat(fetchers): aggiungi fetch Open-Meteo multi-modello
+fix(storage): correzione upsert duplicati in observations
+docs(decisions): documenta D-011 scelta embargo CV
 ```
 
 ### Staging selettivo — OBBLIGATORIO
