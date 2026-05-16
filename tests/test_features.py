@@ -44,7 +44,7 @@ def _populate(db: DuckDBClient, n_days: int = 10) -> None:
         ts_run = target_date - timedelta(hours=24)
         for hour in range(0, 24):
             ts_valid = target_date.replace(hour=hour)
-            for source in ["open_meteo_ecmwf_ifs025", "open_meteo_icon_eu"]:
+            for source in ["open_meteo_ecmwf_ifs", "open_meteo_icon_eu"]:
                 db.execute("""
                     INSERT INTO forecasts
                         (source, location_id, ts_run, ts_valid, lead_time_h,
@@ -152,7 +152,7 @@ def test_idempotent(db: DuckDBClient) -> None:
 
 
 def test_spread_with_partial_models(db: DuckDBClient) -> None:
-    """Con 2 modelli su 4, DuckDB GREATEST/LEAST ignora i NULL e restituisce
+    """Con 2 modelli su 6, DuckDB GREATEST/LEAST ignora i NULL e restituisce
     il range tra i modelli disponibili (non NULL)."""
     _populate(db)  # inserisce solo ecmwf e icon
     build_features_daily(db)
@@ -162,6 +162,7 @@ def test_spread_with_partial_models(db: DuckDBClient) -> None:
           AND ecmwf_tmin_c IS NOT NULL
           AND icon_tmin_c IS NOT NULL
           AND gfs_tmin_c IS NULL
+          AND icond2_tmin_c IS NULL
     """).fetchone()
     assert row is not None and row[0] > 0
     db.__exit__(None, None, None)

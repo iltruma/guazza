@@ -58,10 +58,11 @@ la stessa PK. Valori: `daily`, `realtime`, `hourly` (riservato).
 - **B8** `fetchers.py`: `_log_scrape()` — log JSON strutturato su tutti i fetcher
 - **B11** `schema.sql` + storage + fetchers: `precip_interval_h` + `granularity` in PK
 
-### Ingestion Open-Meteo (completato — 2026-05-15)
-- `fetch_openmeteo_forecast`: fetch live multi-modello (ecmwf_ifs025, icon_eu, gfs025, arome_france)
+### Ingestion Open-Meteo (completato — 2026-05-16)
+- `fetch_openmeteo_forecast`: fetch live multi-modello (ecmwf_ifs, ecmwf_aifs025, icon_eu, icon_d2, gfs025, arome_france)
 - `fetch_openmeteo_historical`: backfill storico (Historical Forecast API, 2022+)
-- `ts_run` inferita per difetto all'ultimo run nominale del modello (ECMWF: 0/12 UTC, ICON-EU: ogni 3h, GFS: ogni 6h)
+- Sostituito ECMWF 0.25° con HRES 9km e aggiunto ICON-D2 (2.2km) per migliorare risoluzione orografica (D-010).
+- `ts_run` inferita per difetto all'ultimo run nominale del modello (ECMWF HRES: ogni 6h, ICON-D2: ogni 3h).
 - `upsert_forecasts`: UPSERT batch, l'ultimo run vince
 
 ### Job di ingestion (completato — 2026-05-15)

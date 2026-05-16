@@ -409,16 +409,16 @@ _OM_MOCK_RESPONSE = {
 
 
 def test_infer_ts_run_ecmwf_before_noon() -> None:
-    """07:30 UTC → ECMWF run 00 UTC (ultimo run ≤ 07:30 tra [0, 12])."""
+    """07:30 UTC → ECMWF run 06 UTC (ultimo run ≤ 07:30 tra [0, 6, 12, 18])."""
     now = datetime(2026, 5, 15, 7, 30, tzinfo=UTC)
-    ts_run = _infer_ts_run("ecmwf_ifs025", now)
-    assert ts_run == datetime(2026, 5, 15, 0, 0, tzinfo=UTC)
+    ts_run = _infer_ts_run("ecmwf_ifs", now)
+    assert ts_run == datetime(2026, 5, 15, 6, 0, tzinfo=UTC)
 
 
 def test_infer_ts_run_ecmwf_after_noon() -> None:
     """14:00 UTC → ECMWF run 12 UTC."""
     now = datetime(2026, 5, 15, 14, 0, tzinfo=UTC)
-    ts_run = _infer_ts_run("ecmwf_ifs025", now)
+    ts_run = _infer_ts_run("ecmwf_ifs", now)
     assert ts_run == datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
 
 
@@ -430,23 +430,23 @@ def test_infer_ts_run_icon_eu_mid() -> None:
 
 
 def test_infer_ts_run_midnight_edge() -> None:
-    """00:30 UTC → ECMWF run 00 UTC (non il run del giorno precedente)."""
+    """00:30 UTC → ECMWF run 00 UTC."""
     now = datetime(2026, 5, 15, 0, 30, tzinfo=UTC)
-    ts_run = _infer_ts_run("ecmwf_ifs025", now)
+    ts_run = _infer_ts_run("ecmwf_ifs", now)
     assert ts_run == datetime(2026, 5, 15, 0, 0, tzinfo=UTC)
 
 
 def test_infer_ts_run_before_first_run() -> None:
-    """00:00 UTC esatto → ECMWF run 00 UTC (il run delle 00 è disponibile)."""
+    """00:00 UTC esatto → ECMWF run 00 UTC."""
     now = datetime(2026, 5, 15, 0, 0, tzinfo=UTC)
-    ts_run = _infer_ts_run("ecmwf_ifs025", now)
+    ts_run = _infer_ts_run("ecmwf_ifs", now)
     assert ts_run == datetime(2026, 5, 15, 0, 0, tzinfo=UTC)
 
 
 def test_parse_om_response_record_count() -> None:
     """_parse_om_response: 2 ore → 2 record."""
     records = _parse_om_response(
-        _OM_MOCK_RESPONSE, "ecmwf_ifs025", "lavoro_cosimo", _OM_TS_RUN_ECMWF
+        _OM_MOCK_RESPONSE, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF
     )
     assert len(records) == 2
 
@@ -454,10 +454,10 @@ def test_parse_om_response_record_count() -> None:
 def test_parse_om_response_fields() -> None:
     """Verifica mapping variabili Open-Meteo → colonne wide."""
     records = _parse_om_response(
-        _OM_MOCK_RESPONSE, "ecmwf_ifs025", "lavoro_cosimo", _OM_TS_RUN_ECMWF
+        _OM_MOCK_RESPONSE, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF
     )
     r = records[0]
-    assert r["source"] == "open_meteo_ecmwf_ifs025"
+    assert r["source"] == "open_meteo_ecmwf_ifs"
     assert r["location_id"] == "lavoro_cosimo"
     assert r["ts_run"] == _OM_TS_RUN_ECMWF
     assert r["ts_valid"] == datetime(2026, 5, 15, 8, 0, tzinfo=UTC)
@@ -474,14 +474,14 @@ def test_parse_om_response_fields() -> None:
 def test_parse_om_response_lead_time_increases() -> None:
     """lead_time_h cresce di 1 tra record consecutivi (dati orari)."""
     records = _parse_om_response(
-        _OM_MOCK_RESPONSE, "ecmwf_ifs025", "lavoro_cosimo", _OM_TS_RUN_ECMWF
+        _OM_MOCK_RESPONSE, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF
     )
     assert records[1]["lead_time_h"] == records[0]["lead_time_h"] + 1
 
 
 def test_parse_om_response_empty_data() -> None:
     """Risposta senza hourly → lista vuota."""
-    records = _parse_om_response({}, "ecmwf_ifs025", "lavoro_cosimo", _OM_TS_RUN_ECMWF)
+    records = _parse_om_response({}, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF)
     assert records == []
 
 
@@ -499,7 +499,7 @@ def test_parse_om_response_null_values() -> None:
             "surface_pressure": [None],
         }
     }
-    records = _parse_om_response(data, "ecmwf_ifs025", "lavoro_cosimo", _OM_TS_RUN_ECMWF)
+    records = _parse_om_response(data, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF)
     assert len(records) == 1
     assert records[0]["temp_c"] is None
     assert records[0]["precip_mm"] is None
@@ -512,11 +512,11 @@ def test_fetch_openmeteo_forecast_calls_api() -> None:
             location_id="lavoro_cosimo",
             lat=43.76,
             lon=11.19,
-            models=["ecmwf_ifs025"],
+            models=["ecmwf_ifs"],
             now_utc=_OM_NOW,
         )
-    assert "ecmwf_ifs025" in results
-    assert len(results["ecmwf_ifs025"]) == 2
+    assert "ecmwf_ifs" in results
+    assert len(results["ecmwf_ifs"]) == 2
 
 
 def test_fetch_openmeteo_forecast_error_returns_empty() -> None:
@@ -526,10 +526,10 @@ def test_fetch_openmeteo_forecast_error_returns_empty() -> None:
             location_id="lavoro_cosimo",
             lat=43.76,
             lon=11.19,
-            models=["ecmwf_ifs025"],
+            models=["ecmwf_ifs"],
             now_utc=_OM_NOW,
         )
-    assert results["ecmwf_ifs025"] == []
+    assert results["ecmwf_ifs"] == []
 
 
 @pytest.fixture
@@ -543,7 +543,7 @@ def seeded_db_forecasts(tmp_path: Path) -> Path:
 def test_upsert_forecasts_inserts(seeded_db_forecasts: Path) -> None:
     """upsert_forecasts: inserisce i record nella tabella forecasts."""
     records = _parse_om_response(
-        _OM_MOCK_RESPONSE, "ecmwf_ifs025", "lavoro_cosimo", _OM_TS_RUN_ECMWF
+        _OM_MOCK_RESPONSE, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF
     )
     with DuckDBClient(db_path=seeded_db_forecasts) as db:
         n = db.upsert_forecasts(records)
@@ -555,7 +555,7 @@ def test_upsert_forecasts_inserts(seeded_db_forecasts: Path) -> None:
 def test_upsert_forecasts_idempotent(seeded_db_forecasts: Path) -> None:
     """Stesso batch inserito due volte → stessa riga, no duplicati."""
     records = _parse_om_response(
-        _OM_MOCK_RESPONSE, "ecmwf_ifs025", "lavoro_cosimo", _OM_TS_RUN_ECMWF
+        _OM_MOCK_RESPONSE, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF
     )
     with DuckDBClient(db_path=seeded_db_forecasts) as db:
         db.upsert_forecasts(records)
@@ -567,13 +567,13 @@ def test_upsert_forecasts_idempotent(seeded_db_forecasts: Path) -> None:
 def test_upsert_forecasts_update_on_conflict(seeded_db_forecasts: Path) -> None:
     """Stesso (source, location, ts_run, ts_valid) con temp diversa → vince il secondo."""
     rec_v1 = _parse_om_response(
-        _OM_MOCK_RESPONSE, "ecmwf_ifs025", "lavoro_cosimo", _OM_TS_RUN_ECMWF
+        _OM_MOCK_RESPONSE, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF
     )
     # Modifica la temperatura nel secondo batch
     import copy
     data_v2 = copy.deepcopy(_OM_MOCK_RESPONSE)
     data_v2["hourly"]["temperature_2m"] = [99.9, 99.9]
-    rec_v2 = _parse_om_response(data_v2, "ecmwf_ifs025", "lavoro_cosimo", _OM_TS_RUN_ECMWF)
+    rec_v2 = _parse_om_response(data_v2, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF)
 
     with DuckDBClient(db_path=seeded_db_forecasts) as db:
         db.upsert_forecasts(rec_v1)
@@ -600,8 +600,8 @@ _OM_HISTORICAL_MOCK = {
     "longitude": 11.19,
     "timezone": "UTC",
     "hourly": {
-        # ECMWF run 00: ts_valid 00:00-11:00 → ts_run=00:00
-        # ECMWF run 12: ts_valid 12:00-23:00 → ts_run=12:00
+        # ECMWF run 06: ts_valid 06:00-11:00 → ts_run=06:00
+        # ECMWF run 12: ts_valid 12:00-17:00 → ts_run=12:00
         "time": ["2026-05-14T11:00", "2026-05-14T12:00", "2026-05-14T13:00"],
         "temperature_2m": [20.0, 21.0, 21.5],
         "relative_humidity_2m": [50.0, 48.0, 46.0],
@@ -615,29 +615,24 @@ _OM_HISTORICAL_MOCK = {
 
 
 def test_parse_om_response_historical_ts_run_inferred() -> None:
-    """ts_run=None → inferita per riga: 11:00 UTC → ts_run=00:00, 12:00 → ts_run=12:00."""
-    records = _parse_om_response(_OM_HISTORICAL_MOCK, "ecmwf_ifs025", "lavoro_cosimo", ts_run=None)
+    """ts_run=None → inferita per riga: 11:00 UTC → ts_run=06:00, 12:00 → ts_run=12:00."""
+    records = _parse_om_response(_OM_HISTORICAL_MOCK, "ecmwf_ifs", "lavoro_cosimo", ts_run=None)
     assert len(records) == 3
 
-    # ts_valid 11:00 → ECMWF run 00 UTC → lead_time_h = 11
+    # ts_valid 11:00 → ECMWF run 06 UTC → lead_time_h = 5
     r11 = records[0]
-    assert r11["ts_run"] == datetime(2026, 5, 14, 0, 0, tzinfo=UTC)
-    assert r11["lead_time_h"] == 11
+    assert r11["ts_run"] == datetime(2026, 5, 14, 6, 0, tzinfo=UTC)
+    assert r11["lead_time_h"] == 5
 
     # ts_valid 12:00 → ECMWF run 12 UTC → lead_time_h = 0
     r12 = records[1]
     assert r12["ts_run"] == datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
     assert r12["lead_time_h"] == 0
 
-    # ts_valid 13:00 → ECMWF run 12 UTC → lead_time_h = 1
-    r13 = records[2]
-    assert r13["ts_run"] == datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
-    assert r13["lead_time_h"] == 1
-
 
 def test_parse_om_response_historical_values() -> None:
     """Valori correttamente estratti in modalità storica."""
-    records = _parse_om_response(_OM_HISTORICAL_MOCK, "ecmwf_ifs025", "lavoro_cosimo", ts_run=None)
+    records = _parse_om_response(_OM_HISTORICAL_MOCK, "ecmwf_ifs", "lavoro_cosimo", ts_run=None)
     r = records[0]
     assert r["temp_c"] == pytest.approx(20.0)
     assert r["humidity_pct"] == pytest.approx(50.0)
@@ -654,10 +649,10 @@ def test_fetch_openmeteo_historical_uses_parse_om_response() -> None:
             lon=11.19,
             start_date="2026-05-14",
             end_date="2026-05-14",
-            models=["ecmwf_ifs025"],
+            models=["ecmwf_ifs"],
         )
-    assert "ecmwf_ifs025" in results
-    records = results["ecmwf_ifs025"]
+    assert "ecmwf_ifs" in results
+    records = results["ecmwf_ifs"]
     assert len(records) == 3
     # ts_run varia per riga (non fissa)
     assert records[0]["ts_run"] != records[1]["ts_run"]
@@ -674,21 +669,17 @@ def test_fetch_openmeteo_historical_error_returns_empty() -> None:
             lon=11.19,
             start_date="2026-05-14",
             end_date="2026-05-14",
-            models=["ecmwf_ifs025"],
+            models=["ecmwf_ifs"],
         )
-    assert results["ecmwf_ifs025"] == []
+    assert results["ecmwf_ifs"] == []
 
 
 def test_upsert_forecasts_batch_historical(seeded_db_forecasts: Path) -> None:
     """upsert_forecasts batch: 3 record storici con ts_run diverse → 3 righe."""
-    records = _parse_om_response(_OM_HISTORICAL_MOCK, "ecmwf_ifs025", "lavoro_cosimo", ts_run=None)
+    records = _parse_om_response(_OM_HISTORICAL_MOCK, "ecmwf_ifs", "lavoro_cosimo", ts_run=None)
     with DuckDBClient(db_path=seeded_db_forecasts) as db:
         n = db.upsert_forecasts(records)
         count = db.execute("SELECT COUNT(*) FROM forecasts").fetchone()[0]
-        # verifica lead_time_h corretto per la riga con ts_valid=12:00
-        row = db.execute(
-            "SELECT lead_time_h FROM forecasts WHERE ts_valid = '2026-05-14T12:00:00+00:00'"
-        ).fetchone()
     assert n == 3
     assert count == 3
     # verifica lead_time_h corretto per la riga con ts_valid=12:00

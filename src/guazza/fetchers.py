@@ -750,16 +750,19 @@ _OM_VAR_MAP: dict[str, str] = {
 
 # Cadenza run per modello (ore UTC). Usata per arrotondare ts_run.
 _MODEL_RUN_HOURS: dict[str, list[int]] = {
-    "ecmwf_ifs025": [0, 12],
-    "icon_eu": [0, 3, 6, 9, 12, 15, 18, 21],
-    "gfs025": [0, 6, 12, 18],
-    "arome_france": [0, 3, 6, 9, 12, 15, 18, 21],
+    "ecmwf_ifs":     [0, 6, 12, 18],
+    "ecmwf_ifs025":  [0, 6, 12, 18],
+    "ecmwf_aifs025": [0, 12],
+    "icon_eu":       [0, 3, 6, 9, 12, 15, 18, 21],
+    "icon_d2":       [0, 3, 6, 9, 12, 15, 18, 21],
+    "gfs025":        [0, 6, 12, 18],
+    "arome_france":  [0, 3, 6, 9, 12, 15, 18, 21],
     # fallback generico
     "default": [0, 6, 12, 18],
 }
 
 # Modelli disponibili per l'area Toscana
-_OM_MODELS: list[str] = ["ecmwf_ifs025", "icon_eu", "gfs025", "arome_france"]
+_OM_MODELS: list[str] = ["ecmwf_ifs", "ecmwf_aifs025", "icon_eu", "icon_d2", "gfs025", "arome_france"]
 
 
 def _infer_ts_run(model: str, now_utc: datetime) -> datetime:

@@ -171,3 +171,13 @@ Un valore puntuale senza CI è un bug di output, non una feature.
 
 **Motivazione**: le previsioni sono stime probabilistiche. Presentarle come
 certezze è scientificamente disonesto e operativamente fuorviante.
+
+### D-010: Selezione modelli NWP per post-processing iper-locale
+**Data**: 2026-05-16
+**Contesto**: La risoluzione spaziale dei modelli globali (25 km) è insufficiente per catturare i microclimi toscani complessi (es. inversione termica nella piana di Campi o Scandicci).
+**Decisione**:
+- Sostituire `ecmwf_ifs025` (25 km) con `ecmwf_ifs` (HRES, 9 km). Stessa fisica, orografia molto più dettagliata.
+- Aggiungere `icon_d2` (2.2 km). Modello convective-permitting del DWD che copre il Centro-Nord Italia, fondamentale per la dinamica locale.
+- Mantenere `ecmwf_aifs025` per diversità metodologica (AI-based).
+- Mantenere `arome_france` (2.5 km) e `icon_eu` (7 km) come modelli ad alta risoluzione.
+**Conseguenza**: Il dataset di training `features_daily` passa da 5 a 6 modelli NWP, aumentando la robustezza dell'ensemble probabilistico. Necessario rieseguire backfill `historical` per i nuovi modelli.
