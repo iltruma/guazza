@@ -132,16 +132,20 @@ class DuckDBClient:
         if self._conn is None:
             raise RuntimeError("DuckDBClient non è nel context manager.")
 
-        rows = [
-            [
+        seen: set[tuple] = set()
+        rows = []
+        for rec in records:
+            key = (rec["source"], rec["location_id"], rec["ts_run"], rec["ts_valid"])
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append([
                 rec["source"], rec["location_id"], rec["ts_run"], rec["ts_valid"],
                 rec.get("lead_time_h"),
                 rec.get("temp_c"), rec.get("humidity_pct"), rec.get("precip_mm"),
                 rec.get("wind_speed_ms"), rec.get("wind_dir_deg"),
                 rec.get("wind_gust_ms"), rec.get("pressure_hpa"),
-            ]
-            for rec in records
-        ]
+            ])
 
         self._conn.execute("DROP TABLE IF EXISTS _staging_forecasts")
         self._conn.execute("""
