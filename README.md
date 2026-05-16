@@ -181,3 +181,7 @@ Per la lista completa con endpoint e stato: `config/sources.yaml`.
 ---
 
 *Guazza è un progetto personale open source. Pull request benvenute.*
+
+Sviluppato in collaborazione con assistenti AI: **Claude** (Anthropic),
+**Gemini** e **DeepSeek** (via OpenRouter) — usati per design review,
+debate multi-modello sulle scelte architetturali e supporto all'implementazione.
