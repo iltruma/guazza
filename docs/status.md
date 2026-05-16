@@ -59,11 +59,15 @@ la stessa PK. Valori: `daily`, `realtime`, `hourly` (riservato).
 - **B11** `schema.sql` + storage + fetchers: `precip_interval_h` + `granularity` in PK
 
 ### Ingestion Open-Meteo (completato — 2026-05-16)
-- `fetch_openmeteo_forecast`: fetch live multi-modello (ecmwf_ifs, ecmwf_aifs025, icon_eu, icon_d2, gfs025, arome_france)
-- `fetch_openmeteo_historical`: backfill storico (Historical Forecast API, 2022+)
+- `fetch_openmeteo_forecast`: fetch live multi-modello (ecmwf_ifs, ecmwf_aifs025, icon_eu, icon_d2, gfs025, arome_france).
+- `fetch_openmeteo_historical`: backfill storico (Historical Forecast API, 2022+).
+- **Batching Coordinate**: Implementato l'invio di multiple coordinate in una singola chiamata API. Ridotti i round-trip HTTP del 75%.
+- **Temporal Chunking**: Aggiunto frazionamento delle richieste storiche (chunk di 180 giorni) per evitare timeout lato server su modelli ad alta risoluzione.
+- **Chunk dinamico per modello**: icon_d2 e arome_france usano chunk da 90gg; gli altri modelli 180gg. Previene HTTP 504 su modelli convettivi ad alta risoluzione.
+- **`_fetch_om_json_historical`**: funzione separata dal forecast live con timeout 90s, 5 retry, backoff max 60s.
 - Sostituito ECMWF 0.25° con HRES 9km e aggiunto ICON-D2 (2.2km) per migliorare risoluzione orografica (D-010).
 - `ts_run` inferita per difetto all'ultimo run nominale del modello (ECMWF HRES: ogni 6h, ICON-D2: ogni 3h).
-- `upsert_forecasts`: UPSERT batch, l'ultimo run vince
+- `upsert_forecasts`: UPSERT batch, l'ultimo run vince.
 
 ### Job di ingestion (completato — 2026-05-15)
 Quattro comandi in `src/guazza/jobs/ingest.py`:

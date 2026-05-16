@@ -796,6 +796,15 @@ def _fetch_om_json(url: str, params: dict[str, str | int | float | list[str]]) -
     return r.json()  # type: ignore[no-any-return]
 
 
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=2, min=5, max=60))
+def _fetch_om_json_historical(url: str, params: dict[str, str | int | float | list[str]]) -> dict[str, Any]:
+    logger.debug(f"Open-Meteo historical fetch: {url} params={params}")
+    with httpx.Client(timeout=90) as client:
+        r = client.get(url, params=params)
+        r.raise_for_status()
+    return r.json()  # type: ignore[no-any-return]
+
+
 def _parse_om_response(
     data: dict[str, Any],
     model: str,
@@ -1025,22 +1034,28 @@ def fetch_openmeteo_forecast_batch(
 
 
 def fetch_openmeteo_historical_batch(
-    locations: dict[str, dict[str, Any]],
+    locations: dict[str, Any],
     start_date: str,
     end_date: str,
     models: list[str] | None = None,
-    chunk_days: int = 180,
 ) -> dict[str, dict[str, list[dict[str, Any]]]]:
     """Fetch storico forecast da Open-Meteo Historical Forecast API in batch.
 
-    Divide la richiesta in chunk temporali (default 180gg) per evitare timeout
-    lato server su intervalli lunghi e modelli ad alta risoluzione.
+    Divide la richiesta in chunk temporali per evitare timeout lato server.
+    Modelli ad alta risoluzione (icon_d2, arome_france) usano chunk da 90gg;
+    altri modelli (ecmwf_ifs, ecmwf_aifs025, icon_eu, gfs025) usano 180gg.
+
+    Usa timeout HTTP 90s e backoff piu aggressivo (5 tentativi, max 60s).
 
     Returns:
         Dict {location_id: {model: [record_wide, ...]}}
     """
     if models is None:
         models = _OM_MODELS
+
+    _HIGH_RES = {"icon_d2", "arome_france"}
+    _DEFAULT_CHUNK = 180
+    _HR_CHUNK = 90
 
     results: dict[str, dict[str, list[dict[str, Any]]]] = {
         loc_id: {model: [] for model in models} for loc_id in locations
@@ -1050,18 +1065,19 @@ def fetch_openmeteo_historical_batch(
     lats = [locations[lid]["lat"] for lid in loc_ids]
     lons = [locations[lid]["lon"] for lid in loc_ids]
 
-    # Genera intervalli temporali
-    start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
-    
-    chunks: list[tuple[str, str]] = []
-    curr_start = start_dt
-    while curr_start <= end_dt:
-        curr_end = min(curr_start + timedelta(days=chunk_days - 1), end_dt)
-        chunks.append((curr_start.isoformat(), curr_end.isoformat()))
-        curr_start = curr_end + timedelta(days=1)
-
     for model in models:
+        chunk_days = _HR_CHUNK if model in _HIGH_RES else _DEFAULT_CHUNK
+
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+        chunks: list[tuple[str, str]] = []
+        curr_start = start_dt
+        while curr_start <= end_dt:
+            curr_end = min(curr_start + timedelta(days=chunk_days - 1), end_dt)
+            chunks.append((curr_start.isoformat(), curr_end.isoformat()))
+            curr_start = curr_end + timedelta(days=1)
+
         for c_start, c_end in chunks:
             params: dict[str, str | int | float | list[str]] = {
                 "latitude": ",".join(map(str, lats)),
@@ -1074,24 +1090,24 @@ def fetch_openmeteo_historical_batch(
                 "wind_speed_unit": "ms",
             }
             try:
-                data = _fetch_om_json(_OM_HISTORICAL_URL, params)
+                data = _fetch_om_json_historical(_OM_HISTORICAL_URL, params)
                 responses = data if isinstance(data, list) else [data]
 
                 for lid, resp in zip(loc_ids, responses, strict=True):
                     records = _parse_om_response(resp, model, lid, ts_run=None)
                     results[lid][model].extend(records)
                     _log_scrape(
-                        f"openmeteo_historical_batch:{lid}:{model}", 
-                        "ok", 
+                        f"openmeteo_historical_batch:{lid}:{model}",
+                        "ok",
                         rows=len(records),
-                        detail=f"{c_start} to {c_end}"
+                        detail=f"{c_start} to {c_end}",
                     )
             except Exception as e:
                 logger.error(f"Open-Meteo historical batch [{model}] [{c_start}→{c_end}] fallito: {e}")
                 for lid in loc_ids:
                     _log_scrape(f"openmeteo_historical_batch:{lid}:{model}", "fail", detail=str(e))
-            
-            time.sleep(1.0)  # Throttling più prudente per lo storico
+
+            time.sleep(1.0)
 
     return results
 
