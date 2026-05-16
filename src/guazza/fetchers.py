@@ -368,7 +368,7 @@ def fetch_sir_stations_realtime(
     """
     results: dict[str, dict[str, Any]] = {}
     n_fail = 0
-    for i, sid in enumerate(station_ids):
+    for i, sid in enumerate(tqdm(station_ids, desc="SIR realtime", unit="staz", disable=not sys.stderr.isatty())):
         if i > 0:
             time.sleep(delay)
         try:
@@ -943,7 +943,7 @@ def fetch_openmeteo_forecast(
 
     results: dict[str, list[dict[str, Any]]] = {}
 
-    for model in models:
+    for model in tqdm(models, desc=f"OM forecast [{location_id}]", unit="model", disable=not sys.stderr.isatty()):
         ts_run = _infer_ts_run(model, now_utc)
         params: dict[str, str | int | float | list[str]] = {
             "latitude": lat,
@@ -993,7 +993,7 @@ def fetch_openmeteo_historical(
 
     results: dict[str, list[dict[str, Any]]] = {}
 
-    for model in models:
+    for model in tqdm(models, desc=f"OM historical [{location_id}]", unit="model", disable=not sys.stderr.isatty()):
         params: dict[str, str | int | float | list[str]] = {
             "latitude": lat,
             "longitude": lon,
@@ -1053,7 +1053,7 @@ def fetch_openmeteo_forecast_batch(
     lats = [locations[lid]["lat"] for lid in loc_ids]
     lons = [locations[lid]["lon"] for lid in loc_ids]
 
-    for model in models:
+    for model in tqdm(models, desc="OM forecast batch", unit="model", disable=not sys.stderr.isatty()):
         ts_run = _infer_ts_run(model, now_utc)
         params: dict[str, str | int | float | list[str]] = {
             "latitude": ",".join(map(str, lats)),
@@ -1120,7 +1120,7 @@ def fetch_openmeteo_historical_batch(
     lats = [locations[lid]["lat"] for lid in loc_ids]
     lons = [locations[lid]["lon"] for lid in loc_ids]
 
-    for model in models:
+    for model in tqdm(models, desc="OM historical batch", unit="model", disable=not sys.stderr.isatty()):
         chunk_days = _HR_CHUNK if model in _HIGH_RES else _DEFAULT_CHUNK
 
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
@@ -1205,9 +1205,8 @@ def fetch_netatmo_all_locations(
     fetched_at = datetime.now(tz=UTC)
     results: dict[str, list[_StationData]] = {}
 
-    for loc_id, loc in locations.items():
-        if target_location and loc_id != target_location:
-            continue
+    active_locs = {k: v for k, v in locations.items() if not target_location or k == target_location}
+    for loc_id, loc in tqdm(active_locs.items(), desc="Netatmo", unit="loc", disable=not sys.stderr.isatty()):
         try:
             stations = fetch_netatmo_location(loc_id, loc, env, db=db)
             save_netatmo_to_db(db, loc_id, stations, fetched_at)
@@ -1397,7 +1396,7 @@ def fetch_arpat_bollettini(
     records: list[dict[str, Any]] = []
     n_fail = 0
 
-    for st in arpat_stations:
+    for st in tqdm(arpat_stations, desc="ARPAT bollettini", unit="staz", disable=not sys.stderr.isatty()):
         station_id = str(st["id"]).upper()
         weight = float(st.get("weight", 1.0))
 
@@ -1492,7 +1491,7 @@ def fetch_arpat_bollettini_range(
 
     records: list[dict[str, Any]] = []
 
-    for st in arpat_stations:
+    for st in tqdm(arpat_stations, desc="ARPAT bollettini range", unit="staz", disable=not sys.stderr.isatty()):
         station_id = str(st["id"]).upper()
         weight = float(st.get("weight", 1.0))
 

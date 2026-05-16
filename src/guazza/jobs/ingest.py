@@ -33,6 +33,7 @@ import typer
 import yaml
 from dotenv import load_dotenv
 from loguru import logger
+from tqdm import tqdm
 
 # Carica .env prima di leggere variabili d'ambiente (es. DB_PATH)
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -160,7 +161,7 @@ def _ingest_sir_historical_range(
     station_ids = _all_sir_station_ids(locations)
     total = 0
 
-    for i, sid in enumerate(sorted(station_ids)):
+    for i, sid in enumerate(tqdm(sorted(station_ids), desc="SIR historical", unit="staz", disable=not sys.stderr.isatty())):
         if i > 0:
             time.sleep(_SIR_CSV_DELAY)
 
