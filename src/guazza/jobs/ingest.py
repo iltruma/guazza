@@ -45,7 +45,6 @@ from guazza.fetchers import (  # noqa: E402
     fetch_netatmo_all_locations,
     fetch_openmeteo_all_locations,
     fetch_openmeteo_historical_batch,
-    fetch_openmeteo_forecast_batch,
     fetch_sir_historical,
     fetch_sir_stations_realtime,
 )
@@ -314,12 +313,19 @@ def cmd_historical(
 
             if run_om:
                 typer.echo("\n--- Open-Meteo historical (batch) ---")
+                # L'archivio Historical Forecast API arriva fino a 2 giorni fa
+                om_end_date = min(
+                    datetime.fromisoformat(end_date).date(),
+                    (datetime.now(tz=UTC) - timedelta(days=2)).date(),
+                ).isoformat()
+                if om_end_date != end_date:
+                    typer.echo(f"Open-Meteo: end_date cappato a {om_end_date} (archivio arriva a oggi-2gg)")
                 results_all = fetch_openmeteo_historical_batch(
                     locations=locations,
                     start_date=start_date,
-                    end_date=end_date,
+                    end_date=om_end_date,
                 )
-                for loc_id, model_results in results_all.items():
+                for _loc_id, model_results in results_all.items():
                     for _model, records in model_results.items():
                         if records:
                             om_total += db.upsert_forecasts(records)
@@ -421,7 +427,7 @@ def cmd_daily(
                     start_date=date,
                     end_date=date,
                 )
-                for loc_id, model_results in results_all.items():
+                for _loc_id, model_results in results_all.items():
                     for _model, records in model_results.items():
                         if records:
                             om_total += db.upsert_forecasts(records)
