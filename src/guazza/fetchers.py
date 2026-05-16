@@ -960,28 +960,141 @@ def fetch_openmeteo_historical(
     return results
 
 
+def fetch_openmeteo_forecast_batch(
+    locations: dict[str, dict[str, Any]],
+    models: list[str] | None = None,
+    forecast_days: int = 7,
+    now_utc: datetime | None = None,
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Fetch forecast live da Open-Meteo per multiple location in batch.
+
+    Sfrutta la capacità di Open-Meteo di ricevere più coordinate in una chiamata.
+    Riduce il numero di round-trip HTTP e il throttling.
+
+    Returns:
+        Dict {location_id: {model: [record_wide, ...]}}
+    """
+    if models is None:
+        models = _OM_MODELS
+    if now_utc is None:
+        now_utc = datetime.now(tz=UTC)
+
+    # Inizializza risultati: {loc_id: {model: []}}
+    results: dict[str, dict[str, list[dict[str, Any]]]] = {
+        loc_id: {model: [] for model in models} for loc_id in locations
+    }
+
+    # Ordine stabile per le location
+    loc_ids = sorted(locations.keys())
+    lats = [locations[lid]["lat"] for lid in loc_ids]
+    lons = [locations[lid]["lon"] for lid in loc_ids]
+
+    for model in models:
+        ts_run = _infer_ts_run(model, now_utc)
+        params: dict[str, str | int | float | list[str]] = {
+            "latitude": ",".join(map(str, lats)),
+            "longitude": ",".join(map(str, lons)),
+            "hourly": ",".join(_OM_HOURLY_VARS),
+            "models": model,
+            "forecast_days": forecast_days,
+            "timezone": "UTC",
+            "wind_speed_unit": "ms",
+        }
+        try:
+            data = _fetch_om_json(_OM_FORECAST_URL, params)
+
+            # Se abbiamo più coordinate, Open-Meteo restituisce una LISTA di oggetti
+            if isinstance(data, list):
+                responses = data
+            else:
+                responses = [data]
+
+            for lid, resp in zip(loc_ids, responses, strict=True):
+                records = _parse_om_response(resp, model, lid, ts_run)
+                results[lid][model] = records
+                _log_scrape(f"openmeteo_forecast_batch:{lid}:{model}", "ok", rows=len(records))
+
+        except Exception as e:
+            logger.error(f"Open-Meteo forecast batch [{model}] fallito: {e}")
+            for lid in loc_ids:
+                _log_scrape(f"openmeteo_forecast_batch:{lid}:{model}", "fail", detail=str(e))
+
+        time.sleep(0.5)
+
+    return results
+
+
+def fetch_openmeteo_historical_batch(
+    locations: dict[str, dict[str, Any]],
+    start_date: str,
+    end_date: str,
+    models: list[str] | None = None,
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Fetch storico forecast da Open-Meteo Historical Forecast API in batch.
+
+    Returns:
+        Dict {location_id: {model: [record_wide, ...]}}
+    """
+    if models is None:
+        models = _OM_MODELS
+
+    # Inizializza risultati
+    results: dict[str, dict[str, list[dict[str, Any]]]] = {
+        loc_id: {model: [] for model in models} for loc_id in locations
+    }
+
+    loc_ids = sorted(locations.keys())
+    lats = [locations[lid]["lat"] for lid in loc_ids]
+    lons = [locations[lid]["lon"] for lid in loc_ids]
+
+    for model in models:
+        params: dict[str, str | int | float | list[str]] = {
+            "latitude": ",".join(map(str, lats)),
+            "longitude": ",".join(map(str, lons)),
+            "hourly": ",".join(_OM_HOURLY_VARS),
+            "models": model,
+            "start_date": start_date,
+            "end_date": end_date,
+            "timezone": "UTC",
+            "wind_speed_unit": "ms",
+        }
+        try:
+            data = _fetch_om_json(_OM_HISTORICAL_URL, params)
+
+            if isinstance(data, list):
+                responses = data
+            else:
+                responses = [data]
+
+            for lid, resp in zip(loc_ids, responses, strict=True):
+                # ts_run=None → inferita per ogni riga
+                records = _parse_om_response(resp, model, lid, ts_run=None)
+                results[lid][model] = records
+                _log_scrape(f"openmeteo_historical_batch:{lid}:{model}", "ok", rows=len(records))
+
+        except Exception as e:
+            logger.error(f"Open-Meteo historical batch [{model}] fallito: {e}")
+            for lid in loc_ids:
+                _log_scrape(f"openmeteo_historical_batch:{lid}:{model}", "fail", detail=str(e))
+
+        time.sleep(0.5)
+
+    return results
+
+
 def fetch_openmeteo_all_locations(
     locations: dict[str, Any],
     models: list[str] | None = None,
     forecast_days: int = 7,
     now_utc: datetime | None = None,
 ) -> dict[str, dict[str, list[dict[str, Any]]]]:
-    """Fetch forecast per tutte le location.
-
-    Returns:
-        Dict {location_id: {model: [record_wide, ...]}}
-    """
-    results: dict[str, dict[str, list[dict[str, Any]]]] = {}
-    for loc_id, loc in locations.items():
-        results[loc_id] = fetch_openmeteo_forecast(
-            location_id=loc_id,
-            lat=loc["lat"],
-            lon=loc["lon"],
-            models=models,
-            forecast_days=forecast_days,
-            now_utc=now_utc,
-        )
-    return results
+    """Fetch forecast per tutte le location (usa il batching)."""
+    return fetch_openmeteo_forecast_batch(
+        locations=locations,
+        models=models,
+        forecast_days=forecast_days,
+        now_utc=now_utc,
+    )
 
 
 def fetch_netatmo_all_locations(
