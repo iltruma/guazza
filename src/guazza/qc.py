@@ -1,13 +1,17 @@
-"""Quality control per osservazioni SIR.
+"""Quality control per osservazioni SIR e ARPAT.
 
 Calcola flag di qualità sulla tabella observations e li scrive in quality_flags.
-Il ricalcolo è idempotente: DELETE + INSERT ad ogni run.
+Il ricalcolo è idempotente: DELETE + INSERT ad ogni run in transazione.
 
 Flag implementati:
-- spike_tmin      : |tmin_c[t] - tmin_c[t-1]| > SPIKE_TEMP_C tra giorni consecutivi
-- spike_tmax      : |tmax_c[t] - tmax_c[t-1]| > SPIKE_TEMP_C
-- inversion_temp  : tmin_c > tmax_c (fisicamente impossibile)
-- range_precip_high: precip_mm > PRECIP_HIGH_MM (estremo ma possibile, flag cautivo)
+- spike_tmin         : |tmin_c[t] - tmin_c[t-1]| > SPIKE_TEMP_C (SIR daily)
+- spike_tmax         : |tmax_c[t] - tmax_c[t-1]| > SPIKE_TEMP_C (SIR daily)
+- inversion_temp     : tmin_c > tmax_c (fisicamente impossibile, SIR daily)
+- range_precip_high  : precip_mm > PRECIP_HIGH_MM (SIR daily + realtime)
+- range_pm10_high    : pm10_ugm3 > PM10_HIGH_UGM3 (ARPAT)
+- range_pm25_high    : pm25_ugm3 > PM25_HIGH_UGM3 (ARPAT)
+- range_no2_high     : no2_ugm3 > NO2_HIGH_UGM3 (ARPAT)
+- range_o3_high      : o3_ugm3 > O3_HIGH_UGM3 (ARPAT)
 """
 
 from __future__ import annotations
@@ -16,26 +20,40 @@ from guazza.storage import DuckDBClient
 
 SPIKE_TEMP_C: float = 10.0
 PRECIP_HIGH_MM: float = 150.0
+PM10_HIGH_UGM3: float = 200.0
+PM25_HIGH_UGM3: float = 100.0
+NO2_HIGH_UGM3: float = 400.0
+O3_HIGH_UGM3: float = 300.0
 
 
-def compute_quality_flags(db: DuckDBClient) -> int:
+def compute_quality_flags(db: DuckDBClient) -> dict[str, int]:
     """Ricalcola tutti i flag di qualità e li scrive in quality_flags.
 
     Returns:
-        Numero totale di flag inseriti.
+        Dict con total e breakdown per flag_type.
     """
     if db._conn is None:
         raise RuntimeError("DuckDBClient non è nel context manager.")
 
+    db._conn.execute("BEGIN TRANSACTION")
     db._conn.execute("DELETE FROM quality_flags")
 
     _insert_spike_flags(db, "tmin_c", "spike_tmin")
     _insert_spike_flags(db, "tmax_c", "spike_tmax")
     _insert_inversion_flags(db)
     _insert_range_precip_flags(db)
+    _insert_range_arpat_flags(db, "pm10_ugm3", "range_pm10_high", PM10_HIGH_UGM3)
+    _insert_range_arpat_flags(db, "pm25_ugm3", "range_pm25_high", PM25_HIGH_UGM3)
+    _insert_range_arpat_flags(db, "no2_ugm3", "range_no2_high", NO2_HIGH_UGM3)
+    _insert_range_arpat_flags(db, "o3_ugm3", "range_o3_high", O3_HIGH_UGM3)
 
-    row = db._conn.execute("SELECT COUNT(*) FROM quality_flags").fetchone()
-    return int(row[0]) if row else 0
+    rows = db._conn.execute(
+        "SELECT flag_type, COUNT(*) FROM quality_flags GROUP BY flag_type ORDER BY flag_type"
+    ).fetchall()
+    breakdown = {str(r[0]): int(r[1]) for r in rows}
+    breakdown["total"] = sum(breakdown.values())
+    db._conn.execute("COMMIT")
+    return breakdown
 
 
 def _insert_spike_flags(db: DuckDBClient, col: str, flag_type: str) -> None:
@@ -90,7 +108,7 @@ def _insert_inversion_flags(db: DuckDBClient) -> None:
 
 
 def _insert_range_precip_flags(db: DuckDBClient) -> None:
-    """Flag precipitazione estrema: precip_mm > PRECIP_HIGH_MM."""
+    """Flag precipitazione estrema: precip_mm > PRECIP_HIGH_MM (daily + realtime)."""
     assert db._conn is not None
     db._conn.execute(f"""
         INSERT INTO quality_flags
@@ -102,6 +120,23 @@ def _insert_range_precip_flags(db: DuckDBClient) -> None:
             'precip=' || ROUND(precip_mm, 1)::VARCHAR || 'mm'
         FROM observations
         WHERE source = 'sir_toscana'
-          AND granularity = 'daily'
+          AND granularity IN ('daily', 'realtime')
           AND precip_mm > {PRECIP_HIGH_MM}
+    """)
+
+
+def _insert_range_arpat_flags(db: DuckDBClient, col: str, flag_type: str, threshold: float) -> None:
+    """Flag range per inquinante ARPAT: valore > threshold."""
+    assert db._conn is not None
+    db._conn.execute(f"""
+        INSERT INTO quality_flags
+            (source, station_id, ts, granularity, flag_type, column_name, value, detail)
+        SELECT
+            source, station_id, ts, granularity,
+            '{flag_type}', '{col}',
+            {col},
+            '{col}=' || ROUND({col}, 1)::VARCHAR || ' ug/m3'
+        FROM observations
+        WHERE source = 'arpat'
+          AND {col} > {threshold}
     """)

@@ -3,6 +3,7 @@
 Uso:
     uv run python -m guazza.jobs.qc run
     uv run python -m guazza.jobs.qc run --db /path/to/guazza.duckdb
+    uv run python -m guazza.jobs.qc run --dry-run
     uv run python -m guazza.jobs.qc report
 """
 
@@ -24,12 +25,22 @@ _DB_OPT = typer.Option(_DEFAULT_DB, "--db", help="Path file DuckDB")
 
 
 @app.command("run")
-def cmd_run(db_path: Path = _DB_OPT) -> None:
+def cmd_run(
+    db_path: Path = _DB_OPT,
+    dry_run: bool = typer.Option(False, "--dry-run", help="Mostra cosa farebbe senza scrivere"),
+) -> None:
     """Ricalcola tutti i flag di qualità e li scrive in quality_flags."""
+    if dry_run:
+        typer.echo("[dry-run] Nessuna scrittura effettuata.")
+        return
+
     with DuckDBClient(db_path=db_path) as db:
-        n = compute_quality_flags(db)
-    logger.info(f"qc.run: {n} flag totali in quality_flags")
-    typer.echo(f"Flag inseriti: {n}")
+        result = compute_quality_flags(db)
+    total = result.pop("total")
+    breakdown = ", ".join(f"{k}={v}" for k, v in sorted(result.items()))
+    logger.info(f"qc.run: {total} flag totali — {breakdown}")
+    typer.echo(f"Flag inseriti: {total}")
+    typer.echo(f"Breakdown: {breakdown}")
 
 
 @app.command("report")
