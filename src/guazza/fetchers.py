@@ -24,7 +24,12 @@ import httpx
 import yaml
 from dotenv import load_dotenv
 from loguru import logger
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from guazza.weights import compute_station_weight
 
@@ -796,7 +801,30 @@ def _fetch_om_json(url: str, params: dict[str, str | int | float | list[str]]) -
     return r.json()  # type: ignore[no-any-return]
 
 
-@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=2, min=5, max=60))
+def _is_retryable_http(exc: BaseException) -> bool:
+    """Ritenta solo su 5xx e network error — i 4xx sono errori permanenti."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return True
+
+
+def _log_http_error(retry_state: Any) -> None:
+    exc = retry_state.outcome.exception()
+    if isinstance(exc, httpx.HTTPStatusError):
+        logger.warning(
+            f"Open-Meteo historical HTTP {exc.response.status_code} "
+            f"(attempt {retry_state.attempt_number}): {exc.request.url}"
+        )
+    else:
+        logger.warning(f"Open-Meteo historical retry (attempt {retry_state.attempt_number}): {exc}")
+
+
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=5, max=60),
+    retry=retry_if_exception(_is_retryable_http),
+    before_sleep=_log_http_error,
+)
 def _fetch_om_json_historical(url: str, params: dict[str, str | int | float | list[str]]) -> dict[str, Any]:
     logger.debug(f"Open-Meteo historical fetch: {url} params={params}")
     with httpx.Client(timeout=90) as client:
