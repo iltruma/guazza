@@ -34,7 +34,7 @@ Leggi **`docs/status.md`** — unica fonte di verità sullo stato. Punti aperti 
 ```yaml
 casa_campi:      # Campi Bisenzio (FI), ~35m
 lavoro_cosimo:   # Scandicci (FI), ~50m
-lavoro_madda:    # Prato, ~60m
+lavoro_madda:    # Prato (PO), ~60m
 casa_cesto:      # Figline Valdarno (FI), ~200m
 ```
 
