@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-17 (Sprint 5 completato)
+> Aggiornato: 2026-05-17 (Sprint 5 completato, tag v0.5.0)
 
 ## Cosa è stato fatto
 
@@ -98,7 +98,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **176 test** (165 pre-Sprint 4 + 11 test_models), tutti verdi in ~55s
+- **194 test** (165 pre-Sprint 4 + 11 test_models + 18 test_output), tutti verdi in ~72s
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
