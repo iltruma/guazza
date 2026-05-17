@@ -233,6 +233,13 @@ e popolare il SignalBag in `build_signals()`. Sblocca l'indicatore dal fallback 
 come array `days`. Necessario per il frontend Sprint 6 e per avere la previsione di domani.
 `write_location_json` e `build_signals` sono già pronti; cambia solo il loop in `jobs/predict.py`.
 
+🟡 **Profilo orario (disaggregazione NWP)**: aggiungere array `hourly` (24 elementi) al JSON
+di output. Temperatura: rescaling lineare del profilo NWP ensemble-mean ancorato a tmin/tmax ML.
+Precipitazione: NWP scalato proporzionalmente a `precip_p50` + `precip_prob` (frazione modelli
+con precip > 0.1mm per ora). Nessuna modifica a DB o modelli — calcolato al momento della
+scrittura JSON dalla tabella `forecasts` esistente. Implementare in `output.py` +
+`jobs/predict.py` + nuovi test.
+
 ### Sprint 6 — Frontend
 **Dipendenza**: JSON output Sprint 5 stabile + pre-Sprint 6 completato
 
