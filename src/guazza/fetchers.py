@@ -794,7 +794,6 @@ _OM_VAR_MAP: dict[str, str] = {
 _MODEL_RUN_HOURS: dict[str, list[int]] = {
     "ecmwf_ifs":     [0, 6, 12, 18],
     "ecmwf_ifs025":  [0, 6, 12, 18],
-    "ecmwf_aifs025": [0, 12],
     "icon_eu":       [0, 3, 6, 9, 12, 15, 18, 21],
     "icon_d2":       [0, 3, 6, 9, 12, 15, 18, 21],
     "gfs025":        [0, 6, 12, 18],
@@ -804,7 +803,7 @@ _MODEL_RUN_HOURS: dict[str, list[int]] = {
 }
 
 # Modelli disponibili per l'area Toscana
-_OM_MODELS: list[str] = ["ecmwf_ifs", "ecmwf_aifs025", "icon_eu", "icon_d2", "gfs025", "arome_france"]
+_OM_MODELS: list[str] = ["ecmwf_ifs", "icon_eu", "icon_d2", "gfs025", "arome_france"]
 
 
 def _infer_ts_run(model: str, now_utc: datetime) -> datetime:
