@@ -15,6 +15,7 @@ import io
 import os
 import re
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -1502,6 +1503,99 @@ def fetch_arpat_bollettini(
     return records
 
 
+def _fetch_one_arpat_bollettini_station(
+    st: dict[str, Any],
+    location_id: str,
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, Any]]:
+    """Fetch e parse bollettini ARPAT per una singola stazione.
+
+    Returns: lista di record wide, vuota se fallimento.
+    """
+    station_id = str(st["id"]).upper()
+    weight = float(st.get("weight", 1.0))
+
+    try:
+        data = _fetch_arpat_json(
+            _ARPAT_BOLLETTINI_URL,
+            params={
+                "startdate": start_date,
+                "enddate": end_date,
+                "stazione": station_id,
+                "limit": "100000",
+            },
+        )
+    except Exception as e:
+        logger.warning(
+            f"ARPAT bollettini range [{location_id}] stazione {station_id} fallito: {e}"
+        )
+        _log_scrape(
+            f"arpat_bollettini_range:{location_id}:{station_id}",
+            "fail",
+            detail=str(e),
+        )
+        return []
+
+    raw_items: list[Any] = []
+    if isinstance(data, list):
+        raw_items = data
+    elif isinstance(data, dict):
+        raw_items = data.get("items") or data.get("stazioni") or data.get("data") or []
+
+    by_date: dict[str, dict[str, Any]] = {}
+    for item in raw_items:
+        date_str = str(
+            item.get("data_osservazione")
+            or item.get("data")
+            or item.get("date")
+            or ""
+        ).strip()
+        inq = str(item.get("inquinante") or "").upper()
+        val = item.get("valore")
+        if not date_str or not inq:
+            continue
+        if date_str not in by_date:
+            by_date[date_str] = {}
+        by_date[date_str][inq] = val
+
+    records: list[dict[str, Any]] = []
+    for date_str, inq_map in sorted(by_date.items()):
+        try:
+            ts_day = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
+        except ValueError:
+            logger.debug(f"ARPAT bollettini range: data non parsabile: {date_str!r}")
+            continue
+
+        rec: dict[str, Any] = {
+            "source": "arpat",
+            "station_id": station_id,
+            "location_id": location_id,
+            "ts": ts_day,
+            "granularity": "daily",
+            "weight": weight,
+            "qc_pass": True,
+        }
+        for arpat_var, col in _ARPAT_BOLL_VAR_MAP.items():
+            if col is None:
+                continue
+            raw = inq_map.get(arpat_var.upper())
+            try:
+                rec[col] = float(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                rec[col] = None
+
+        records.append(rec)
+
+    _log_scrape(
+        f"arpat_bollettini_range:{location_id}:{station_id}",
+        "ok",
+        rows=len(by_date),
+        detail=f"{start_date} to {end_date}",
+    )
+    return records
+
+
 def fetch_arpat_bollettini_range(
     location_id: str,
     arpat_stations: list[dict[str, Any]],
@@ -1510,6 +1604,7 @@ def fetch_arpat_bollettini_range(
 ) -> list[dict[str, Any]]:
     """Fetch bollettini giornalieri ARPAT su un range di date (backfill storico).
 
+    Le stazioni vengono fetchate in parallelo con ThreadPoolExecutor(3).
     Una singola chiamata HTTP per stazione con startdate/enddate estesi.
     Restituisce tutti i record nel range — una riga wide per (stazione, giorno).
 
@@ -1522,7 +1617,6 @@ def fetch_arpat_bollettini_range(
         Lista di record wide compatibili con upsert su `observations`.
         granularity='daily', una riga per (stazione, giorno).
     """
-    # Validazione date
     try:
         datetime.strptime(start_date, "%Y-%m-%d")
         datetime.strptime(end_date, "%Y-%m-%d")
@@ -1530,89 +1624,25 @@ def fetch_arpat_bollettini_range(
         raise ValueError(f"start_date/end_date devono essere YYYY-MM-DD: {e}") from e
 
     records: list[dict[str, Any]] = []
+    lock: threading.Lock = threading.Lock()
 
-    for st in tqdm(arpat_stations, desc="ARPAT bollettini range", unit="staz", disable=not sys.stderr.isatty()):
-        station_id = str(st["id"]).upper()
-        weight = float(st.get("weight", 1.0))
-
-        try:
-            data = _fetch_arpat_json(
-                _ARPAT_BOLLETTINI_URL,
-                params={
-                    "startdate": start_date,
-                    "enddate": end_date,
-                    "stazione": station_id,
-                    "limit": "100000",
-                },
-            )
-        except Exception as e:
-            logger.warning(
-                f"ARPAT bollettini range [{location_id}] stazione {station_id} fallito: {e}"
-            )
-            _log_scrape(
-                f"arpat_bollettini_range:{location_id}:{station_id}",
-                "fail",
-                detail=str(e),
-            )
-            continue
-
-        raw_items: list[Any] = []
-        if isinstance(data, list):
-            raw_items = data
-        elif isinstance(data, dict):
-            raw_items = data.get("items") or data.get("stazioni") or data.get("data") or []
-
-        # Aggrega per data: {date_str: {inquinante_upper: valore}}
-        by_date: dict[str, dict[str, Any]] = {}
-        for item in raw_items:
-            date_str = str(
-                item.get("data_osservazione")
-                or item.get("data")
-                or item.get("date")
-                or ""
-            ).strip()
-            inq = str(item.get("inquinante") or "").upper()
-            val = item.get("valore")
-            if not date_str or not inq:
-                continue
-            if date_str not in by_date:
-                by_date[date_str] = {}
-            by_date[date_str][inq] = val
-
-        for date_str, inq_map in sorted(by_date.items()):
-            try:
-                ts_day = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
-            except ValueError:
-                logger.debug(f"ARPAT bollettini range: data non parsabile: {date_str!r}")
-                continue
-
-            rec: dict[str, Any] = {
-                "source": "arpat",
-                "station_id": station_id,
-                "location_id": location_id,
-                "ts": ts_day,
-                "granularity": "daily",
-                "weight": weight,
-                "qc_pass": True,
-            }
-            for arpat_var, col in _ARPAT_BOLL_VAR_MAP.items():
-                if col is None:
-                    continue
-                raw = inq_map.get(arpat_var.upper())
-                try:
-                    rec[col] = float(raw) if raw is not None else None
-                except (TypeError, ValueError):
-                    rec[col] = None
-
-            records.append(rec)
-
-        _log_scrape(
-            f"arpat_bollettini_range:{location_id}:{station_id}",
-            "ok",
-            rows=len(by_date),
-            detail=f"{start_date} to {end_date}",
+    def _fetch_and_collect(st: dict[str, Any]) -> None:
+        time.sleep(0.2)
+        station_records = _fetch_one_arpat_bollettini_station(
+            st, location_id, start_date, end_date
         )
-        time.sleep(0.5)
+        if station_records:
+            with lock:
+                records.extend(station_records)
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        list(tqdm(
+            executor.map(_fetch_and_collect, arpat_stations),
+            total=len(arpat_stations),
+            desc="ARPAT bollettini range",
+            unit="staz",
+            disable=not sys.stderr.isatty(),
+        ))
 
     return records
 

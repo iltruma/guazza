@@ -24,6 +24,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -71,7 +72,6 @@ _REALTIME_ONLY_SENSORS = {"barometro", "radiometro_diretta", "radiometro_UV",
                            "radiometro_solare", "evaporimetro"}
 
 # Throttle tra fetch SIR CSV (rispettare ~1.2s/req)
-_SIR_CSV_DELAY = 1.2
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -150,6 +150,9 @@ def _ingest_sir_historical_range(
 ) -> int:
     """Scarica SIR CSV per tutte le stazioni e tutti i sensori nell'intervallo.
 
+    Le stazioni+sensori vengono fetchati in parallelo con ThreadPoolExecutor(3),
+    poi i record filtrati vengono scritti in DB sequenzialmente.
+
     Per il backfill completo l'API SIR restituisce sempre tutto lo storico
     disponibile — i parametri start/end_date sono usati solo per filtrare
     i record dopo il parsing (il CSV non supporta range).
@@ -160,39 +163,56 @@ def _ingest_sir_historical_range(
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
 
     station_ids = _all_sir_station_ids(locations)
-    total = 0
 
-    for i, sid in enumerate(tqdm(sorted(station_ids), desc="SIR historical", unit="staz", disable=not sys.stderr.isatty())):
-        if i > 0:
-            time.sleep(_SIR_CSV_DELAY)
-
+    # Costruisce lista di (sid, idst, loc_id) per tutte le combinazioni
+    combos: list[tuple[str, str, str]] = []
+    for sid in station_ids:
         loc_id = _location_id_for_station(sid, locations)
         idst_list = _idst_for_station(sid, stations)
+        for idst in idst_list:
+            combos.append((sid, idst, loc_id))
 
-        if not idst_list:
-            logger.debug(f"[{sid}] Nessun IDST storico disponibile — skip")
-            continue
+    if not combos:
+        return 0
 
-        for j, idst in enumerate(idst_list):
-            if j > 0:
-                time.sleep(_SIR_CSV_DELAY)
-            try:
-                records = fetch_sir_historical(sid, idst, loc_id)
-                # Filtra per intervallo richiesto
-                filtered = [
-                    r for r in records
-                    if start_dt <= r["ts"] <= end_dt
-                ]
-                if filtered:
-                    db.upsert_sir_observations(filtered)
-                    total += len(filtered)
-                    logger.info(
-                        f"[{sid}] {idst}: {len(filtered)} righe "
-                        f"({start_date}→{end_date})"
-                    )
-            except Exception as e:
-                logger.error(f"[{sid}] {idst} fallito: {e}")
-                _log_scrape(f"sir_historical:{sid}:{idst}", "fail", detail=str(e))
+    def _fetch_one(sid: str, idst: str, loc_id: str) -> tuple[str, str, list[dict[str, Any]]] | None:
+        """Fetch e filtra un singolo combo stazione+sensore."""
+        time.sleep(1.0)
+        try:
+            records = fetch_sir_historical(sid, idst, loc_id)
+            filtered = [r for r in records if start_dt <= r["ts"] <= end_dt]
+            if filtered:
+                _log_scrape(f"sir_historical:{sid}:{idst}", "ok", rows=len(filtered))
+                return (sid, idst, filtered)
+            return None
+        except Exception as e:
+            logger.error(f"[{sid}] {idst} fallito: {e}")
+            _log_scrape(f"sir_historical:{sid}:{idst}", "fail", detail=str(e))
+            return None
+
+    results: list[tuple[str, str, list[dict[str, Any]]]] = []
+    _tty = sys.stderr.isatty()
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(_fetch_one, sid, idst, loc_id): (sid, idst)
+            for sid, idst, loc_id in combos
+        }
+        for future in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="SIR historical",
+            unit="combo",
+            disable=not _tty,
+        ):
+            result = future.result()
+            if result:
+                results.append(result)
+
+    total = 0
+    for sid, idst, filtered in results:
+        db.upsert_sir_observations(filtered)
+        total += len(filtered)
+        logger.info(f"[{sid}] {idst}: {len(filtered)} righe ({start_date}→{end_date})")
 
     return total
 
