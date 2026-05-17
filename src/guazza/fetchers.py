@@ -1120,7 +1120,8 @@ def fetch_openmeteo_historical_batch(
     lats = [locations[lid]["lat"] for lid in loc_ids]
     lons = [locations[lid]["lon"] for lid in loc_ids]
 
-    for model in tqdm(models, desc="OM historical batch", unit="model", disable=not sys.stderr.isatty()):
+    _tty = sys.stderr.isatty()
+    for model in tqdm(models, desc="OM historical batch", unit="model", position=0, leave=True, disable=not _tty):
         chunk_days = _HR_CHUNK if model in _HIGH_RES else _DEFAULT_CHUNK
 
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
@@ -1137,7 +1138,9 @@ def fetch_openmeteo_historical_batch(
             chunks,
             desc=f"  {model}",
             unit="chunk",
-            disable=not sys.stderr.isatty(),
+            position=1,
+            leave=False,
+            disable=not _tty,
         ):
             params: dict[str, str | int | float | list[str]] = {
                 "latitude": ",".join(map(str, lats)),

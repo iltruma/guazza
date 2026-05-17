@@ -188,9 +188,8 @@ class DuckDBClient:
               AND forecasts.ts_valid    = s.ts_valid
         """)
 
-        # Inserisce righe nuove — QUALIFY dedup come guardrail SQL-level
-        # (il dedup Python a monte dovrebbe già gestirlo, ma la transizione DST
-        # può produrre datetime con repr diverse che sfuggono al set Python)
+        # Inserisce righe nuove — subquery esplicita per dedup staging prima del NOT EXISTS.
+        # QUALIFY + NOT EXISTS ha ordine di valutazione ambiguo in DuckDB (DST corner case).
         self._conn.execute("""
             INSERT INTO forecasts (
                 source, location_id, ts_run, ts_valid, lead_time_h,
@@ -201,17 +200,21 @@ class DuckDBClient:
                 source, location_id, ts_run, ts_valid, lead_time_h,
                 temp_c, humidity_pct, precip_mm,
                 wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa
-            FROM _staging_forecasts s
-            WHERE NOT EXISTS (
-                SELECT 1 FROM forecasts f
-                WHERE f.source      = s.source
-                  AND f.location_id = s.location_id
-                  AND f.ts_run      = s.ts_run
-                  AND f.ts_valid    = s.ts_valid
-            )
-            QUALIFY ROW_NUMBER() OVER (
-                PARTITION BY source, location_id, ts_run, ts_valid
-            ) = 1
+            FROM (
+                SELECT *,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY source, location_id, ts_run, ts_valid
+                       ) AS _rn
+                FROM _staging_forecasts
+            ) s
+            WHERE s._rn = 1
+              AND NOT EXISTS (
+                  SELECT 1 FROM forecasts f
+                  WHERE f.source      = s.source
+                    AND f.location_id = s.location_id
+                    AND f.ts_run      = s.ts_run
+                    AND f.ts_valid    = s.ts_valid
+              )
         """)
 
         self._conn.execute("DROP TABLE IF EXISTS _staging_forecasts")
