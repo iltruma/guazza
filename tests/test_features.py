@@ -163,6 +163,7 @@ def test_spread_with_partial_models(db: DuckDBClient) -> None:
           AND icon_tmin_c IS NOT NULL
           AND gfs_tmin_c IS NULL
           AND icond2_tmin_c IS NULL
+          AND icon2i_tmin_c IS NULL
     """).fetchone()
     assert row is not None and row[0] > 0
     db.__exit__(None, None, None)

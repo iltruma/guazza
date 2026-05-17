@@ -792,18 +792,26 @@ _OM_VAR_MAP: dict[str, str] = {
 
 # Cadenza run per modello (ore UTC). Usata per arrotondare ts_run.
 _MODEL_RUN_HOURS: dict[str, list[int]] = {
-    "ecmwf_ifs":     [0, 6, 12, 18],
-    "ecmwf_ifs025":  [0, 6, 12, 18],
-    "icon_eu":       [0, 3, 6, 9, 12, 15, 18, 21],
-    "icon_d2":       [0, 3, 6, 9, 12, 15, 18, 21],
-    "gfs025":        [0, 6, 12, 18],
-    "arome_france":  [0, 3, 6, 9, 12, 15, 18, 21],
+    "ecmwf_ifs":                    [0, 6, 12, 18],
+    "ecmwf_ifs025":                 [0, 6, 12, 18],
+    "icon_eu":                      [0, 3, 6, 9, 12, 15, 18, 21],
+    "icon_d2":                      [0, 3, 6, 9, 12, 15, 18, 21],
+    "gfs025":                       [0, 6, 12, 18],
+    "arome_france":                 [0, 3, 6, 9, 12, 15, 18, 21],
+    "italia_meteo_arpae_icon_2i":   [0, 12],
     # fallback generico
     "default": [0, 6, 12, 18],
 }
 
 # Modelli disponibili per l'area Toscana
-_OM_MODELS: list[str] = ["ecmwf_ifs", "icon_eu", "icon_d2", "gfs025", "arome_france"]
+_OM_MODELS: list[str] = [
+    "ecmwf_ifs",
+    "icon_eu",
+    "icon_d2",
+    "gfs025",
+    "arome_france",
+    "italia_meteo_arpae_icon_2i",  # ItaliaMeteo/ARPAE, 2.2km Italia, 72h, dati assimilati italiani
+]
 
 
 def _infer_ts_run(model: str, now_utc: datetime) -> datetime:
@@ -1172,7 +1180,7 @@ def fetch_openmeteo_historical_batch(
     if models is None:
         models = _OM_MODELS
 
-    _HIGH_RES = {"icon_d2", "arome_france"}
+    _HIGH_RES = {"icon_d2", "arome_france", "italia_meteo_arpae_icon_2i"}
     _DEFAULT_CHUNK = 180
     _HR_CHUNK = 90
 

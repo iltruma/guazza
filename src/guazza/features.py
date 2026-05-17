@@ -148,7 +148,12 @@ nwp_wide AS (
         MAX(CASE WHEN source = 'open_meteo_arome_france' THEN tmax_c END)       AS arome_tmax_c,
         MAX(CASE WHEN source = 'open_meteo_arome_france' THEN precip_mm END)    AS arome_precip_mm,
         MAX(CASE WHEN source = 'open_meteo_arome_france' THEN humidity_pct END) AS arome_humidity_pct,
-        MAX(CASE WHEN source = 'open_meteo_arome_france' THEN wind_ms END)      AS arome_wind_ms
+        MAX(CASE WHEN source = 'open_meteo_arome_france' THEN wind_ms END)      AS arome_wind_ms,
+        MAX(CASE WHEN source = 'open_meteo_italia_meteo_arpae_icon_2i' THEN tmin_c END)       AS icon2i_tmin_c,
+        MAX(CASE WHEN source = 'open_meteo_italia_meteo_arpae_icon_2i' THEN tmax_c END)       AS icon2i_tmax_c,
+        MAX(CASE WHEN source = 'open_meteo_italia_meteo_arpae_icon_2i' THEN precip_mm END)    AS icon2i_precip_mm,
+        MAX(CASE WHEN source = 'open_meteo_italia_meteo_arpae_icon_2i' THEN humidity_pct END) AS icon2i_humidity_pct,
+        MAX(CASE WHEN source = 'open_meteo_italia_meteo_arpae_icon_2i' THEN wind_ms END)      AS icon2i_wind_ms
     FROM last_run
     GROUP BY location_id, target_date, lead_time_h
 )
@@ -159,50 +164,54 @@ SELECT
     n.target_date,
     n.lead_time_h,
 
-    -- NWP per modello (5 modelli: AIFS rimosso — null su Open-Meteo)
+    -- NWP per modello (6 modelli)
     n.ecmwf_tmin_c, n.ecmwf_tmax_c, n.ecmwf_precip_mm, n.ecmwf_humidity_pct, n.ecmwf_wind_ms,
     n.icon_tmin_c,  n.icon_tmax_c,  n.icon_precip_mm,  n.icon_humidity_pct,  n.icon_wind_ms,
     n.icond2_tmin_c, n.icond2_tmax_c, n.icond2_precip_mm, n.icond2_humidity_pct, n.icond2_wind_ms,
     n.gfs_tmin_c,   n.gfs_tmax_c,   n.gfs_precip_mm,   n.gfs_humidity_pct,   n.gfs_wind_ms,
     n.arome_tmin_c, n.arome_tmax_c, n.arome_precip_mm, n.arome_humidity_pct, n.arome_wind_ms,
+    n.icon2i_tmin_c, n.icon2i_tmax_c, n.icon2i_precip_mm, n.icon2i_humidity_pct, n.icon2i_wind_ms,
 
-    -- Ensemble mean (media null-safe su 5 modelli)
+    -- Ensemble mean (media null-safe su 6 modelli)
     (COALESCE(n.ecmwf_tmin_c, 0) + COALESCE(n.icon_tmin_c, 0)
-        + COALESCE(n.icond2_tmin_c, 0) + COALESCE(n.gfs_tmin_c, 0) + COALESCE(n.arome_tmin_c, 0))
+        + COALESCE(n.icond2_tmin_c, 0) + COALESCE(n.gfs_tmin_c, 0)
+        + COALESCE(n.arome_tmin_c, 0) + COALESCE(n.icon2i_tmin_c, 0))
     / NULLIF(
         (n.ecmwf_tmin_c IS NOT NULL)::INT + (n.icon_tmin_c IS NOT NULL)::INT
         + (n.icond2_tmin_c IS NOT NULL)::INT + (n.gfs_tmin_c IS NOT NULL)::INT
-        + (n.arome_tmin_c IS NOT NULL)::INT, 0
+        + (n.arome_tmin_c IS NOT NULL)::INT + (n.icon2i_tmin_c IS NOT NULL)::INT, 0
     ) AS nwp_tmin_mean,
 
     -- Ensemble spread (max - min tra modelli disponibili).
     -- DuckDB GREATEST/LEAST ignora i NULL: spread calcolato anche con modelli parziali.
-    GREATEST(n.ecmwf_tmin_c, n.icon_tmin_c, n.icond2_tmin_c, n.gfs_tmin_c, n.arome_tmin_c)
-        - LEAST(n.ecmwf_tmin_c, n.icon_tmin_c, n.icond2_tmin_c, n.gfs_tmin_c, n.arome_tmin_c)
+    GREATEST(n.ecmwf_tmin_c, n.icon_tmin_c, n.icond2_tmin_c, n.gfs_tmin_c, n.arome_tmin_c, n.icon2i_tmin_c)
+        - LEAST(n.ecmwf_tmin_c, n.icon_tmin_c, n.icond2_tmin_c, n.gfs_tmin_c, n.arome_tmin_c, n.icon2i_tmin_c)
         AS nwp_tmin_spread,
 
     (COALESCE(n.ecmwf_tmax_c, 0) + COALESCE(n.icon_tmax_c, 0)
-        + COALESCE(n.icond2_tmax_c, 0) + COALESCE(n.gfs_tmax_c, 0) + COALESCE(n.arome_tmax_c, 0))
+        + COALESCE(n.icond2_tmax_c, 0) + COALESCE(n.gfs_tmax_c, 0)
+        + COALESCE(n.arome_tmax_c, 0) + COALESCE(n.icon2i_tmax_c, 0))
     / NULLIF(
         (n.ecmwf_tmax_c IS NOT NULL)::INT + (n.icon_tmax_c IS NOT NULL)::INT
         + (n.icond2_tmax_c IS NOT NULL)::INT + (n.gfs_tmax_c IS NOT NULL)::INT
-        + (n.arome_tmax_c IS NOT NULL)::INT, 0
+        + (n.arome_tmax_c IS NOT NULL)::INT + (n.icon2i_tmax_c IS NOT NULL)::INT, 0
     ) AS nwp_tmax_mean,
 
-    GREATEST(n.ecmwf_tmax_c, n.icon_tmax_c, n.icond2_tmax_c, n.gfs_tmax_c, n.arome_tmax_c)
-        - LEAST(n.ecmwf_tmax_c, n.icon_tmax_c, n.icond2_tmax_c, n.gfs_tmax_c, n.arome_tmax_c)
+    GREATEST(n.ecmwf_tmax_c, n.icon_tmax_c, n.icond2_tmax_c, n.gfs_tmax_c, n.arome_tmax_c, n.icon2i_tmax_c)
+        - LEAST(n.ecmwf_tmax_c, n.icon_tmax_c, n.icond2_tmax_c, n.gfs_tmax_c, n.arome_tmax_c, n.icon2i_tmax_c)
         AS nwp_tmax_spread,
 
     (COALESCE(n.ecmwf_precip_mm, 0) + COALESCE(n.icon_precip_mm, 0)
-        + COALESCE(n.icond2_precip_mm, 0) + COALESCE(n.gfs_precip_mm, 0) + COALESCE(n.arome_precip_mm, 0))
+        + COALESCE(n.icond2_precip_mm, 0) + COALESCE(n.gfs_precip_mm, 0)
+        + COALESCE(n.arome_precip_mm, 0) + COALESCE(n.icon2i_precip_mm, 0))
     / NULLIF(
         (n.ecmwf_precip_mm IS NOT NULL)::INT + (n.icon_precip_mm IS NOT NULL)::INT
         + (n.icond2_precip_mm IS NOT NULL)::INT + (n.gfs_precip_mm IS NOT NULL)::INT
-        + (n.arome_precip_mm IS NOT NULL)::INT, 0
+        + (n.arome_precip_mm IS NOT NULL)::INT + (n.icon2i_precip_mm IS NOT NULL)::INT, 0
     ) AS nwp_precip_mean,
 
-    GREATEST(n.ecmwf_precip_mm, n.icon_precip_mm, n.icond2_precip_mm, n.gfs_precip_mm, n.arome_precip_mm)
-        - LEAST(n.ecmwf_precip_mm, n.icon_precip_mm, n.icond2_precip_mm, n.gfs_precip_mm, n.arome_precip_mm)
+    GREATEST(n.ecmwf_precip_mm, n.icon_precip_mm, n.icond2_precip_mm, n.gfs_precip_mm, n.arome_precip_mm, n.icon2i_precip_mm)
+        - LEAST(n.ecmwf_precip_mm, n.icon_precip_mm, n.icond2_precip_mm, n.gfs_precip_mm, n.arome_precip_mm, n.icon2i_precip_mm)
         AS nwp_precip_spread,
 
     -- Obs features (giorno precedente — lookahead-safe)
