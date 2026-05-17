@@ -187,6 +187,26 @@ invariata; rimossa solo la staging table fisica.
 
 ---
 
+## KI-012 — Indicatore `bisenzio` fallback giallo: soglie idrometriche non popolate
+
+**Severità**: bassa (indicatore di sola allerta, non previsionale)
+**Stato**: da implementare in Sprint 7+
+
+**Problema**: il DLE valuta `bisenzio` con condizioni tipo `level_sir < threshold_1`.
+Il SignalBag include `level_sir` (da obs real-time), ma `threshold_1` e `threshold_2`
+non hanno sorgente dati — nessuna API SIR espone le soglie di allerta idraulica per
+stazione. Il DLE non trova le variabili e cade sempre nel ramo `fallback → giallo`.
+
+**Workaround attuale**: fallback "giallo" è conservativo — non peggio di "non so".
+
+**Soluzione pianificata (Sprint 7+)**:
+- Opzione A — configurazione manuale in `config/indicators.yaml` per TOS01004791
+  (S. Piero a Ponti): ricavare le soglie dai bollettini di allerta CFR/SIR.
+- Opzione B — aggiungere `threshold_1`/`threshold_2` al SignalBag in `build_signals()`
+  leggendole da una sezione `thresholds` di `config/locations.yaml`.
+
+---
+
 ## KI-007 — ECMWF falso allarme precipitazioni su Toscana (osservazione preliminare)
 
 **Severità**: informativa
