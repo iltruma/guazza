@@ -57,6 +57,13 @@ def _log_scrape(scraper: str, status: str, rows: int | None = None, detail: str 
         payload["detail"] = detail
     logger.info(payload)
 
+
+def _is_retryable_http(exc: BaseException) -> bool:
+    """Ritenta su 429 (rate limit) e 5xx. I 4xx permanenti (400, 404, 422) non si ritentano."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code == 429 or exc.response.status_code >= 500
+    return True
+
 # ── Costanti SIR ────────────────────────────────────────────────────────────
 
 _SIR_BASE_URL = "https://www.sir.toscana.it/archivio/download.php"
@@ -144,9 +151,22 @@ def _parse_value(raw: str, internal_name: str) -> float | None:
         return None
 
 
+def _log_sir_retry(retry_state: RetryCallState) -> None:
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    if isinstance(exc, httpx.HTTPStatusError):
+        logger.warning(
+            f"SIR CSV HTTP {exc.response.status_code} "
+            f"(attempt {retry_state.attempt_number}): {exc.request.url}"
+        )
+    else:
+        logger.warning(f"SIR CSV retry (attempt {retry_state.attempt_number}): {exc}")
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=15),
+    retry=retry_if_exception(_is_retryable_http),
+    before_sleep=_log_sir_retry,
     reraise=True,
 )
 def _fetch_sir_csv(station_id: str, sensor_type: str) -> str:
@@ -244,7 +264,6 @@ def fetch_sir_historical(
         for r in records:
             r["precip_interval_h"] = 24
 
-    _log_scrape(f"sir_historical:{station_id}:{sensor_type}", "ok", rows=len(records))
     return records
 
 
@@ -810,13 +829,6 @@ def _fetch_om_json(url: str, params: dict[str, str | int | float | list[str]]) -
     return r.json()  # type: ignore[no-any-return]
 
 
-def _is_retryable_http(exc: BaseException) -> bool:
-    """Ritenta su 429 (rate limit) e 5xx. I 4xx permanenti (400, 404, 422) non si ritentano."""
-    if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code == 429 or exc.response.status_code >= 500
-    return True
-
-
 def _wait_historical(retry_state: RetryCallState) -> float:
     """Rispetta Retry-After dal 429; fallback exponential backoff."""
     exc = retry_state.outcome.exception() if retry_state.outcome else None
@@ -849,16 +861,6 @@ def _log_http_error(retry_state: RetryCallState) -> None:
     wait=_wait_historical,
     retry=retry_if_exception(_is_retryable_http),
     before_sleep=_log_http_error,
-)
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=2, min=4, max=60),
-    reraise=True,
-)
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=2, min=4, max=60),
-    reraise=True,
 )
 def _fetch_om_json_historical(url: str, params: dict[str, str | int | float | list[str]]) -> dict[str, Any]:
     logger.debug(f"Open-Meteo historical fetch: {url} params={params}")
