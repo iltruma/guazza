@@ -30,6 +30,13 @@ _HALF_DECAY_KM: float = 3.0
 _HALF_DECAY_ELEV: float = 100.0
 _SOURCE_WEIGHT: dict[str, float] = {"sir": 1.0, "netatmo": 0.4}
 
+# Ring thresholds per feature upstream pluviometriche
+_RING_THRESHOLDS: list[tuple[str, float]] = [
+    ("ring1", 20.0),   # 0–20 km: locale / stesso sistema di valli
+    ("ring2", 50.0),   # 20–50 km: sub-regionale
+    ("ring3", 100.0),  # 50–100 km: Appennino/Versilia — da popolare con stazioni esterne
+]
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_CONFIG_DIR = Path(os.environ.get("CONFIG_DIR", str(_REPO_ROOT / "config")))
 
@@ -56,6 +63,69 @@ def compute_station_weight(
     delta_elev = abs(station_elevation_m - target_elevation_m)
     elevation_penalty = math.exp(-delta_elev / _HALF_DECAY_ELEV)
     return base * distance_decay * elevation_penalty, distance_km, delta_elev
+
+
+def _ring_label(distance_km: float) -> str | None:
+    for label, threshold in _RING_THRESHOLDS:
+        if distance_km <= threshold:
+            return label
+    return None  # oltre 100km, esclusa
+
+
+def refresh_upstream_rings(
+    db: DuckDBClient,
+    locations: dict[str, Any],
+    stations: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Assegna le stazioni pluvio SIR ai ring per ogni location in base alla distanza.
+
+    Tutte le stazioni in stations.yaml con sensore pluviometro vengono candidate.
+    Ring assignment: ring1 ≤20km, ring2 20-50km, ring3 50-100km.
+    Popola upstream_ring_station (DELETE+INSERT idempotente).
+    """
+    sir_stations: dict[str, Any] = stations.get("sir_stations", {})
+    records: list[dict[str, Any]] = []
+
+    for loc_id, loc in locations.items():
+        target_lat: float = loc["lat"]
+        target_lon: float = loc["lon"]
+        target_elev: float = loc["elevation_m"]
+
+        for station_id, s in sir_stations.items():
+            if "pluviometro" not in s.get("sensors", []):
+                continue
+            s_lat = s.get("lat")
+            s_lon = s.get("lon")
+            if s_lat is None or s_lon is None:
+                continue
+            s_elev: float = s.get("quota_m") or target_elev
+            _, dist_km, _ = compute_station_weight(
+                s_lat, s_lon, s_elev,
+                target_lat, target_lon, target_elev,
+                "sir",
+            )
+            ring = _ring_label(dist_km)
+            if ring is None:
+                continue
+            records.append({
+                "station_id": station_id,
+                "location_id": loc_id,
+                "ring_label": ring,
+                "distance_km": dist_km,
+            })
+
+    db.execute("DELETE FROM upstream_ring_station")
+    if records:
+        db.executemany(
+            """
+            INSERT INTO upstream_ring_station (station_id, location_id, ring_label, distance_km)
+            VALUES (?, ?, ?, ?)
+            """,
+            [[r["station_id"], r["location_id"], r["ring_label"], r["distance_km"]]
+             for r in records],
+        )
+    logger.info(f"upstream_ring_station: {len(records)} record salvati")
+    return records
 
 
 def load_configs(
@@ -205,9 +275,11 @@ def cmd_refresh(
     with DuckDBClient(db_path=Path(db_path)) as db:
         db.init_schema()
         records = refresh_station_weights(db, locations, stations)
+        ring_records = refresh_upstream_rings(db, locations, stations)
 
     print_weights_report(records, locations)
     typer.echo(f"\nTotale: {len(records)} record salvati in station_weights.")
+    typer.echo(f"Totale: {len(ring_records)} record salvati in upstream_ring_station.")
 
 
 @app.command("show")

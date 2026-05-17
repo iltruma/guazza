@@ -156,9 +156,41 @@ nwp_wide AS (
         MAX(CASE WHEN source = 'open_meteo_italia_meteo_arpae_icon_2i' THEN wind_ms END)      AS icon2i_wind_ms
     FROM last_run
     GROUP BY location_id, target_date, lead_time_h
+),
+
+-- ── 6. Ring features pluviometriche (upstream spatial lag) ──────────────────
+-- Stazioni SIR pluvio per distanza da ogni location (da upstream_ring_station).
+-- JOIN su station_id: il location_id in observations è irrilevante qui.
+ring_precip_raw AS (
+    SELECT
+        urs.location_id,
+        o.ts::DATE   AS obs_date,
+        urs.ring_label,
+        AVG(o.precip_mm) AS ring_precip_mean,
+        MAX(o.precip_mm) AS ring_precip_max
+    FROM observations o
+    JOIN upstream_ring_station urs ON o.station_id = urs.station_id
+    WHERE o.source    = 'sir_toscana'
+      AND o.granularity = 'daily'
+      AND o.precip_mm IS NOT NULL
+    GROUP BY urs.location_id, o.ts::DATE, urs.ring_label
+),
+
+ring_pivot AS (
+    SELECT
+        location_id,
+        obs_date,
+        MAX(CASE WHEN ring_label = 'ring1' THEN ring_precip_mean END) AS ring1_precip_d1_mean,
+        MAX(CASE WHEN ring_label = 'ring1' THEN ring_precip_max  END) AS ring1_precip_d1_max,
+        MAX(CASE WHEN ring_label = 'ring2' THEN ring_precip_mean END) AS ring2_precip_d1_mean,
+        MAX(CASE WHEN ring_label = 'ring2' THEN ring_precip_max  END) AS ring2_precip_d1_max,
+        MAX(CASE WHEN ring_label = 'ring3' THEN ring_precip_mean END) AS ring3_precip_d1_mean,
+        MAX(CASE WHEN ring_label = 'ring3' THEN ring_precip_max  END) AS ring3_precip_d1_max
+    FROM ring_precip_raw
+    GROUP BY location_id, obs_date
 )
 
--- ── 6. JOIN finale ────────────────────────────────────────────────────────────
+-- ── 7. JOIN finale ────────────────────────────────────────────────────────────
 SELECT
     n.location_id,
     n.target_date,
@@ -229,6 +261,11 @@ SELECT
     MONTH(n.target_date)      AS month,
     DAYOFYEAR(n.target_date)  AS day_of_year,
 
+    -- Ring features pluviometriche (giorno precedente — lookahead-safe)
+    rp.ring1_precip_d1_mean, rp.ring1_precip_d1_max,
+    rp.ring2_precip_d1_mean, rp.ring2_precip_d1_max,
+    rp.ring3_precip_d1_mean, rp.ring3_precip_d1_max,
+
     -- Target (ground truth a target_date)
     tgt.tmin_c    AS target_tmin_c,
     tgt.tmax_c    AS target_tmax_c,
@@ -244,6 +281,9 @@ LEFT JOIN obs_weighted tgt
 LEFT JOIN climatology c
     ON  n.location_id  = c.location_id
     AND MONTH(n.target_date) = c.month
+LEFT JOIN ring_pivot rp
+    ON  n.location_id = rp.location_id
+    AND rp.obs_date   = n.target_date - INTERVAL 1 DAY
 """
 
 

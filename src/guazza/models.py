@@ -63,6 +63,10 @@ FEATURE_COLS: list[str] = [
     "nwp_precip_mean", "nwp_precip_spread",
     # Obs giorno precedente (lookahead-safe)
     "obs_tmin_c", "obs_tmax_c", "obs_precip_mm", "obs_humidity_pct",
+    # Ring pluviometrici upstream (giorno precedente — lookahead-safe)
+    "ring1_precip_d1_mean", "ring1_precip_d1_max",
+    "ring2_precip_d1_mean", "ring2_precip_d1_max",
+    "ring3_precip_d1_mean", "ring3_precip_d1_max",
     # Climatologia mensile
     "clim_tmin_mean", "clim_tmin_std",
     "clim_tmax_mean", "clim_tmax_std",

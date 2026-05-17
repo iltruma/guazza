@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS features_daily (
     nwp_tmax_mean DOUBLE, nwp_tmax_spread DOUBLE,
     nwp_precip_mean DOUBLE, nwp_precip_spread DOUBLE,
     obs_tmin_c DOUBLE, obs_tmax_c DOUBLE, obs_precip_mm DOUBLE, obs_humidity_pct DOUBLE,
+    ring1_precip_d1_mean DOUBLE, ring1_precip_d1_max DOUBLE,
+    ring2_precip_d1_mean DOUBLE, ring2_precip_d1_max DOUBLE,
+    ring3_precip_d1_mean DOUBLE, ring3_precip_d1_max DOUBLE,
     clim_tmin_mean DOUBLE, clim_tmin_std DOUBLE,
     clim_tmax_mean DOUBLE, clim_tmax_std DOUBLE,
     clim_precip_mean DOUBLE, clim_precip_std DOUBLE,
@@ -121,6 +124,8 @@ def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) 
                 precip, 0.5,
                 # obs yesterday
                 tmin - 0.5, tmax - 0.5, precip, 68.0,
+                # ring features (NULL — nessuna stazione upstream nei test sintetici)
+                None, None, None, None, None, None,
                 # climatology
                 tmin, 2.0, tmax, 2.0, 1.5, 0.8,
                 # calendar
@@ -137,6 +142,7 @@ def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) 
             ?,?,?,?,
             ?,?,?,?,?,?,
             ?,?,
+            ?,?,?,?,?,?,
             ?,?,?
         )
     """, rows)

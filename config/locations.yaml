@@ -11,6 +11,7 @@
 locations:
 
   casa_campi:
+    upstream_pluvio_stations: [TOS11000503]  # Vaiano (Bisenzio a monte, 16km)
     label: "Casa - Campi Bisenzio"
     address: "Campi Bisenzio (FI)"
     lat: 43.82
@@ -41,6 +42,7 @@ locations:
       Idro Bisenzio a 1.8km: rilevante per allerte esondazione.
 
   lavoro_cosimo:
+    upstream_pluvio_stations: [TOS11000503]  # Vaiano (Bisenzio a monte, ~18km)
     label: "Lavoro Cosimo - Scandicci"
     address: "Scandicci (FI)"
     lat: 43.75
@@ -71,6 +73,7 @@ locations:
       Idro Greve a 2.0km (Ponte di Scandicci).
 
   lavoro_madda:
+    upstream_pluvio_stations: [TOS11000503]  # Vaiano (Bisenzio a monte, ~10km)
     label: "Lavoro Madda - Prato"
     address: "Prato (PO)"
     lat: 43.88
@@ -104,6 +107,7 @@ locations:
       Idro Bisenzio a Prato a 1.2km.
 
   casa_cesto:
+    upstream_pluvio_stations: []  # nessuna stazione upstream nota per il Valdarno — da aggiungere
     label: "Casa Cesto - Figline Valdarno"
     address: "Figline e Incisa Valdarno (FI)"
     lat: 43.59

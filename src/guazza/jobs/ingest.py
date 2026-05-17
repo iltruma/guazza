@@ -87,13 +87,14 @@ def _load_config(cfg_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def _all_sir_station_ids(locations: dict[str, Any]) -> set[str]:
-    """Raccoglie tutti gli ID stazione SIR usati (meteo + idro) su tutte le location."""
+    """Raccoglie tutti gli ID stazione SIR usati (meteo + idro + upstream) su tutte le location."""
     ids: set[str] = set()
     for loc in locations.values():
         for sensor_list in loc.get("sir_stations", {}).values():
             ids.update(sensor_list)
         if idro_id := loc.get("sir_idro_id"):
             ids.add(idro_id)
+        ids.update(loc.get("upstream_pluvio_stations", []))
     return ids
 
 
@@ -130,12 +131,20 @@ def _location_id_for_station(
     station_id: str,
     locations: dict[str, Any],
 ) -> str:
-    """Restituisce il primo location_id che usa questa stazione, o stringa vuota."""
+    """Restituisce il primo location_id che usa questa stazione, o stringa vuota.
+
+    Le stazioni upstream_pluvio_stations vengono associate alla prima location
+    che le elenca — il location_id è necessario per il NOT NULL di observations,
+    ma il ring CTE in features.py fa JOIN su station_id, non location_id.
+    """
     for loc_id, loc in locations.items():
         for sensor_list in loc.get("sir_stations", {}).values():
             if station_id in sensor_list:
                 return loc_id
         if loc.get("sir_idro_id") == station_id:
+            return loc_id
+    for loc_id, loc in locations.items():
+        if station_id in loc.get("upstream_pluvio_stations", []):
             return loc_id
     return ""
 

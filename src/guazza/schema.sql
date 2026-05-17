@@ -170,6 +170,17 @@ CREATE TABLE IF NOT EXISTS quality_flags (
     PRIMARY KEY (source, station_id, ts, granularity, flag_type, column_name)
 );
 
+-- ── Ring pluviometrici upstream ───────────────────────────────────────────
+-- Popolata da weights.refresh_upstream_rings() insieme a station_weights.
+-- ring_label: 'ring1' (0-20km) | 'ring2' (20-50km) | 'ring3' (50-100km)
+CREATE TABLE IF NOT EXISTS upstream_ring_station (
+    station_id  VARCHAR NOT NULL,
+    location_id VARCHAR NOT NULL,
+    ring_label  VARCHAR NOT NULL,
+    distance_km DOUBLE,
+    PRIMARY KEY (station_id, location_id)
+);
+
 -- ── Log Decision Logic Engine ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS indicator_log (
     ts           TIMESTAMP NOT NULL,
