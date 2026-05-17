@@ -141,7 +141,7 @@ sir_stations:
     type: meteo
     sensors: [termometro, igrometro, anemometro, pluviometro, radiometro_solare]
     used_by: []
-    notes: "ESCLUSA: quota 322m, ΔQ>250m rispetto a tutte le location in pianura."
+    notes: "Esclusa da obs_weighted (quota 322m, ΔQ>250m in pianura). Attiva per ring upstream (solo distanza)."
 
   TOS01004571:
     nome: "Montevarchi"
@@ -288,6 +288,155 @@ sir_stations:
     sensors: [idrometro, pluviometro]
     used_by: [casa_cesto]
     notes: "11.1km da casa_cesto — più vicina disponibile. Monitoraggio Arno indicativo."
+
+  # ── Upstream pluviometriche (ring features ML — non usate per obs_weighted) ──
+  # Stazioni selezionate per il meccanismo ring1/ring2/ring3 (distanza da ogni location).
+  # used_by: [] → non entrano in station_weights; vengono assegnate ai ring
+  # automaticamente da refresh_upstream_rings() in base alla distanza.
+
+  TOS01001273:
+    nome: "Fattoria Iavello"
+    comune: "Montemurlo (PO)"
+    lat: 43.96
+    lon: 11.07
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — Bisenzio/Agna testata ovest."
+
+  TOS11000093:
+    nome: "Santomato"
+    comune: "Pistoia (PT)"
+    lat: 43.95
+    lon: 10.99
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — versante S Montagna Pistoiese."
+
+  TOS01001151:
+    nome: "Cantagallo"
+    comune: "Cantagallo (PO)"
+    lat: 44.02
+    lon: 11.08
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — testata Bisenzio, prima barriera appenninica."
+
+  TOS11000094:
+    nome: "Acquerino"
+    comune: "Sambuca Pistoiese (PT)"
+    lat: 44.02
+    lon: 11.03
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — Passo dell'Acquerino, Appennino Pistoiese."
+
+  TOS01001161:
+    nome: "Gavigno"
+    comune: "Cantagallo (PO)"
+    lat: 44.07
+    lon: 11.09
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — crinale appenninico versante PO."
+
+  TOS01001171:
+    nome: "Vernio"
+    comune: "Vernio (PO)"
+    lat: 44.06
+    lon: 11.12
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — alta valle Bisenzio / passo della Futa."
+
+  TOS11000077:
+    nome: "Albano"
+    comune: "Monsummano Terme (PT)"
+    lat: 43.88
+    lon: 10.86
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — versante O Montagna Pistoiese, segnale da W."
+
+  TOS11000092:
+    nome: "Bagni di Lucca"
+    comune: "Bagni di Lucca (LU)"
+    lat: 44.03
+    lon: 10.60
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — Appennino lucchese, storm track NW."
+
+  TOS11000031:
+    nome: "Montecarlo"
+    comune: "Montecarlo (LU)"
+    lat: 43.84
+    lon: 10.65
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — pianura lucchese, segnale da W/NW a distanza."
+
+  TOS01000881:
+    nome: "Pian di Scò"
+    comune: "Castelfranco Piandiscò (AR)"
+    lat: 43.65
+    lon: 11.56
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — Valdarno superiore, upstream casa_cesto."
+
+  TOS11000078:
+    nome: "Pratomagno"
+    comune: "Loro Ciuffenna (AR)"
+    lat: 43.57
+    lon: 11.72
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — crinale Pratomagno, segnale da E per casa_cesto."
+
+  TOS03000855:
+    nome: "Trappola"
+    comune: "Loro Ciuffenna (AR)"
+    lat: 43.62
+    lon: 11.65
+    quota_m: null
+    hysto: true
+    type: meteo
+    sensors: [pluviometro]
+    used_by: []
+    notes: "Upstream ring — versante W Pratomagno, upstream casa_cesto."
 
 # cfr_stations: rimosso — CFR e SIR condividono la stessa rete fisica di stazioni.
 
