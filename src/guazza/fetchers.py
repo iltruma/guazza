@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -844,6 +845,16 @@ def _log_http_error(retry_state: RetryCallState) -> None:
     retry=retry_if_exception(_is_retryable_http),
     before_sleep=_log_http_error,
 )
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=4, max=60),
+    reraise=True,
+)
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=4, max=60),
+    reraise=True,
+)
 def _fetch_om_json_historical(url: str, params: dict[str, str | int | float | list[str]]) -> dict[str, Any]:
     logger.debug(f"Open-Meteo historical fetch: {url} params={params}")
     headers = {
@@ -1088,6 +1099,51 @@ def fetch_openmeteo_forecast_batch(
     return results
 
 
+def _fetch_one_model_historical(
+    model: str,
+    chunks: list[tuple[str, str]],
+    loc_ids: list[str],
+    lats: list[float],
+    lons: list[float],
+    results: dict[str, dict[str, list[dict[str, Any]]]],
+) -> None:
+    """Fetch storico per un singolo modello su tutti i chunk.
+
+    Scrive direttamente su results[lid][model] — thread-safe perche
+    ogni modello ha la propria chiave nel dict annidato.
+    """
+    for c_start, c_end in chunks:
+        params: dict[str, str | int | float | list[str]] = {
+            "latitude": ",".join(map(str, lats)),
+            "longitude": ",".join(map(str, lons)),
+            "hourly": ",".join(_OM_HOURLY_VARS),
+            "models": model,
+            "start_date": c_start,
+            "end_date": c_end,
+            "timezone": "UTC",
+            "wind_speed_unit": "ms",
+        }
+        try:
+            data = _fetch_om_json_historical(_OM_HISTORICAL_URL, params)
+            responses = data if isinstance(data, list) else [data]
+
+            for lid, resp in zip(loc_ids, responses, strict=True):
+                records = _parse_om_response(resp, model, lid, ts_run=None)
+                results[lid][model].extend(records)
+                _log_scrape(
+                    f"openmeteo_historical:{lid}:{model}",
+                    "ok",
+                    rows=len(records),
+                    detail=f"{c_start} to {c_end}",
+                )
+        except Exception as e:
+            logger.error(f"Open-Meteo historical batch [{model}] [{c_start}→{c_end}] fallito: {e}")
+            for lid in loc_ids:
+                _log_scrape(f"openmeteo_historical:{lid}:{model}", "fail", detail=str(e))
+
+        time.sleep(3.0)
+
+
 def fetch_openmeteo_historical_batch(
     locations: dict[str, Any],
     start_date: str,
@@ -1096,11 +1152,11 @@ def fetch_openmeteo_historical_batch(
 ) -> dict[str, dict[str, list[dict[str, Any]]]]:
     """Fetch storico forecast da Open-Meteo Historical Forecast API in batch.
 
-    Divide la richiesta in chunk temporali per evitare timeout lato server.
-    Modelli ad alta risoluzione (icon_d2, arome_france) usano chunk da 90gg;
-    altri modelli (ecmwf_ifs, ecmwf_aifs025, icon_eu, gfs025) usano 180gg.
-
-    Usa timeout HTTP 90s e backoff piu aggressivo (5 tentativi, max 60s).
+    I modelli vengono fetchati in parallelo con ThreadPoolExecutor(3).
+    Ogni modello divide la propria richiesta in chunk temporali per evitare
+    timeout lato server: modelli ad alta risoluzione (icon_d2, arome_france)
+    usano chunk da 90gg; altri (ecmwf_ifs, ecmwf_aifs025, icon_eu, gfs025)
+    usano 180gg.
 
     Returns:
         Dict {location_id: {model: [record_wide, ...]}}
@@ -1120,57 +1176,38 @@ def fetch_openmeteo_historical_batch(
     lats = [locations[lid]["lat"] for lid in loc_ids]
     lons = [locations[lid]["lon"] for lid in loc_ids]
 
-    _tty = sys.stderr.isatty()
-    for model in tqdm(models, desc="OM historical batch", unit="model", position=0, leave=True, disable=not _tty):
+    # Prepara chunk per modello
+    model_chunks: dict[str, list[tuple[str, str]]] = {}
+    for model in models:
         chunk_days = _HR_CHUNK if model in _HIGH_RES else _DEFAULT_CHUNK
-
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
         end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
-
         chunks: list[tuple[str, str]] = []
         curr_start = start_dt
         while curr_start <= end_dt:
             curr_end = min(curr_start + timedelta(days=chunk_days - 1), end_dt)
             chunks.append((curr_start.isoformat(), curr_end.isoformat()))
             curr_start = curr_end + timedelta(days=1)
+        model_chunks[model] = chunks
 
-        for c_start, c_end in tqdm(
-            chunks,
-            desc=f"  {model}",
-            unit="chunk",
-            position=1,
-            leave=False,
+    _tty = sys.stderr.isatty()
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(
+                _fetch_one_model_historical,
+                model, model_chunks[model], loc_ids, lats, lons, results,
+            ): model
+            for model in models
+        }
+        for future in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="OM historical batch",
+            unit="model",
             disable=not _tty,
         ):
-            params: dict[str, str | int | float | list[str]] = {
-                "latitude": ",".join(map(str, lats)),
-                "longitude": ",".join(map(str, lons)),
-                "hourly": ",".join(_OM_HOURLY_VARS),
-                "models": model,
-                "start_date": c_start,
-                "end_date": c_end,
-                "timezone": "UTC",
-                "wind_speed_unit": "ms",
-            }
-            try:
-                data = _fetch_om_json_historical(_OM_HISTORICAL_URL, params)
-                responses = data if isinstance(data, list) else [data]
-
-                for lid, resp in zip(loc_ids, responses, strict=True):
-                    records = _parse_om_response(resp, model, lid, ts_run=None)
-                    results[lid][model].extend(records)
-                    _log_scrape(
-                        f"openmeteo_historical:{lid}:{model}",
-                        "ok",
-                        rows=len(records),
-                        detail=f"{c_start} to {c_end}",
-                    )
-            except Exception as e:
-                logger.error(f"Open-Meteo historical batch [{model}] [{c_start}→{c_end}] fallito: {e}")
-                for lid in loc_ids:
-                    _log_scrape(f"openmeteo_historical:{lid}:{model}", "fail", detail=str(e))
-
-            time.sleep(12.0)
+            # Propaga eccezioni — se un modello fallisce, tutto fallisce
+            future.result()
 
     return results
 
