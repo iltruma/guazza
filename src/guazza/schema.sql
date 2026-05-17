@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS observations (
     o3_ugm3         DOUBLE,
     weight          DOUBLE,
     qc_pass         BOOLEAN,
+    last_modified   TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (source, station_id, ts, granularity)
 );
 
@@ -65,6 +66,7 @@ CREATE TABLE IF NOT EXISTS forecasts (
     wind_dir_deg    DOUBLE,
     wind_gust_ms    DOUBLE,
     pressure_hpa    DOUBLE,
+    last_modified   TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (source, location_id, ts_run, ts_valid)
 );
 
@@ -84,6 +86,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     temp_p50      DOUBLE,
     temp_p90      DOUBLE,
     temp_obs      DOUBLE,
+    last_modified TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (model_version, location_id, ts_valid, lead_time_h)
 );
 
@@ -100,6 +103,7 @@ CREATE TABLE IF NOT EXISTS benchmark_forecasts (
     humidity_pct    DOUBLE,
     precip_mm       DOUBLE,
     wind_speed_ms   DOUBLE,
+    last_modified   TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (provider, location_id, ts_run, ts_valid)
 );
 
@@ -113,7 +117,8 @@ CREATE TABLE IF NOT EXISTS alerts (
     severity   VARCHAR,
     phenomena  VARCHAR,
     description TEXT,
-    raw_url    VARCHAR,
+    raw_url       VARCHAR,
+    last_modified TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (source, zone_code, issued_at)
 );
 
@@ -160,7 +165,8 @@ CREATE TABLE IF NOT EXISTS quality_flags (
     flag_type    VARCHAR   NOT NULL,
     column_name  VARCHAR   NOT NULL,
     value        DOUBLE,
-    detail       VARCHAR,
+    detail        VARCHAR,
+    last_modified TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (source, station_id, ts, granularity, flag_type, column_name)
 );
 
@@ -175,6 +181,7 @@ CREATE TABLE IF NOT EXISTS indicator_log (
     probability  DOUBLE,
     alpha        DOUBLE,
     cost_fn      DOUBLE,
-    cost_fp      DOUBLE,
+    cost_fp       DOUBLE,
+    last_modified TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (ts, location_id, indicator_id)
 );

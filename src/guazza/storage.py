@@ -319,8 +319,9 @@ class DuckDBClient:
         )
         self._conn.execute(f"""
             UPDATE observations SET
-                location_id = COALESCE(s.location_id, observations.location_id),
-                {coalesce_sets}
+                location_id   = COALESCE(s.location_id, observations.location_id),
+                {coalesce_sets},
+                last_modified = current_timestamp
             FROM _staging_obs s
             WHERE observations.source = s.source
               AND observations.station_id = s.station_id
