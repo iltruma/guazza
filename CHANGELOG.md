@@ -8,34 +8,39 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+---
+
+## [0.4.0] — 2026-05-17
+
+Sprint 4 completato: primo modello ML trainato e calibrato su dati reali.
+Skill temperature +25–27% vs NWP ensemble. CQR coverage ~0.90 su target 90%.
+
 ### Added
-- **Feature engineering** (Sprint 3): `features.py` costruisce `features_daily`,
-  training set materializzato in DuckDB — NWP 6 modelli pivot wide, ensemble
-  mean/spread, obs SIR pesate lookahead-safe, climatologia mensile, target
-  ground truth. CLI `jobs/features.py` (`build`/`info`)
-- **Backfill SIR pre-2022** (Sprint 2b): `fetch_sir_historical` esteso oltre il
-  2022; verificato limite archivio per stazione
-- **Quality control** (Sprint 2c): tabella `quality_flags`, `qc.py` +
-  `jobs/qc.py` (`run`/`report`); eliminati dati pre-2004 (pluviometro SIR
-  non disponibile prima)
-- **QC ARPAT flags**: `range_pm10_high`, `range_pm25_high`, `range_no2_high`, `range_o3_high`
-- **QC realtime precip**: `range_precip_high` esteso a `granularity='realtime'`
-- **Transazione**: `compute_quality_flags` in `BEGIN/COMMIT/ROLLBACK`
-- **Breakdown dict**: `compute_quality_flags` restituisce `{"total": N, "spike_tmin": M, ...}`
-- **`--dry-run`**: aggiunto a `jobs/qc.py run`
-- **Breakdown log**: il job logga il dettaglio per tipo flag
-- **Open-Meteo coordinate batching** (D-011): tutte le location in una chiamata per modello
-- **Open-Meteo temporal chunking** (D-012): backfill storico frazionato in chunk (180gg / 90gg HR)
+- **`models.py`** (Sprint 4): LightGBM quantile regression (α = 0.05/0.10/0.50/0.90/0.95)
+  per 3 target (tmin_c, tmax_c, precip_mm). CQR stratificato per 6 bucket lead time
+  (D-002, D-003). Walk-forward CV con embargo 7 giorni. Persistenza pickle in `data/models/`
+- **`jobs/train.py`**: CLI `train run` (allena + salva artefatti) e `train eval`
+  (walk-forward CV con metriche MAE, CRPS, coverage, skill)
+- **ICON-2I** (D-013): `italia_meteo_arpae_icon_2i` aggiunto come 6° modello NWP
+  (2.2km, assimila osservazioni italiane, orizzonte 72h). `features_daily` ora a 54 colonne
+- **`--om-model`**: flag ripetibile in `historical` e `daily` per limitare il download
+  a uno o più modelli Open-Meteo specifici
+- **11 test** `test_models.py` con fixture `fast_lgbm` (n_estimators=50, <60s totali)
 
 ### Changed
-- **Modelli NWP** (D-013): da 5 a 6 modelli — `ecmwf_ifs025` (25km) sostituito da
-  `ecmwf_ifs` HRES (9km), aggiunto `icon_d2` (2.2km)
-- `_fetch_om_json_historical` separato dal forecast live: timeout 90s, 5 retry,
-  `Retry-After` rispettato sul 429
+- **`features.py`**: ensemble mean/spread esteso da 5 a 6 modelli con formula
+  null-safe (COALESCE + divisore dinamico) — gestisce icon2i NULL per lead_time_h > 72h
+- **D-014**: per la precipitazione il DLE userà la distribuzione ensemble NWP
+  direttamente (skill ML ≈ 0 su CV reale, vedi decisions.md)
 
 ### Fixed
-- `jobs/ingest.py`: `end_date` Open-Meteo cappato a oggi-2gg (limite archivio)
-- `fetchers.py`: 429 reso retryable, skip retry su 4xx permanenti
+- `storage.py`: UTC-naive normalizzation prima della staging — previene `Constraint Error`
+  su DST transition days (KI-009)
+- `features.py`: gestione `lead_time_h=0` per backfill same-day (ts_run collassato a NULL)
+- `fetchers.py`: rimosso `ecmwf_aifs025` — restituisce null su tutte le variabili (KI-011)
+
+### Removed
+- `ecmwf_aifs025` da `_OM_MODELS` e da tutta la codebase
 
 ---
 
@@ -91,6 +96,7 @@ Bootstrap iniziale del progetto.
 - `docs/known_issues.md`: problemi noti e workaround
 - Agenti subagent per collaborazione multi-modello (Claude, Kimi)
 
-[Unreleased]: https://github.com/cosimo/guazza/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/cosimo/guazza/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/cosimo/guazza/compare/v0.1.0...v0.4.0
 [0.1.0]: https://github.com/cosimo/guazza/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/cosimo/guazza/releases/tag/v0.0.1
