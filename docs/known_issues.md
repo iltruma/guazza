@@ -146,6 +146,27 @@ c.execute('DROP TABLE forecasts_keep')
 
 ---
 
+## KI-009 — DuckDB: TIMESTAMPTZ → TIMESTAMP usa timezone locale, causa duplicati DST
+
+**Severità**: alta (constraint error che blocca `ingest historical`)
+**Stato**: risolto in `storage.py`
+
+**Problema**: `_staging_forecasts` usava colonne `TIMESTAMPTZ` mentre `forecasts` usa
+`TIMESTAMP` (naive). DuckDB converte TIMESTAMPTZ → TIMESTAMP usando il timezone di
+sessione (Europe/Rome). Nei giorni di transizione DST (es. 2024-10-27), due UTC distinti
+(00:00Z e 01:00Z) collassano entrambi in `02:00:00` locale. Il ROW_NUMBER dedup
+nella staging non li intercettava (opererebbe su TIMESTAMPTZ distinti); `INSERT OR REPLACE`
+riceveva due righe con la stessa PK naive → `Constraint Error: Duplicate key`.
+
+**Fix**: in `upsert_forecasts`, i datetime UTC-aware vengono normalizzati a UTC-naive
+con `.replace(tzinfo=None)` prima di entrare nella staging. La staging ora usa `TIMESTAMP`.
+Il dedup Python e quello SQL operano sulla stessa rappresentazione finale.
+
+**Side effect**: la tabella `forecasts` pre-fix conteneva timestamp in ora locale Italia
+(non UTC). La tabella è stata ricreata vuota e ri-popolata via `ingest historical --only-openmeteo`.
+
+---
+
 ## KI-007 — ECMWF falso allarme precipitazioni su Toscana (osservazione preliminare)
 
 **Severità**: informativa

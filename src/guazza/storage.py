@@ -135,12 +135,16 @@ class DuckDBClient:
         seen: set[tuple] = set()
         rows = []
         for rec in records:
-            key = (rec["source"], rec["location_id"], rec["ts_run"], rec["ts_valid"])
+            # Normalize to UTC-naive: prevents TIMESTAMPTZ→TIMESTAMP implicit conversion
+            # by DuckDB using session timezone (would collapse DST-ambiguous hours).
+            ts_run = rec["ts_run"].replace(tzinfo=None)
+            ts_valid = rec["ts_valid"].replace(tzinfo=None)
+            key = (rec["source"], rec["location_id"], ts_run, ts_valid)
             if key in seen:
                 continue
             seen.add(key)
             rows.append([
-                rec["source"], rec["location_id"], rec["ts_run"], rec["ts_valid"],
+                rec["source"], rec["location_id"], ts_run, ts_valid,
                 rec.get("lead_time_h"),
                 rec.get("temp_c"), rec.get("humidity_pct"), rec.get("precip_mm"),
                 rec.get("wind_speed_ms"), rec.get("wind_dir_deg"),
@@ -152,8 +156,8 @@ class DuckDBClient:
             CREATE TEMP TABLE _staging_forecasts (
                 source         VARCHAR,
                 location_id    VARCHAR,
-                ts_run         TIMESTAMPTZ,
-                ts_valid       TIMESTAMPTZ,
+                ts_run         TIMESTAMP,
+                ts_valid       TIMESTAMP,
                 lead_time_h    INTEGER,
                 temp_c         FLOAT,
                 humidity_pct   FLOAT,

@@ -682,7 +682,7 @@ def test_upsert_forecasts_batch_historical(seeded_db_forecasts: Path) -> None:
     assert n == 3
     assert count == 3
     # verifica lead_time_h corretto per la riga con ts_valid=12:00
-    ts_12 = datetime(2026, 5, 14, 12, 0, 0, tzinfo=UTC)
+    ts_12 = datetime(2026, 5, 14, 12, 0, 0)  # UTC naive: forecasts stores UTC without tz
     with DuckDBClient(db_path=seeded_db_forecasts) as db:
         row = db.execute(
             "SELECT lead_time_h FROM forecasts WHERE ts_valid = ?", [ts_12]
