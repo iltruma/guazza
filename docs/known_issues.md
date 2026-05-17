@@ -174,26 +174,16 @@ Il dedup Python e quello SQL operano sulla stessa rappresentazione finale.
 ## KI-010 — upsert_forecasts lento su batch grandi (backfill storico)
 
 **Severità**: bassa (impatta solo il backfill one-shot, non la produzione)
-**Stato**: da ottimizzare
+**Stato**: risolto in `storage.py`
 
-**Problema**: `upsert_forecasts` usa `executemany` per caricare la staging table.
-Su batch da ~38.000 righe (4.4 anni di dati orari per un model+location) impiega
-~70 secondi → ~550 rec/sec. DuckDB dovrebbe stare sui 50.000–200.000 rec/sec.
-Il bottleneck è il bridge Python-oggetti → DuckDB, che bypassa il path Arrow.
+**Problema**: `upsert_forecasts` e `upsert_sir_observations` usavano `executemany`
+per caricare la staging table. Su batch da ~38.000 righe (4.4 anni di dati orari)
+impiega ~70 secondi → ~550 rec/sec.
 
-**Fix pianificato**: sostituire `executemany` con `conn.register(name, df)` dove
-`df` è un `pd.DataFrame`. DuckDB usa Arrow internamente e può essere 10–50x più
-veloce su batch grandi.
-
-```python
-df = pd.DataFrame(rows, columns=[...])
-self._conn.register("_staging_forecasts", df)
-# poi lo stesso INSERT OR REPLACE
-self._conn.unregister("_staging_forecasts")
-```
-
-**Workaround**: nessuno necessario — il backfill storico si esegue una volta sola
-e 8 minuti totali sono accettabili. Il job `daily` (24 rec/call) non è affetto.
+**Fix**: sostituito CREATE TEMP TABLE + `executemany` con `pd.DataFrame` +
+`conn.register(name, df)` in entrambe le funzioni. DuckDB usa il path Arrow
+vectorized — atteso 10–50x speedup su batch grandi. Logica UPDATE/INSERT
+invariata; rimossa solo la staging table fisica.
 
 ---
 

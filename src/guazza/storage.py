@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+import pandas as pd
 import typer
 from loguru import logger
 
@@ -151,27 +152,13 @@ class DuckDBClient:
                 rec.get("wind_gust_ms"), rec.get("pressure_hpa"),
             ])
 
-        self._conn.execute("DROP TABLE IF EXISTS _staging_forecasts")
-        self._conn.execute("""
-            CREATE TEMP TABLE _staging_forecasts (
-                source         VARCHAR,
-                location_id    VARCHAR,
-                ts_run         TIMESTAMP,
-                ts_valid       TIMESTAMP,
-                lead_time_h    INTEGER,
-                temp_c         FLOAT,
-                humidity_pct   FLOAT,
-                precip_mm      FLOAT,
-                wind_speed_ms  FLOAT,
-                wind_dir_deg   FLOAT,
-                wind_gust_ms   FLOAT,
-                pressure_hpa   FLOAT
-            )
-        """)
-        self._conn.executemany(
-            "INSERT INTO _staging_forecasts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            rows,
-        )
+        _FCAST_COLS = [
+            "source", "location_id", "ts_run", "ts_valid", "lead_time_h",
+            "temp_c", "humidity_pct", "precip_mm",
+            "wind_speed_ms", "wind_dir_deg", "wind_gust_ms", "pressure_hpa",
+        ]
+        df = pd.DataFrame(rows, columns=_FCAST_COLS)
+        self._conn.register("_staging_forecasts", df)
 
         # INSERT OR REPLACE: gestisce sia insert nuovi sia update esistenti in un solo
         # statement. Evita completamente il WHERE NOT EXISTS, che confronta TIMESTAMPTZ
@@ -197,7 +184,7 @@ class DuckDBClient:
             WHERE s._rn = 1
         """)
 
-        self._conn.execute("DROP TABLE IF EXISTS _staging_forecasts")
+        self._conn.unregister("_staging_forecasts")
         logger.info(f"upsert_forecasts: {len(records)} record processati")
         return len(records)
 
@@ -280,41 +267,18 @@ class DuckDBClient:
                 dedup[pk] = row
         rows = list(dedup.values())
 
-        # ── Staging table + bulk UPDATE/INSERT ──────────────────────────────
-        self._conn.execute("DROP TABLE IF EXISTS _staging_obs")
-        self._conn.execute("""
-            CREATE TEMPORARY TABLE _staging_obs (
-                source VARCHAR,
-                station_id VARCHAR,
-                location_id VARCHAR,
-                ts TIMESTAMP,
-                granularity VARCHAR,
-                tmax_c DOUBLE,
-                tmin_c DOUBLE,
-                temp_c DOUBLE,
-                humidity_pct DOUBLE,
-                precip_mm DOUBLE,
-                precip_interval_h TINYINT,
-                wind_speed_ms DOUBLE,
-                wind_dir_deg DOUBLE,
-                wind_gust_ms DOUBLE,
-                pressure_hpa DOUBLE,
-                level_m DOUBLE,
-                pm10_ugm3 DOUBLE,
-                pm25_ugm3 DOUBLE,
-                no2_ugm3 DOUBLE,
-                o3_ugm3 DOUBLE,
-                weight DOUBLE,
-                qc_pass BOOLEAN
-            )
-        """)
-
-        # Bulk insert nel staging — nessun constraint, veloce
-        self._conn.executemany(
-            """INSERT INTO _staging_obs VALUES
-                (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            rows,
-        )
+        # ── Staging DataFrame + bulk UPDATE/INSERT ──────────────────────────
+        _OBS_STAGING_COLS = [
+            "source", "station_id", "location_id", "ts", "granularity",
+            "tmax_c", "tmin_c", "temp_c", "humidity_pct",
+            "precip_mm", "precip_interval_h",
+            "wind_speed_ms", "wind_dir_deg", "wind_gust_ms",
+            "pressure_hpa", "level_m",
+            "pm10_ugm3", "pm25_ugm3", "no2_ugm3", "o3_ugm3",
+            "weight", "qc_pass",
+        ]
+        df = pd.DataFrame(rows, columns=_OBS_STAGING_COLS)
+        self._conn.register("_staging_obs", df)
 
         # UPDATE righe esistenti con COALESCE
         coalesce_sets = ", ".join(
@@ -360,7 +324,7 @@ class DuckDBClient:
             )
         """)
 
-        self._conn.execute("DROP TABLE IF EXISTS _staging_obs")
+        self._conn.unregister("_staging_obs")
 
         logger.info(f"upsert_sir_observations: {len(records)} record processati")
         return len(records)
