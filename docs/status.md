@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-17
+> Aggiornato: 2026-05-17 (Sprint 4 completato)
 
 ## Cosa è stato fatto
 
@@ -98,7 +98,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **165 test** (escluso test_models non committato), tutti verdi
+- **176 test** (165 pre-Sprint 4 + 11 test_models), tutti verdi in ~51s
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -175,15 +175,34 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 a `stations.yaml` come `upstream_pluvio` (senza `used_by`) e rieseguire `features build`.
 Non bloccante per Sprint 4 — si aggiungono come feature incrementali.
 
-### Sprint 4 — Modello ML
-**Dipendenza**: training set Sprint 3
+### Sprint 4 — Modello ML (completato — 2026-05-17)
 
-- LightGBM quantile regression (α = 0.05, 0.10, 0.50, 0.90, 0.95)
-- Cross-validation temporale walk-forward con embargo 7 giorni (D-002)
-- CQR calibration stratificata per 5 bucket lead time: `0-6h`, `6-12h`, `12-24h`, `24-48h`, `48-72h` (D-003)
-- Metriche: CRPS, coverage empirica, skill score vs NWP grezzo come benchmark
-- **Benchmark formale in produzione**: popolare tabella `benchmark_forecasts` in DuckDB con NWP grezzo (Open-Meteo senza post-processing) per confronto sistematico nel tempo
-- Persistenza modello + artefatti calibrazione su disco
+- `src/guazza/models.py`: `train_all`, `walk_forward_cv`, `predict` con CQR stratificato 6 bucket lead time
+- `src/guazza/jobs/train.py`: CLI `train run` e `train eval`
+- 11 test pytest, fixture `fast_lgbm` (n_estimators=50) per contenere il tempo sotto 60s
+- Artefatti persistiti in `data/models/artifacts.pkl`
+
+#### Risultati walk-forward CV (4 fold, 2023-01 → 2026-05, dati reali)
+
+| Target | MAE | CRPS | Coverage 80% | Coverage 90% | Skill vs NWP |
+|---|---|---|---|---|---|
+| tmin_c | 0.906°C | 0.500 | 0.794 | 0.896 | +25.6% |
+| tmax_c | 0.801°C | 0.452 | 0.816 | 0.912 | +26.9% |
+| precip_mm | 1.526mm | 0.924 | 0.788 | 0.908 | -1.2% |
+
+**Temperatura**: skill +25–27% vs ensemble NWP mean. CQR calibrato (coverage ~0.90 su target 90%).
+**Precipitazione**: skill ≈ 0 — il modello pareggia il NWP grezzo ma non lo batte (vedi D-014).
+
+#### CQR corrections produzione (cal set 2026-02-14 → 2026-05-15, 364 righe)
+
+| Target | ci80 | ci90 |
+|---|---|---|
+| tmin_c | +0.320°C | +0.486°C |
+| tmax_c | +0.405°C | +0.519°C |
+| precip_mm | +0.006mm | +0.009mm |
+
+🟡 **Punto aperto — benchmark_forecasts**: tabella prevista per confronto sistematico in produzione
+(NWP grezzo vs modello nel tempo). Non implementata — da aggiungere in Sprint 5 o come task separato.
 
 ### Sprint 5 — Output JSON + Decision Logic Engine
 **Dipendenza**: modello calibrato Sprint 4

@@ -224,3 +224,30 @@ termica nella piana di Campi o Scandicci).
 **Conseguenza**: il dataset di training `features_daily` usa 6 modelli NWP
 (ecmwf_ifs, icon_eu, icon_d2, gfs025, arome_france, icon_2i).
 Necessario rieseguire il backfill `historical` per i nuovi modelli.
+
+---
+
+## D-014 — Precipitazione: usare ensemble NWP direttamente nel DLE
+
+**Data**: 2026-05-17
+
+**Contesto**: walk-forward CV Sprint 4 mostra skill score precipitazione ≈ 0
+(MAE 1.526mm vs NWP ensemble mean 1.57mm). Il post-processing ML non batte il NWP grezzo.
+
+**Cause identificate**:
+- Tutti i dati storici hanno `lead_time_h=0` (punto aperto Sprint 3): il modello
+  non impara la correzione per lead time, che è dove i NWP sbagliano di più sulla precip.
+- Ground truth SIR è una singola stazione pesata — la variabilità spaziale degli eventi
+  precipitativi introduce rumore irriducibile non catturabile da un modello globale.
+- Distribuzione zero-inflated: LightGBM quantile su dati così asimmetrici richiede
+  feature più specifiche (CAPE, theta-e, indici convettivi) non disponibili oggi.
+
+**Decisione**: nel DLE (Sprint 5), per gli indicatori dipendenti dalla pioggia
+(`panni`, soglie allerta) usare la distribuzione NWP ensemble direttamente
+(probabilità di precip > soglia calcolata su 6 modelli) piuttosto che il CI
+ML post-processato. Il modello ML produce comunque un output per precip, ma
+non è il segnale primario per queste decisioni.
+
+**Conseguenza**: Sprint 5 deve esporre sia le previsioni ML (per temp) sia le
+probabilità ensemble NWP (per precip) nel JSON di output. Non sono due prodotti
+separati — sono due colonne dello stesso oggetto previsione.
