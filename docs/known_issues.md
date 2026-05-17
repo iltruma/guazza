@@ -46,19 +46,14 @@ non usare queste colonne come feature senza gestire la sparsità storica.
 ## KI-003 — DuckDB non supporta scritture concorrenti
 
 **Severità**: media (rilevante se due cron si sovrappongono)
-**Stato**: mitigato da design cron serializzato
+**Stato**: risolto in `storage.py`
 
 **Problema**: DuckDB file-based non supporta scritture concorrenti da più
-processi. Un secondo processo che tenta di aprire il file in scrittura riceve
-`IOException: Could not set lock on file`.
+processi.
 
-**Workaround attuale**: i cron job sono serializzati (ingest → predict → output)
-con slot temporali non sovrapposti. Se un job dura più del previsto, il cron
-successivo fallisce senza corrompere il DB.
-
-**Da fare**: aggiungere lock file esterno (`/tmp/guazza.lock`) nei job entry
-point per rilevare sovrapposizioni e loggare WARNING invece di crashare con
-`IOException`.
+**Fix**: `DuckDBClient.__enter__` acquisisce un `fcntl.flock(LOCK_EX)` sul file
+`.lock` prima di aprire il DB. Un secondo processo si blocca in attesa del lock
+invece di crashare con `IOException`. Il DB non può corrompersi.
 
 ---
 
@@ -87,23 +82,6 @@ point per rilevare sovrapposizioni e loggare WARNING invece di crashare con
 
 **Nota**: WSL in modalità NAT condivide l'IP dell'host Windows — un backfill
 fallito in locale brucia la quota per l'intera macchina.
-
----
-
-## KI-005 — CFR Toscana: HTML scraping fragile
-
-**Severità**: media
-**Stato**: in monitoring
-
-**Problema**: il portale CFR Toscana non ha API pubblica. Lo scraping è su
-HTML che può cambiare senza preavviso.
-
-**Workaround**: parser basato su selettori CSS robusti (tag semantici, non
-posizioni). Se il parsing fallisce, il job logga ERROR e continua senza dati
-CFR (non blocca l'ingestione SIR/Open-Meteo).
-
-**Segnale di allarme**: se `rows=0` per 3 run consecutivi → controllare
-manualmente il portale CFR.
 
 ---
 
