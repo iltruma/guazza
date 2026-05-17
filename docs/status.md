@@ -222,8 +222,14 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 🟡 **Punto aperto — `bisenzio` threshold**: `threshold_1`/`threshold_2` non sono nel SignalBag → fallback giallo.
    Nessuna sorgente dati per le soglie idrometriche di allerta SIR. Da implementare in Sprint 7+ (config o API SIR).
 
+### Pre-Sprint 6 — task da completare prima del frontend
+
+🟡 **Soglie idrometriche `bisenzio`** (KI-012): aggiungere `threshold_1`/`threshold_2`
+per la stazione TOS01004791 (S. Piero a Ponti) in `config/locations.yaml` o `indicators.yaml`,
+e popolare il SignalBag in `build_signals()`. Sblocca l'indicatore dal fallback giallo.
+
 ### Sprint 6 — Frontend
-**Dipendenza**: JSON output Sprint 5 stabile
+**Dipendenza**: JSON output Sprint 5 stabile + pre-Sprint 6 completato
 
 - HTML + JS vanilla, zero dipendenze JS
 - Una pagina per location: indicatori operativi prominenti + CI meteo
