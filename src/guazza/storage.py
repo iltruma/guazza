@@ -90,6 +90,123 @@ class DuckDBClient:
             raise RuntimeError("DuckDBClient non è nel context manager.")
         self._conn.unregister(name)
 
+    def ensure_predictions_schema(self) -> None:
+        """Ricrea predictions se lo schema è obsoleto (pre-v0.5, manca tmin_p05)."""
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+        try:
+            self._conn.execute("SELECT tmin_p05 FROM predictions LIMIT 0")
+        except duckdb.Error:
+            self._conn.execute("DROP TABLE IF EXISTS predictions")
+            sql = _SCHEMA_SQL.read_text()
+            self._conn.execute(sql)
+            logger.info("predictions: schema migrato alla versione corrente (v0.5)")
+
+    def upsert_predictions(self, records: list[dict]) -> int:
+        """UPSERT batch per predictions ML.
+
+        Ogni record deve avere: model_version, location_id, ts_valid, lead_time_h,
+        più i dict annidati tmin_c, tmax_c, precip_mm con chiavi p05/p10/.../ci80_lo/...
+
+        Returns:
+            Numero di record processati.
+        """
+        if not records:
+            return 0
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+
+        _PRED_COLS = [
+            "model_version", "location_id", "ts_valid", "lead_time_h",
+            "tmin_p05", "tmin_p10", "tmin_p50", "tmin_p90", "tmin_p95",
+            "tmin_ci80_lo", "tmin_ci80_hi", "tmin_ci90_lo", "tmin_ci90_hi",
+            "tmax_p05", "tmax_p10", "tmax_p50", "tmax_p90", "tmax_p95",
+            "tmax_ci80_lo", "tmax_ci80_hi", "tmax_ci90_lo", "tmax_ci90_hi",
+            "precip_p05", "precip_p10", "precip_p50", "precip_p90", "precip_p95",
+            "precip_ci80_lo", "precip_ci80_hi", "precip_ci90_lo", "precip_ci90_hi",
+        ]
+
+        rows = []
+        for rec in records:
+            ts = rec["ts_valid"]
+            if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
+            tmin = rec["tmin_c"]
+            tmax = rec["tmax_c"]
+            prec = rec["precip_mm"]
+            rows.append([
+                rec["model_version"], rec["location_id"], ts, rec["lead_time_h"],
+                tmin.get("p05"), tmin.get("p10"), tmin.get("p50"), tmin.get("p90"), tmin.get("p95"),
+                tmin.get("ci80_lo"), tmin.get("ci80_hi"), tmin.get("ci90_lo"), tmin.get("ci90_hi"),
+                tmax.get("p05"), tmax.get("p10"), tmax.get("p50"), tmax.get("p90"), tmax.get("p95"),
+                tmax.get("ci80_lo"), tmax.get("ci80_hi"), tmax.get("ci90_lo"), tmax.get("ci90_hi"),
+                prec.get("p05"), prec.get("p10"), prec.get("p50"), prec.get("p90"), prec.get("p95"),
+                prec.get("ci80_lo"), prec.get("ci80_hi"), prec.get("ci90_lo"), prec.get("ci90_hi"),
+            ])
+
+        df = pd.DataFrame(rows, columns=_PRED_COLS)
+        self._conn.register("_staging_pred", df)
+        self._conn.execute("""
+            INSERT OR REPLACE INTO predictions (
+                model_version, location_id, ts_valid, lead_time_h,
+                tmin_p05, tmin_p10, tmin_p50, tmin_p90, tmin_p95,
+                tmin_ci80_lo, tmin_ci80_hi, tmin_ci90_lo, tmin_ci90_hi,
+                tmax_p05, tmax_p10, tmax_p50, tmax_p90, tmax_p95,
+                tmax_ci80_lo, tmax_ci80_hi, tmax_ci90_lo, tmax_ci90_hi,
+                precip_p05, precip_p10, precip_p50, precip_p90, precip_p95,
+                precip_ci80_lo, precip_ci80_hi, precip_ci90_lo, precip_ci90_hi
+            )
+            SELECT * FROM _staging_pred
+        """)
+        self._conn.unregister("_staging_pred")
+        logger.info(f"upsert_predictions: {len(records)} record salvati")
+        return len(records)
+
+    def backfill_prediction_obs(self) -> int:
+        """Aggiorna *_obs nelle predictions passate con le osservazioni SIR pesate.
+
+        Idempotente: aggiorna solo le righe con tmin_obs IS NULL.
+
+        Returns:
+            Numero approssimativo di righe aggiornate.
+        """
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+        result = self._conn.execute("""
+            UPDATE predictions
+            SET
+                tmin_obs   = ow.tmin_c,
+                tmax_obs   = ow.tmax_c,
+                precip_obs = ow.precip_mm
+            FROM (
+                SELECT
+                    o.location_id,
+                    o.ts::DATE AS obs_date,
+                    SUM(o.tmin_c * sw.weight)
+                        / NULLIF(SUM(CASE WHEN o.tmin_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
+                        AS tmin_c,
+                    SUM(o.tmax_c * sw.weight)
+                        / NULLIF(SUM(CASE WHEN o.tmax_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
+                        AS tmax_c,
+                    SUM(o.precip_mm * sw.weight)
+                        / NULLIF(SUM(CASE WHEN o.precip_mm IS NOT NULL THEN sw.weight ELSE 0 END), 0)
+                        AS precip_mm
+                FROM observations o
+                JOIN station_weights sw
+                    ON o.station_id = sw.station_id AND o.location_id = sw.location_id
+                WHERE o.source = 'sir_toscana' AND o.granularity = 'daily'
+                GROUP BY o.location_id, o.ts::DATE
+            ) ow
+            WHERE predictions.location_id = ow.location_id
+              AND predictions.ts_valid::DATE = ow.obs_date
+              AND predictions.tmin_obs IS NULL
+        """)
+        n = result.fetchone()
+        count = int(n[0]) if n else 0
+        if count:
+            logger.info(f"backfill_prediction_obs: {count} righe aggiornate")
+        return count
+
     def init_schema(self) -> None:
         """Applica schema.sql al database (IF NOT EXISTS — idempotente)."""
         if not _SCHEMA_SQL.exists():

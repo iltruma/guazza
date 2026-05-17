@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-17 (Sprint 4 + ring features completati)
+> Aggiornato: 2026-05-17 (Sprint 5 completato)
 
 ## Cosa è stato fatto
 
@@ -207,15 +207,20 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 🟡 **Punto aperto — benchmark_forecasts**: tabella prevista per confronto sistematico in produzione
 (NWP grezzo vs modello nel tempo). Non implementata — da aggiungere in Sprint 5 o come task separato.
 
-### Sprint 5 — Output JSON + Decision Logic Engine
-**Dipendenza**: modello calibrato Sprint 4
+### Sprint 5 — Output JSON + Decision Logic Engine (completato — 2026-05-17)
 
-- JSON writer per ogni location: punto mediano + CI80 + CI90 + `coverage_empirical_30d` (D-004)
-- `coverage_empirical_30d`: rolling window 30 giorni osservazioni vs CI; se dati insufficienti → `null`
-- Decision Logic Engine: regole su distribuzione probabilistica → indicatori operativi
-  (`panni`, `motorino`, `gelata`, ecc.)
-- Logging obbligatorio in `indicator_log` DuckDB per ogni invocazione DLE (D-009)
-- Job cron `predict` che chiama modello → JSON → DLE → `indicator_log`
+- `src/guazza/output.py`: `build_signals()`, `compute_coverage_30d()`, `write_location_json()`
+- `src/guazza/jobs/predict.py`: job cron `predict run` — modello → DB → DLE → JSON
+- `src/guazza/storage.py`: `ensure_predictions_schema()`, `upsert_predictions()`, `backfill_prediction_obs()`
+- `schema.sql`: tabella `predictions` v0.5 (3 target × 9 quantili/CI + `*_obs`)
+- 18 test pytest, mypy e ruff OK
+- **Pipeline end-to-end verificata**: 4 JSON in `data/output/`, 9 indicatori per location
+
+**Signal bridge**: ML quantile → CDF inversa lineare per tmin/tmax/precip; NWP ensemble empirico per vento/umidità.
+**`coverage_empirical_30d`**: tutti `null` al primo run — si popola dopo il primo mese operativo (via `backfill_prediction_obs`).
+
+🟡 **Punto aperto — `bisenzio` threshold**: `threshold_1`/`threshold_2` non sono nel SignalBag → fallback giallo.
+   Nessuna sorgente dati per le soglie idrometriche di allerta SIR. Da implementare in Sprint 7+ (config o API SIR).
 
 ### Sprint 6 — Frontend
 **Dipendenza**: JSON output Sprint 5 stabile

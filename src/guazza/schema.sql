@@ -75,17 +75,29 @@ CREATE INDEX IF NOT EXISTS idx_forecasts_location_ts
 
 -- ── Predizioni ML quantile ────────────────────────────────────────────────────
 -- Wide: una riga per (model_version, location_id, ts_valid, lead_time_h).
--- Variabili predette come colonne quantile (es. temp_p10, temp_p50, temp_p90).
--- Altre variabili aggiunte con ALTER TABLE se necessario.
+-- Colonne *_obs popolate dal job predict (backfill via backfill_prediction_obs).
+-- Schema v0.5: 3 target × (p05/p10/p50/p90/p95 + ci80_lo/hi + ci90_lo/hi + obs).
 CREATE TABLE IF NOT EXISTS predictions (
     model_version VARCHAR   NOT NULL,
     location_id   VARCHAR   NOT NULL,
     ts_valid      TIMESTAMP NOT NULL,
     lead_time_h   INTEGER   NOT NULL,
-    temp_p10      DOUBLE,
-    temp_p50      DOUBLE,
-    temp_p90      DOUBLE,
-    temp_obs      DOUBLE,
+    tmin_p05     DOUBLE, tmin_p10     DOUBLE, tmin_p50     DOUBLE,
+    tmin_p90     DOUBLE, tmin_p95     DOUBLE,
+    tmin_ci80_lo DOUBLE, tmin_ci80_hi DOUBLE,
+    tmin_ci90_lo DOUBLE, tmin_ci90_hi DOUBLE,
+    tmin_obs     DOUBLE,
+    tmax_p05     DOUBLE, tmax_p10     DOUBLE, tmax_p50     DOUBLE,
+    tmax_p90     DOUBLE, tmax_p95     DOUBLE,
+    tmax_ci80_lo DOUBLE, tmax_ci80_hi DOUBLE,
+    tmax_ci90_lo DOUBLE, tmax_ci90_hi DOUBLE,
+    tmax_obs     DOUBLE,
+    precip_p05     DOUBLE, precip_p10     DOUBLE, precip_p50     DOUBLE,
+    precip_p90     DOUBLE, precip_p95     DOUBLE,
+    precip_ci80_lo DOUBLE, precip_ci80_hi DOUBLE,
+    precip_ci90_lo DOUBLE, precip_ci90_hi DOUBLE,
+    precip_obs     DOUBLE,
+    generated_at  TIMESTAMP DEFAULT current_timestamp,
     last_modified TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (model_version, location_id, ts_valid, lead_time_h)
 );

@@ -10,6 +10,30 @@ Versioning: major per sprint, minor per milestone interne.
 
 ---
 
+## [0.5.0] — 2026-05-17
+
+Sprint 5 completato: pipeline predict end-to-end operativa.
+JSON per ogni location con CI quantile + indicatori DLE + coverage rolling.
+
+### Added
+- **`src/guazza/output.py`**: signal bridge + JSON writer
+  - `build_signals()`: ML quantile → `SignalBag` DLE (CDF inversa lineare per tmin/tmax/precip; NWP ensemble per vento/umidità)
+  - `compute_coverage_30d()`: copertura empirica rolling 30 giorni (`null` se < 10 campioni)
+  - `write_location_json()`: `{output_dir}/{location_id}.json` con `forecasts`, `indicators`, `coverage_empirical_30d`
+- **`src/guazza/jobs/predict.py`**: job cron `predict run`
+  - Pipeline: `ensure_predictions_schema` → `backfill_prediction_obs` → `features_daily` → `predict` → `upsert_predictions` → DLE → `indicator_log` → JSON
+  - Flag `--dry-run`, Healthchecks.io, logging JSON su cron
+- **`upsert_predictions()`** in `storage.py`: bulk upsert DataFrame Arrow (3 target × 9 colonne)
+- **`backfill_prediction_obs()`** in `storage.py`: UPDATE bulk `*_obs` da `obs_weighted` per coverage tracking
+- **`ensure_predictions_schema()`** in `storage.py`: migrazione automatica schema v0.4→v0.5
+- **18 test** `test_output.py`: `_prob_exceeds`, `build_signals`, `compute_coverage_30d`, `write_location_json`
+
+### Changed
+- **`schema.sql`**: tabella `predictions` riscritta (3 target × p05/p10/p50/p90/p95 + ci80/ci90 + obs, 30 colonne)
+- **`OUTPUT_DIR`**: default `data/output/` (via env `OUTPUT_DIR`)
+
+---
+
 ## [0.4.1] — 2026-05-17
 
 Ring features upstream pluviometrici + ottimizzazione staging Arrow.
