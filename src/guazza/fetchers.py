@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pandas as pd
 import yaml
 from dotenv import load_dotenv
 from loguru import logger
@@ -683,27 +684,28 @@ def save_netatmo_to_db(
         return
 
     # netatmo_fetch_log
-    db.executemany(
-        """
+    df_log = pd.DataFrame(
+        [[fetched_at, location_id, sd.mac,
+          sd.lat, sd.lon, sd.alt_m,
+          sd.distance_km, sd.delta_elev_m, sd.weight,
+          sd.measures.get("temp_c"), sd.measures.get("humidity_pct"),
+          sd.measures.get("rain_1h"), sd.measures.get("wind_speed_ms")]
+         for sd in stations],
+        columns=["fetched_at", "location_id", "station_id", "lat", "lon", "alt_m",
+                 "distance_km", "delta_elev_m", "weight",
+                 "temperature", "humidity", "rain_1h", "wind_speed"],
+    )
+    db.register_df("_stg_nml", df_log)
+    db.execute("""
         INSERT INTO netatmo_fetch_log
             (fetched_at, location_id, station_id, lat, lon, alt_m,
              distance_km, delta_elev_m, weight, temperature, humidity, rain_1h, wind_speed)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        SELECT fetched_at, location_id, station_id, lat, lon, alt_m,
+               distance_km, delta_elev_m, weight, temperature, humidity, rain_1h, wind_speed
+        FROM _stg_nml
         ON CONFLICT (fetched_at, location_id, station_id) DO NOTHING
-        """,
-        [
-            [
-                fetched_at, location_id, sd.mac,
-                sd.lat, sd.lon, sd.alt_m,
-                sd.distance_km, sd.delta_elev_m, sd.weight,
-                sd.measures.get("temp_c"),
-                sd.measures.get("humidity_pct"),
-                sd.measures.get("rain_1h"),
-                sd.measures.get("wind_speed_ms"),
-            ]
-            for sd in stations
-        ],
-    )
+    """)
+    db.unregister_df("_stg_nml")
 
     # observations — wide, una riga per stazione (PK source+station_id+ts)
     obs_rows: list[list[Any]] = []
@@ -732,27 +734,37 @@ def save_netatmo_to_db(
         ])
 
     if obs_rows:
-        db.executemany(
-            """
+        _OBS_COLS = [
+            "source", "station_id", "location_id", "ts", "granularity",
+            "temp_c", "tmin_c", "tmax_c", "humidity_pct", "precip_mm", "precip_interval_h",
+            "wind_speed_ms", "wind_dir_deg", "wind_gust_ms", "pressure_hpa", "level_m",
+            "pm10_ugm3", "pm25_ugm3", "no2_ugm3", "o3_ugm3", "weight", "qc_pass",
+        ]
+        df_obs = pd.DataFrame(obs_rows, columns=_OBS_COLS)
+        db.register_df("_stg_nmo", df_obs)
+        db.execute("""
             INSERT INTO observations
                 (source, station_id, location_id, ts, granularity,
                  temp_c, tmin_c, tmax_c, humidity_pct, precip_mm, precip_interval_h,
                  wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa, level_m,
                  pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3,
                  weight, qc_pass)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            SELECT source, station_id, location_id, ts, granularity,
+                   temp_c, tmin_c, tmax_c, humidity_pct, precip_mm, precip_interval_h,
+                   wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa, level_m,
+                   pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3, weight, qc_pass
+            FROM _stg_nmo
             ON CONFLICT (source, station_id, ts, granularity) DO UPDATE SET
-                location_id = excluded.location_id,
-                temp_c        = excluded.temp_c,
-                humidity_pct  = excluded.humidity_pct,
-                precip_mm     = excluded.precip_mm,
+                location_id       = excluded.location_id,
+                temp_c            = excluded.temp_c,
+                humidity_pct      = excluded.humidity_pct,
+                precip_mm         = excluded.precip_mm,
                 precip_interval_h = excluded.precip_interval_h,
-                wind_speed_ms = excluded.wind_speed_ms,
-                weight        = excluded.weight,
-                qc_pass       = excluded.qc_pass
-            """,
-            obs_rows,
-        )
+                wind_speed_ms     = excluded.wind_speed_ms,
+                weight            = excluded.weight,
+                qc_pass           = excluded.qc_pass
+        """)
+        db.unregister_df("_stg_nmo")
 
     logger.info(
         f"[{location_id}] Salvate {len(stations)} stazioni in netatmo_fetch_log, "

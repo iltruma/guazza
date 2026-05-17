@@ -78,6 +78,18 @@ class DuckDBClient:
             raise RuntimeError("DuckDBClient non è nel context manager.")
         self._conn.executemany(query, params)
 
+    def register_df(self, name: str, df: pd.DataFrame) -> None:
+        """Espone un DataFrame come relazione virtuale (path Arrow, senza staging table)."""
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+        self._conn.register(name, df)
+
+    def unregister_df(self, name: str) -> None:
+        """Rimuove la relazione virtuale registrata con register_df."""
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+        self._conn.unregister(name)
+
     def init_schema(self) -> None:
         """Applica schema.sql al database (IF NOT EXISTS — idempotente)."""
         if not _SCHEMA_SQL.exists():

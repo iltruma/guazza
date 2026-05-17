@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import pandas as pd
 import yaml
 from loguru import logger
 
@@ -142,12 +143,21 @@ def log_results(
     if not results:
         return
     summary_json = json.dumps(input_summary or {})
-    db.executemany(
-        """
+    df = pd.DataFrame(
+        [[r.ts, r.location_id, r.indicator_id, summary_json,
+          r.rule_matched, r.verdict, r.probability, r.alpha, r.cost_fn, r.cost_fp]
+         for r in results],
+        columns=["ts", "location_id", "indicator_id", "input_summary",
+                 "rule_matched", "verdict", "probability", "alpha", "cost_fn", "cost_fp"],
+    )
+    db.register_df("_stg_ind", df)
+    db.execute("""
         INSERT INTO indicator_log
             (ts, location_id, indicator_id, input_summary, rule_matched,
              verdict, probability, alpha, cost_fn, cost_fp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        SELECT ts, location_id, indicator_id, input_summary, rule_matched,
+               verdict, probability, alpha, cost_fn, cost_fp
+        FROM _stg_ind
         ON CONFLICT (ts, location_id, indicator_id) DO UPDATE SET
             rule_matched = excluded.rule_matched,
             verdict      = excluded.verdict,
@@ -155,16 +165,8 @@ def log_results(
             alpha        = excluded.alpha,
             cost_fn      = excluded.cost_fn,
             cost_fp      = excluded.cost_fp
-        """,
-        [
-            [
-                r.ts, r.location_id, r.indicator_id, summary_json,
-                r.rule_matched, r.verdict, r.probability,
-                r.alpha, r.cost_fn, r.cost_fp,
-            ]
-            for r in results
-        ],
-    )
+    """)
+    db.unregister_df("_stg_ind")
     logger.info(
         f"indicator_log: {len(results)} record salvati "
         f"[{results[0].location_id} @ {results[0].ts:%Y-%m-%dT%H:%M}]"

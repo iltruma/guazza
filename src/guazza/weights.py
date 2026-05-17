@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import pandas as pd
 import yaml
 from loguru import logger
 
@@ -116,14 +117,13 @@ def refresh_upstream_rings(
 
     db.execute("DELETE FROM upstream_ring_station")
     if records:
-        db.executemany(
-            """
-            INSERT INTO upstream_ring_station (station_id, location_id, ring_label, distance_km)
-            VALUES (?, ?, ?, ?)
-            """,
-            [[r["station_id"], r["location_id"], r["ring_label"], r["distance_km"]]
-             for r in records],
+        df = pd.DataFrame(records, columns=["station_id", "location_id", "ring_label", "distance_km"])
+        db.register_df("_stg_rings", df)
+        db.execute(
+            "INSERT INTO upstream_ring_station (station_id, location_id, ring_label, distance_km)"
+            " SELECT station_id, location_id, ring_label, distance_km FROM _stg_rings"
         )
+        db.unregister_df("_stg_rings")
     logger.info(f"upstream_ring_station: {len(records)} record salvati")
     return records
 
@@ -196,21 +196,20 @@ def refresh_station_weights(
         return records
 
     db.execute("DELETE FROM station_weights")
-    db.executemany(
-        """
-        INSERT INTO station_weights
-            (station_id, source, location_id, weight, distance_km, delta_elev_m, computed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-            [
-                r["station_id"], r["source"], r["location_id"],
-                r["weight"], r["distance_km"], r["delta_elev_m"],
-                r["computed_at"],
-            ]
-            for r in records
-        ],
+    df = pd.DataFrame(
+        [[r["station_id"], r["source"], r["location_id"],
+          r["weight"], r["distance_km"], r["delta_elev_m"], r["computed_at"]]
+         for r in records],
+        columns=["station_id", "source", "location_id", "weight", "distance_km", "delta_elev_m", "computed_at"],
     )
+    db.register_df("_stg_weights", df)
+    db.execute(
+        "INSERT INTO station_weights"
+        " (station_id, source, location_id, weight, distance_km, delta_elev_m, computed_at)"
+        " SELECT station_id, source, location_id, weight, distance_km, delta_elev_m, computed_at"
+        " FROM _stg_weights"
+    )
+    db.unregister_df("_stg_weights")
     logger.info(f"station_weights: {len(records)} record salvati")
     return records
 
