@@ -10,6 +10,32 @@ Versioning: major per sprint, minor per milestone interne.
 
 ---
 
+## [0.4.1] — 2026-05-17
+
+Ring features upstream pluviometrici + ottimizzazione staging Arrow.
+
+### Added
+- **Ring features upstream** (6 colonne): `ring{1,2,3}_precip_d1_{mean,max}` in `features_daily`.
+  Stazioni SIR raggruppate in fasce di distanza (ring1 ≤20km, ring2 ≤50km, ring3 ≤100km)
+  per ogni location — segnale anticipatore precipitazioni su microclimi orografici
+- **`upstream_ring_station`** in `schema.sql`: tabella `(station_id, location_id, ring_label, distance_km)`
+- **`refresh_upstream_rings()`** in `weights.py`: assegnazione automatica ring per distanza su tutte
+  le stazioni con sensore pluviometro in `stations.yaml`
+- **13 nuove stazioni upstream** in `stations.yaml` + `locations.yaml`: Bisenzio/Appenino PO-PT
+  (Vaiano, Fattoria Iavello, Santomato, Cantagallo, Acquerino, Gavigno, Vernio),
+  storm track W (Albano, Bagni di Lucca, Montecarlo), Valdarno/Pratomagno
+  (Pian di Scò, Pratomagno, Trappola)
+- **`register_df()` / `unregister_df()`** su `DuckDBClient`: API pubblica per il path Arrow
+
+### Changed
+- **`features_daily`**: 6 colonne ring aggiunte; `FEATURE_COLS` in `models.py` passa da 44 a 50
+- **`storage.py`**, **`weights.py`**, **`indicators.py`**, **`fetchers.py`**: tutti gli `executemany`
+  di bulk insert sostituiti con `pd.DataFrame` + `conn.register()` (path Arrow DuckDB).
+  Atteso 10–50x speedup su batch grandi (KI-010 risolto)
+- **Modello retrain** su 6384 righe con 50 feature (ring inizialmente NULL, gestite nativamente da LightGBM)
+
+---
+
 ## [0.4.0] — 2026-05-17
 
 Sprint 4 completato: primo modello ML trainato e calibrato su dati reali.

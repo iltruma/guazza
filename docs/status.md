@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-17 (Sprint 4 completato)
+> Aggiornato: 2026-05-17 (Sprint 4 + ring features completati)
 
 ## Cosa è stato fatto
 
@@ -98,7 +98,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **176 test** (165 pre-Sprint 4 + 11 test_models), tutti verdi in ~51s
+- **176 test** (165 pre-Sprint 4 + 11 test_models), tutti verdi in ~55s
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -171,9 +171,12 @@ il primo mese di operatività sul VPS (Sprint 7).
 vengono aggregati sull'intera giornata (tmin=MIN, tmax=MAX, precip=SUM) con ts_run collassato
 a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 
-🟡 **Punto aperto — feature upstream pluviometriche**: aggiungere stazioni Lucca/Pistoia/Versilia
-a `stations.yaml` come `upstream_pluvio` (senza `used_by`) e rieseguire `features build`.
-Non bloccante per Sprint 4 — si aggiungono come feature incrementali.
+**Ring features upstream completate (2026-05-17)**:
+- `upstream_ring_station` in schema DuckDB: mapping station→location con ring_label e distance_km
+- 13 stazioni upstream pluvio in `stations.yaml` (Bisenzio/Appenino PO-PT, storm track W, Valdarno/Pratomagno)
+- `refresh_upstream_rings()` in `weights.py`: assegnazione automatica ring1/ring2/ring3 per distanza
+- 6 nuove feature in `features_daily`: `ring{1,2,3}_precip_d1_{mean,max}` (lookahead-safe: giorno precedente)
+- Modello retrain con 50 feature totali (44 + 6 ring)
 
 ### Sprint 4 — Modello ML (completato — 2026-05-17)
 
