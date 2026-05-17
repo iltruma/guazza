@@ -73,7 +73,19 @@ locations:
       Idro Greve a 2.0km (Ponte di Scandicci).
 
   lavoro_madda:
-    upstream_pluvio_stations: [TOS11000503]  # Vaiano (Bisenzio a monte, ~10km)
+    upstream_pluvio_stations:
+      # Bisenzio headwaters / Appennino PO-PT
+      - TOS11000503   # Vaiano acquedotto     ~10km
+      - TOS01001273   # Fattoria Iavello      ~12km  Montemurlo
+      - TOS11000093   # Santomato             ~14km  Pistoia
+      - TOS01001151   # Cantagallo            ~20km
+      - TOS11000094   # Acquerino             ~22km  Sambuca Pistoiese
+      - TOS01001161   # Gavigno               ~26km  crinale PO
+      - TOS01001171   # Vernio                ~27km  alta valle Bisenzio
+      # Storm track W / Montagna Pistoiese
+      - TOS11000077   # Albano                ~28km  Monsummano Terme
+      - TOS11000092   # Bagni di Lucca        ~55km  Appennino lucchese
+      - TOS11000031   # Montecarlo            ~51km  pianura lucchese
     label: "Lavoro Madda - Prato"
     address: "Prato (PO)"
     lat: 43.88
@@ -107,7 +119,11 @@ locations:
       Idro Bisenzio a Prato a 1.2km.
 
   casa_cesto:
-    upstream_pluvio_stations: []  # nessuna stazione upstream nota per il Valdarno — da aggiungere
+    upstream_pluvio_stations:
+      # Valdarno superiore / Pratomagno
+      - TOS01000881   # Pian di Scò           ~12km  Castelfranco Piandiscò
+      - TOS11000078   # Pratomagno            ~27km  crinale E
+      - TOS03000855   # Trappola              ~21km  versante W Pratomagno
     label: "Casa Cesto - Figline Valdarno"
     address: "Figline e Incisa Valdarno (FI)"
     lat: 43.59
