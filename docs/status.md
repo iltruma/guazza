@@ -228,6 +228,11 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 per la stazione TOS01004791 (S. Piero a Ponti) in `config/locations.yaml` o `indicators.yaml`,
 e popolare il SignalBag in `build_signals()`. Sblocca l'indicatore dal fallback giallo.
 
+🟡 **Predict job multi-giorno**: ora genera un solo JSON per la data più lontana disponibile
+(`MAX(target_date)`). Serve iterare tutte le date future (D+1…D+7) e includerle nel JSON
+come array `days`. Necessario per il frontend Sprint 6 e per avere la previsione di domani.
+`write_location_json` e `build_signals` sono già pronti; cambia solo il loop in `jobs/predict.py`.
+
 ### Sprint 6 — Frontend
 **Dipendenza**: JSON output Sprint 5 stabile + pre-Sprint 6 completato
 
