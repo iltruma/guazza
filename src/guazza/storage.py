@@ -169,29 +169,12 @@ class DuckDBClient:
             rows,
         )
 
-        # Aggiorna righe esistenti
+        # INSERT OR REPLACE: gestisce sia insert nuovi sia update esistenti in un solo
+        # statement. Evita completamente il WHERE NOT EXISTS, che confronta TIMESTAMPTZ
+        # (staging) con TIMESTAMP (forecasts) e fallisce sui timestamp UTC non-zero
+        # (es. DST-transition days).
         self._conn.execute("""
-            UPDATE forecasts
-            SET
-                lead_time_h   = s.lead_time_h,
-                temp_c        = s.temp_c,
-                humidity_pct  = s.humidity_pct,
-                precip_mm     = s.precip_mm,
-                wind_speed_ms = s.wind_speed_ms,
-                wind_dir_deg  = s.wind_dir_deg,
-                wind_gust_ms  = s.wind_gust_ms,
-                pressure_hpa  = s.pressure_hpa
-            FROM _staging_forecasts s
-            WHERE forecasts.source      = s.source
-              AND forecasts.location_id = s.location_id
-              AND forecasts.ts_run      = s.ts_run
-              AND forecasts.ts_valid    = s.ts_valid
-        """)
-
-        # Inserisce righe nuove — subquery esplicita per dedup staging prima del NOT EXISTS.
-        # QUALIFY + NOT EXISTS ha ordine di valutazione ambiguo in DuckDB (DST corner case).
-        self._conn.execute("""
-            INSERT INTO forecasts (
+            INSERT OR REPLACE INTO forecasts (
                 source, location_id, ts_run, ts_valid, lead_time_h,
                 temp_c, humidity_pct, precip_mm,
                 wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa
@@ -208,13 +191,6 @@ class DuckDBClient:
                 FROM _staging_forecasts
             ) s
             WHERE s._rn = 1
-              AND NOT EXISTS (
-                  SELECT 1 FROM forecasts f
-                  WHERE f.source      = s.source
-                    AND f.location_id = s.location_id
-                    AND f.ts_run      = s.ts_run
-                    AND f.ts_valid    = s.ts_valid
-              )
         """)
 
         self._conn.execute("DROP TABLE IF EXISTS _staging_forecasts")
