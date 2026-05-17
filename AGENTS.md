@@ -105,34 +105,53 @@ Se ERA5 appare come input dinamico a un modello: **è un bug**.
 
 ## Sorgenti dati
 
-- **Open-Meteo Forecast + Historical Forecast API** — multi-modello (ECMWF, ICON-EU, GFS, AROME), gratis
-- **SIR Toscana** — storici osservativi validati
-- **CFR Toscana** — real-time (scraping HTML, niente API)
-- **ARPAT** — qualità aria
-- **RainViewer** — radar precipitazioni
+- **Open-Meteo Forecast + Historical Forecast API** — 6 modelli NWP: ECMWF IFS, ICON-EU, ICON-D2 (2.2km), GFS 0.25°, AROME France, ICON-2I (2.2km, assimila osservazioni italiane). `ecmwf_aifs025` rimosso: restituisce null su tutte le variabili.
+- **SIR Toscana** — storici osservativi validati. 34 stazioni: 21 operative, 13 upstream pluvio (ring features)
+- **ARPAT** — qualità aria (NO2, O3, PM10, PM2.5)
+- **RainViewer** — radar precipitazioni (solo frontend, Sprint 6)
 
 ## Struttura repo
+
+Struttura **flat** — un file per modulo, no package annidati.
 
 ```
 guazza/
 ├── AGENTS.md               # istruzioni di progetto (source of truth)
 ├── CLAUDE.md               # override Claude Code (importa @AGENTS.md)
-├── config/                 # yaml configurazione
-├── src/guazza/             # codice sorgente
-│   ├── ingestion/          # fetcher sorgenti dati
-│   ├── storage/            # DuckDB client + schema
-│   ├── features/           # feature engineering
-│   ├── models/             # LightGBM + CQR
-│   ├── indicators/         # Decision Logic Engine
-│   ├── evaluation/         # metriche, calibrazione, significatività
-│   ├── output/             # JSON writer
-│   └── jobs/               # entry point cron
-├── deploy/                 # nginx, caddy, crontab template
+├── config/
+│   ├── locations.yaml      # 4 location con stazioni SIR e upstream_pluvio_stations
+│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio)
+│   ├── indicators.yaml     # 9 indicatori DLE con soglie e costi
+│   ├── sources.yaml        # endpoint sorgenti dati
+│   └── arpat_levels.yaml   # livelli qualità aria D.Lgs.155/2010
+├── src/guazza/
+│   ├── schema.sql          # schema DuckDB (unico source of truth)
+│   ├── storage.py          # DuckDBClient, upsert_*, backfill_prediction_obs
+│   ├── fetchers.py         # SIR storico/realtime, Netatmo, Open-Meteo, ARPAT
+│   ├── weights.py          # pesi stazione→location, refresh_upstream_rings()
+│   ├── features.py         # build_features_daily() → tabella features_daily
+│   ├── models.py           # LightGBM quantile + CQR, train_all(), predict()
+│   ├── indicators.py       # Decision Logic Engine, evaluate_all(), log_results()
+│   ├── output.py           # build_signals(), compute_coverage_30d(), write_location_json()
+│   ├── qc.py               # quality control osservazioni SIR + ARPAT
+│   ├── _logging.py         # setup_logging() — TTY pretty / cron JSON
+│   └── jobs/
+│       ├── ingest.py       # cron: historical / daily / realtime / forecasts
+│       ├── features.py     # cron: features build / info
+│       ├── train.py        # one-shot: train run / train eval
+│       ├── predict.py      # cron: predict run → JSON + DLE
+│       ├── qc.py           # cron: qc run / qc report
+│       └── backup.py       # cron: backup su Cloudflare R2 (Sprint 7)
+├── data/
+│   ├── guazza.duckdb       # database analitico (non committato)
+│   ├── models/             # artefatti LightGBM pickle (non committati)
+│   └── output/             # JSON per il frontend (non committati)
+├── deploy/                 # nginx.conf, Caddyfile, crontab template
 ├── tests/
 └── docs/
-    ├── status.md           # stato corrente
+    ├── status.md           # stato corrente — leggere a inizio sessione
     ├── decisions.md        # decisioni architetturali motivate
-    └── known_issues.md     # problemi noti
+    └── known_issues.md     # problemi noti e workaround
 ```
 
 ## Guardrail operativi
@@ -267,7 +286,7 @@ Chiave formato `<sorgente>:<identificatore>`, senza suffissi `_batch`.
 **Niente duplicati**: dove c'è `_log_scrape`, il `logger.info` discorsivo non
 ripete le stesse informazioni (es. conteggio righe già in `rows=`).
 
-### Scraper fragili (CFR Toscana, ARPAT)
+### Scraper fragili (ARPAT)
 
 - `try/except` con `tenacity` exponential backoff (3 tentativi, delay 60s, 300s, 600s)
 - Ping Healthchecks.io a fine run riuscito
@@ -283,10 +302,32 @@ Ogni invocazione DLE deve produrre log in DuckDB (`indicator_log`):
 
 ### Output JSON — contract obbligatorio
 
+File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni `predict run`).
+
 ```json
-{"coverage_empirical_30d": {"temp_ci80": float, "temp_ci90": float}}
+{
+  "location_id": "casa_campi",
+  "generated_at": "2026-05-17T...",
+  "target_date": "2026-05-18",
+  "lead_time_h": 24,
+  "forecasts": {
+    "tmin_c":    {"p50": float, "ci80_lo": float, "ci80_hi": float, "ci90_lo": float, "ci90_hi": float},
+    "tmax_c":    {"p50": float, ...},
+    "precip_mm": {"p50": float, ...}
+  },
+  "indicators": {
+    "panni":    {"verdict": "verde|giallo|rosso", "rule_matched": "green|yellow|red|fallback"},
+    "motorino": {"verdict": "...", "rule_matched": "..."}
+  },
+  "coverage_empirical_30d": {
+    "tmin_ci80": float | null, "tmin_ci90": float | null,
+    "tmax_ci80": float | null, "tmax_ci90": float | null,
+    "precip_ci80": float | null, "precip_ci90": float | null
+  }
+}
 ```
-Rolling window 30 giorni. Se dati insufficienti → `null`, dashboard mostra "calibrazione in corso".
+
+`coverage_empirical_30d`: rolling 30 giorni predictions vs obs. `null` se < 10 campioni → dashboard mostra "calibrazione in corso".
 
 ### Qualità del codice
 
@@ -328,9 +369,26 @@ uv run ruff check src/ && uv run mypy src/
 
 # Ingestion manuale
 uv run python -m guazza.jobs.ingest historical --dry-run
+uv run python -m guazza.jobs.ingest historical --only-sir --location casa_campi
+uv run python -m guazza.jobs.ingest historical --only-openmeteo --om-model italia_meteo_arpae_icon_2i
 uv run python -m guazza.jobs.ingest daily
 uv run python -m guazza.jobs.ingest realtime
 uv run python -m guazza.jobs.ingest forecasts
+
+# Feature engineering
+uv run python -m guazza.jobs.features build
+uv run python -m guazza.jobs.features info
+
+# Pesi stazioni + ring upstream
+uv run python -m guazza.weights refresh
+
+# Training modello
+uv run python -m guazza.jobs.train run --db data/guazza.duckdb --model-dir data/models
+uv run python -m guazza.jobs.train eval --db data/guazza.duckdb
+
+# Predizioni + DLE + JSON output
+uv run python -m guazza.jobs.predict run --db data/guazza.duckdb --model-dir data/models --output-dir data/output
+uv run python -m guazza.jobs.predict run --db data/guazza.duckdb --model-dir data/models --output-dir data/output --dry-run
 
 # Quality control
 uv run python -m guazza.jobs.qc run
@@ -339,7 +397,18 @@ uv run python -m guazza.jobs.qc report
 
 # Validazione schema DuckDB
 uv run python -m guazza.storage verify-schema
+uv run python -m guazza.storage init-schema --db data/guazza.duckdb
 ```
+
+### Variabili d'ambiente rilevanti
+
+| Variabile | Default prod | Default locale |
+|---|---|---|
+| `DB_PATH` | `/var/lib/guazza/guazza.duckdb` | `data/guazza.duckdb` (flag `--db`) |
+| `MODEL_DIR` | `/var/lib/guazza/models` | `data/models` (flag `--model-dir`) |
+| `OUTPUT_DIR` | `/var/lib/guazza/output` | `data/output` (flag `--output-dir`) |
+| `HEALTHCHECKS_URL` | URL Healthchecks.io | non impostata → ping saltato |
+| `CONFIG_DIR` | `{repo}/config` | auto-rilevato da `__file__` |
 
 ## Regole di routing modelli — ottimizzazione costi
 
