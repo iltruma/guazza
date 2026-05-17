@@ -185,8 +185,15 @@ def _ingest_sir_historical_range(
                 _log_scrape(f"sir_historical:{sid}:{idst}", "ok", rows=len(filtered))
                 return (sid, idst, filtered)
             return None
+        except httpx.HTTPStatusError as e:
+            logger.opt(exception=True).error(
+                f"SIR historical [{sid}] {idst}: HTTP {e.response.status_code} "
+                f"su {e.request.url}"
+            )
+            _log_scrape(f"sir_historical:{sid}:{idst}", "fail", detail=f"HTTP {e.response.status_code}")
+            return None
         except Exception as e:
-            logger.error(f"[{sid}] {idst} fallito: {e}")
+            logger.opt(exception=True).error(f"SIR historical [{sid}] {idst} fallito: {e}")
             _log_scrape(f"sir_historical:{sid}:{idst}", "fail", detail=str(e))
             return None
 

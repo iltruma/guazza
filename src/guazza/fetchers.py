@@ -144,10 +144,14 @@ def _parse_value(raw: str, internal_name: str) -> float | None:
         return None
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=15))
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=15),
+    reraise=True,
+)
 def _fetch_sir_csv(station_id: str, sensor_type: str) -> str:
     logger.debug(f"SIR CSV fetch: {station_id} {sensor_type}")
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=60) as client:
         r = client.get(
             _SIR_BASE_URL,
             params={"IDST": sensor_type, "IDS": station_id},
