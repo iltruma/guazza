@@ -41,32 +41,38 @@ DB_PATH=/tmp/guazza_test.duckdb uv run python -m guazza.storage verify-schema
 
 ```
 guazza/
-├── config/                 # Configurazione YAML
-│   ├── locations.yaml      # 4 location con coordinate e stazioni SIR associate
-│   ├── indicators.yaml     # Soglie indicatori semaforo (DLE)
-│   ├── arpat_levels.yaml   # Scale qualità aria ARPAT (PM10, NO2, O3, ...)
-│   ├── sources.yaml        # Endpoint sorgenti dati e stato
-│   └── stations.yaml       # Anagrafica stazioni SIR e ARPAT
-├── src/guazza/             # Codice sorgente Python
-│   ├── fetchers.py         # Fetcher SIR (storico + realtime) + Netatmo + Open-Meteo + ARPAT
-│   ├── storage.py          # DuckDB client + upsert wide
-│   ├── weights.py          # Calcolo pesi stazioni per location
-│   ├── features.py         # Feature engineering — tabella features_daily
-│   ├── indicators.py       # Decision Logic Engine (DLE)
-│   ├── qc.py               # Quality control osservazioni (SIR + ARPAT)
-│   ├── models.py           # ML LightGBM + CQR (placeholder Sprint 4)
-│   ├── output.py           # JSON writer (placeholder Sprint 5)
-│   ├── schema.sql          # Schema DuckDB (unica source of truth)
+├── config/
+│   ├── locations.yaml      # 4 location con stazioni SIR e upstream_pluvio_stations
+│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio ring)
+│   ├── indicators.yaml     # 9 indicatori DLE con soglie e costi asimmetrici
+│   ├── arpat_levels.yaml   # Scale qualità aria D.Lgs.155/2010
+│   └── sources.yaml        # Endpoint sorgenti dati e stato
+├── src/guazza/
+│   ├── schema.sql          # Schema DuckDB — unica source of truth
+│   ├── storage.py          # DuckDBClient, upsert bulk Arrow, backfill_prediction_obs
+│   ├── fetchers.py         # SIR storico/realtime, Netatmo, Open-Meteo (6 modelli), ARPAT
+│   ├── weights.py          # Pesi stazione→location, ring upstream pluvio
+│   ├── features.py         # build_features_daily() — 50 feature, tabella materializzata
+│   ├── models.py           # LightGBM quantile + CQR, train_all(), predict()
+│   ├── indicators.py       # Decision Logic Engine: evaluate_all(), log_results()
+│   ├── output.py           # build_signals(), compute_coverage_30d(), write_location_json()
+│   ├── qc.py               # Quality control osservazioni SIR + ARPAT
+│   ├── _logging.py         # setup_logging() — TTY pretty / cron JSON strutturato
 │   └── jobs/
-│       ├── ingest.py       # Entry point cron: historical/daily/realtime/forecasts
-│       ├── features.py     # CLI build/info features_daily
-│       ├── qc.py           # QC run/report CLI
-│       ├── predict.py      # Entry point cron predizioni (placeholder Sprint 5)
-│       └── backup.py       # Backup DuckDB su R2 (placeholder Sprint 7)
-├── deploy/                 # Template nginx, crontab
-├── tests/                  # Test pytest
+│       ├── ingest.py       # Cron: historical / daily / realtime / forecasts
+│       ├── features.py     # CLI: features build / info
+│       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
+│       ├── predict.py      # Cron: predict run → DuckDB + DLE + JSON output
+│       ├── qc.py           # Cron: qc run / qc report
+│       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 7)
+├── data/
+│   ├── guazza.duckdb       # Database analitico (non committato)
+│   ├── models/             # Artefatti LightGBM pickle (non committati)
+│   └── output/             # JSON per il frontend (non committati)
+├── deploy/                 # nginx.conf, Caddyfile, crontab template
+├── tests/
 └── docs/
-    ├── status.md           # Stato corrente (aggiornare ogni sessione)
+    ├── status.md           # Stato corrente — leggere a inizio sessione
     ├── decisions.md        # Decisioni architetturali motivate
     └── known_issues.md     # Problemi noti + workaround
 ```
@@ -77,12 +83,12 @@ guazza/
 
 | Sprint | Obiettivo | Stato |
 |---|---|---|
-| Sprint 0 | Ricognizione sorgenti, config stazioni, struttura repo | Completato |
-| Sprint 1 | Ingestion SIR + Netatmo + Open-Meteo + ARPAT, schema DuckDB, job cron | Completato |
-| Sprint 2 | Backfill SIR pre-2022, quality control (SIR + ARPAT), flag qualità | Completato |
-| Sprint 3 | Feature engineering, training set materializzato | Completato |
-| Sprint 4 | LightGBM quantile, CQR, benchmark NWP | — |
-| Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | — |
+| Sprint 0 | Ricognizione sorgenti, config stazioni, struttura repo | ✅ Completato |
+| Sprint 1 | Ingestion SIR + Netatmo + Open-Meteo + ARPAT, schema DuckDB, job cron | ✅ Completato |
+| Sprint 2 | Backfill SIR pre-2022, quality control (SIR + ARPAT), flag qualità | ✅ Completato |
+| Sprint 3 | Feature engineering, 50 feature, ring upstream pluvio | ✅ Completato |
+| Sprint 4 | LightGBM quantile + CQR, skill +25% vs NWP su temperatura | ✅ Completato |
+| Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
 | Sprint 6 | Frontend HTML+JS vanilla | — |
 | Sprint 7 | Deploy VPS, backup R2, crontab | — |
 | Sprint 8 | Model monitoring, coverage alert | — |
@@ -105,11 +111,13 @@ Vedi `docs/decisions.md` per motivazioni complete.
 
 ---
 
-## Job di ingestion
+## Pipeline operativa
+
+### Ingestion
 
 ```bash
-# Backfill one-shot (eseguire una volta per caricare lo storico)
-uv run python -m guazza.jobs.ingest historical --start-date 2022-01-01
+# Backfill storico one-shot (SIR + Open-Meteo 2022→oggi)
+uv run python -m guazza.jobs.ingest historical
 
 # Delta giornaliero — schedulare a 06:00 UTC
 uv run python -m guazza.jobs.ingest daily
@@ -119,16 +127,40 @@ uv run python -m guazza.jobs.ingest realtime
 
 # Forecast NWP — schedulare ogni 6h (02/08/14/20 UTC)
 uv run python -m guazza.jobs.ingest forecasts
+```
 
-# Quality control — ricalcolo flag qualità (idempotente)
-uv run python -m guazza.jobs.qc run
-uv run python -m guazza.jobs.qc run --dry-run
-uv run python -m guazza.jobs.qc report
+### Feature engineering + training
 
-# Opzioni comuni
---dry-run          # Simula senza scrivere
---db PATH          # Path file DuckDB (default: /var/lib/guazza/guazza.duckdb)
---config-dir PATH  # Directory YAML config
+```bash
+# Ricostruisce features_daily (da eseguire dopo ogni ingest)
+uv run python -m guazza.jobs.features build
+
+# Pesi stazioni + ring upstream pluvio
+uv run python -m guazza.weights refresh
+
+# Training LightGBM + CQR (one-shot o dopo backfill significativi)
+uv run python -m guazza.jobs.train run --db data/guazza.duckdb --model-dir data/models
+
+# Walk-forward CV con metriche
+uv run python -m guazza.jobs.train eval --db data/guazza.duckdb
+```
+
+### Predizioni + indicatori
+
+```bash
+# Genera predizioni quantile + DLE + JSON (schedulare ogni 6h dopo il job forecasts)
+uv run python -m guazza.jobs.predict run --db data/guazza.duckdb \
+    --model-dir data/models --output-dir data/output
+```
+
+Output: `data/output/{location_id}.json` con CI80/CI90 per tmin/tmax/precip,
+9 indicatori semaforo (panni, motorino, gelata, ...) e `coverage_empirical_30d`.
+
+### Opzioni comuni
+
+```bash
+--dry-run    # Simula senza scrivere
+--db PATH    # Path DuckDB (default prod: /var/lib/guazza/guazza.duckdb)
 ```
 
 Variabile d'ambiente `HEALTHCHECKS_URL` per il ping dead-man switch.
@@ -150,7 +182,19 @@ DB_PATH=/var/lib/guazza/guazza.duckdb uv run python -m guazza.storage init-schem
 # 4. Backfill storico (lento — SIR + Open-Meteo 2022→oggi)
 uv run python -m guazza.jobs.ingest historical
 
-# 5. Installa crontab sul VPS
+# 5. Pesi stazioni + ring upstream
+uv run python -m guazza.weights refresh
+
+# 6. Feature engineering
+uv run python -m guazza.jobs.features build
+
+# 7. Training modello
+uv run python -m guazza.jobs.train run
+
+# 8. Prima previsione
+uv run python -m guazza.jobs.predict run
+
+# 9. Installa crontab sul VPS
 crontab deploy/crontab.template
 ```
 
@@ -170,11 +214,10 @@ uv run mypy src/
 
 | Sorgente | Uso | Accesso |
 |---|---|---|
-| Open-Meteo Forecast + Historical | Predittori NWP, backfill training | API pubblica, no key |
-| SIR Toscana | Ground truth osservazioni validate | Open Data |
+| Open-Meteo Forecast + Historical | 6 modelli NWP (ECMWF, ICON-EU, ICON-D2, GFS, AROME, ICON-2I) | API pubblica, no key |
+| SIR Toscana | Ground truth osservazioni validate, 34 stazioni | Open Data |
 | Netatmo | Osservazioni iperlocali real-time | OAuth2 |
-| ARPAT Toscana | Qualità aria | JSON pubblico |
-| CFR Toscana | Allerte meteo | Scraping HTML |
+| ARPAT Toscana | Qualità aria (NO2, O3, PM10, PM2.5) | JSON pubblico |
 
 Per la lista completa con endpoint e stato: `config/sources.yaml`.
 
