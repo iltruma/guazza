@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-16
+> Aggiornato: 2026-05-17
 
 ## Cosa è stato fatto
 
@@ -85,6 +85,8 @@ Flag aggiuntivi in `historical` e `daily`:
 - `--only-sir`, `--only-openmeteo`, `--only-arpat`: esecuzione selettiva per sorgente
   (`daily` espone solo `--only-sir` e `--only-openmeteo`)
 - `--location <id>`: limita a una o più location (ripetibile)
+- `--om-model <nome>`: limita Open-Meteo a uno o più modelli specifici (ripetibile). Es:
+  `historical --only-openmeteo --om-model italia_meteo_arpae_icon_2i`
 
 ### Logging (completato — 2026-05-15)
 - Loguru configurato con `serialize=True` su stdout nei comandi CLI (`_setup_logging()`)
@@ -96,7 +98,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **166 test**, tutti verdi
+- **165 test** (escluso test_models non committato), tutti verdi
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -163,6 +165,11 @@ Il parsing è difensivo (supporta più formati), ma da verificare al primo run s
 il backfill Open-Meteo ha salvato solo il run più recente per valid time, non la storia dei run.
 In produzione il fetch giornaliero accumulerà run a distanze crescenti. Da verificare dopo
 il primo mese di operatività sul VPS (Sprint 7).
+
+**Fix same-day (2026-05-17)**: il SQL di `build_features_daily` gestisce correttamente
+`lead_time_days=0` (backfill storico: ts_run e ts_valid sullo stesso giorno). Questi record
+vengono aggregati sull'intera giornata (tmin=MIN, tmax=MAX, precip=SUM) con ts_run collassato
+a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 
 🟡 **Punto aperto — feature upstream pluviometriche**: aggiungere stazioni Lucca/Pistoia/Versilia
 a `stations.yaml` come `upstream_pluvio` (senza `used_by`) e rieseguire `features build`.
