@@ -64,10 +64,18 @@ def _is_retryable_http(exc: BaseException) -> bool:
         return exc.response.status_code == 429 or exc.response.status_code >= 500
     return True
 
+# ── User-Agent comune ────────────────────────────────────────────────────────
+
+_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/125.0.0.0 Safari/537.36"
+)
+
 # ── Costanti SIR ────────────────────────────────────────────────────────────
 
 _SIR_BASE_URL = "https://www.sir.toscana.it/archivio/download.php"
-_SIR_HEADERS = {"X-Requested-With": "XMLHttpRequest"}
+_SIR_HEADERS = {"X-Requested-With": "XMLHttpRequest", "User-Agent": _UA}
 _SIR_DELAY = 1.2
 
 _WIND_DIR_DEG: dict[str, float] = {
@@ -275,6 +283,7 @@ _SIR_REALTIME_BASE = "https://www.sir.toscana.it/monitoraggio"
 _SIR_RT_HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
     "Referer": "https://www.sir.toscana.it/",
+    "User-Agent": _UA,
 }
 
 # Formati data noti nella risposta SIR realtime
@@ -864,14 +873,7 @@ def _log_http_error(retry_state: RetryCallState) -> None:
 )
 def _fetch_om_json_historical(url: str, params: dict[str, str | int | float | list[str]]) -> dict[str, Any]:
     logger.debug(f"Open-Meteo historical fetch: {url} params={params}")
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/125.0.0.0 Safari/537.36"
-        )
-    }
-    with httpx.Client(timeout=90, headers=headers) as client:
+    with httpx.Client(timeout=90, headers={"User-Agent": _UA}) as client:
         r = client.get(url, params=params)
         r.raise_for_status()
     return r.json()  # type: ignore[no-any-return]
@@ -1302,7 +1304,7 @@ _ARPAT_BOLL_VAR_MAP: dict[str, str | None] = {
 )
 def _fetch_arpat_json(url: str, params: dict[str, str] | None = None) -> Any:
     """Fetch JSON da endpoint ARPAT con retry (backoff 60s/300s/600s)."""
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=30, headers={"User-Agent": _UA}) as client:
         r = client.get(url, params=params)
         r.raise_for_status()
     return r.json()
