@@ -42,6 +42,7 @@ load_dotenv(_REPO_ROOT / ".env")
 
 from guazza._logging import setup_logging  # noqa: E402
 from guazza.fetchers import (  # noqa: E402
+    _OM_MODELS,
     _log_scrape,
     fetch_arpat_all_locations,
     fetch_arpat_bollettini_range,
@@ -249,6 +250,7 @@ def cmd_historical(
     only_openmeteo: bool = typer.Option(False, "--only-openmeteo", help="Scarica solo Open-Meteo, salta SIR e ARPAT"),
     only_arpat: bool = typer.Option(False, "--only-arpat", help="Scarica solo ARPAT bollettini, salta SIR e Open-Meteo"),
     location: list[str] | None = typer.Option(None, "--location", help="Limita a questa location (ripetibile)"),
+    om_model: list[str] | None = typer.Option(None, "--om-model", help="Limita Open-Meteo a questo modello (ripetibile). Es: --om-model italia_meteo_arpae_icon_2i"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Stampa cosa farebbe senza scrivere"),
 ) -> None:
     """Backfill completo: SIR CSV + Open-Meteo historical + ARPAT bollettini (one-shot, lento).
@@ -274,6 +276,12 @@ def cmd_historical(
     if exclusive > 1:
         typer.echo("Errore: --only-sir, --only-openmeteo, --only-arpat sono mutualmente esclusivi.")
         raise typer.Exit(1)
+    if om_model:
+        unknown_models = set(om_model) - set(_OM_MODELS)
+        if unknown_models:
+            typer.echo(f"Errore: modelli sconosciuti: {sorted(unknown_models)}")
+            typer.echo(f"Disponibili: {_OM_MODELS}")
+            raise typer.Exit(1)
     if not end_date:
         end_date = datetime.now(tz=UTC).strftime("%Y-%m-%d")
 
@@ -341,6 +349,7 @@ def cmd_historical(
                     locations=locations,
                     start_date=start_date,
                     end_date=om_end_date,
+                    models=om_model or None,
                 )
                 for _loc_id, model_results in results_all.items():
                     for _model, records in model_results.items():
@@ -386,6 +395,7 @@ def cmd_daily(
     only_sir: bool = typer.Option(False, "--only-sir", help="Scarica solo SIR CSV, salta Open-Meteo"),
     only_openmeteo: bool = typer.Option(False, "--only-openmeteo", help="Scarica solo Open-Meteo, salta SIR"),
     location: list[str] | None = typer.Option(None, "--location", help="Limita a questa location (ripetibile)"),
+    om_model: list[str] | None = typer.Option(None, "--om-model", help="Limita Open-Meteo a questo modello (ripetibile)"),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
     """Delta incrementale giornaliero: SIR CSV + Open-Meteo per il giorno indicato.
@@ -443,6 +453,7 @@ def cmd_daily(
                     locations=locations,
                     start_date=date,
                     end_date=date,
+                    models=om_model or None,
                 )
                 for _loc_id, model_results in results_all.items():
                     for _model, records in model_results.items():
