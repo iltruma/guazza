@@ -68,25 +68,39 @@ climatology AS (
     GROUP BY location_id, MONTH(obs_date)
 ),
 
--- ── 3. NWP orario → aggregato giornaliero per run ────────────────────────────
--- lead_time_h = ore da ts_run a mezzanotte di target_date (sempre > 0).
--- Esclusi i run dello stesso giorno di target_date (ts_valid::DATE = ts_run::DATE
--- produce lead_time_h = 0 o negativo, non utili per forecast giornaliero).
+-- ── 3. NWP orario → aggregato giornaliero ────────────────────────────────────
+-- lead_time_h = giorni interi da ts_run::DATE a target_date × 24.
+-- Dati same-day (backfill storico): ts_run::DATE = ts_valid::DATE → lead_time_h=0.
+--   Il run nominale cambia ogni 6h (ECMWF) o 3h (ICON-D2), quindi per un dato
+--   target_date esistono più ts_run sullo stesso giorno. Si aggrega tutto il giorno
+--   ignorando ts_run (CASE → NULL nel GROUP BY) per ottenere tmin/tmax/precip
+--   sull'intera giornata, coerente con le osservazioni SIR.
+-- Dati multi-day (forecast cron in produzione): ts_valid::DATE > ts_run::DATE
+--   → lead_time_h = 24, 48, ... Group by ts_run reale; last_run dedup sceglie
+--   il run più recente per ogni (source, location, target_date, lead_time_h).
 daily_nwp AS (
     SELECT
-        source,
-        location_id,
-        ts_run,
-        ts_valid::DATE                                          AS target_date,
-        DATEDIFF('hour', ts_run, ts_valid::DATE::TIMESTAMP)     AS lead_time_h,
+        source, location_id,
+        CASE WHEN lead_time_days > 0 THEN ts_run ELSE NULL END AS ts_run,
+        target_date,
+        lead_time_days * 24 AS lead_time_h,
         MIN(temp_c)        AS tmin_c,
         MAX(temp_c)        AS tmax_c,
         SUM(precip_mm)     AS precip_mm,
         AVG(humidity_pct)  AS humidity_pct,
         AVG(wind_speed_ms) AS wind_ms
-    FROM forecasts
-    WHERE ts_valid::DATE > ts_run::DATE
-    GROUP BY source, location_id, ts_run, ts_valid::DATE
+    FROM (
+        SELECT
+            source, location_id, ts_run,
+            ts_valid::DATE                                    AS target_date,
+            DATEDIFF('day', ts_run::DATE, ts_valid::DATE)    AS lead_time_days,
+            temp_c, precip_mm, humidity_pct, wind_speed_ms
+        FROM forecasts
+        WHERE ts_valid >= ts_run
+    )
+    GROUP BY
+        source, location_id, target_date, lead_time_days,
+        CASE WHEN lead_time_days > 0 THEN ts_run ELSE NULL END
 ),
 
 -- ── 4. Ultimo run per (source, location_id, target_date, lead_time_h) ─────────
