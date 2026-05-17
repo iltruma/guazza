@@ -1171,7 +1171,7 @@ def fetch_openmeteo_historical_batch(
     I modelli vengono fetchati in parallelo con ThreadPoolExecutor(3).
     Ogni modello divide la propria richiesta in chunk temporali per evitare
     timeout lato server: modelli ad alta risoluzione (icon_d2, arome_france)
-    usano chunk da 90gg; altri (ecmwf_ifs, ecmwf_aifs025, icon_eu, gfs025)
+    usano chunk da 90gg; altri (ecmwf_ifs, icon_eu, gfs025)
     usano 180gg.
 
     Returns:

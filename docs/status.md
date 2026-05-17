@@ -59,7 +59,7 @@ la stessa PK. Valori: `daily`, `realtime`, `hourly` (riservato).
 - **B11** `schema.sql` + storage + fetchers: `precip_interval_h` + `granularity` in PK
 
 ### Ingestion Open-Meteo (completato — 2026-05-16)
-- `fetch_openmeteo_forecast`: fetch live multi-modello (ecmwf_ifs, ecmwf_aifs025, icon_eu, icon_d2, gfs025, arome_france).
+- `fetch_openmeteo_forecast`: fetch live multi-modello (ecmwf_ifs, icon_eu, icon_d2, gfs025, arome_france, italia_meteo_arpae_icon_2i). `ecmwf_aifs025` rimosso: null su tutte le variabili (KI-011).
 - `fetch_openmeteo_historical`: backfill storico (Historical Forecast API, 2022+).
 - **Batching Coordinate**: Implementato l'invio di multiple coordinate in una singola chiamata API. Ridotti i round-trip HTTP del 75%.
 - **Temporal Chunking**: Aggiunto frazionamento delle richieste storiche (chunk di 180 giorni) per evitare timeout lato server su modelli ad alta risoluzione.

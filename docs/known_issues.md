@@ -5,6 +5,32 @@
 
 ---
 
+## KI-011 — ecmwf_aifs025 restituisce null su tutte le variabili via Open-Meteo
+
+**Severità**: informativa (modello rimosso dallo stack)
+**Stato**: risolto — modello escluso da `_OM_MODELS`
+
+**Problema**: Open-Meteo espone `ecmwf_aifs025` come modello disponibile, ma
+restituisce `null` per tutte le variabili orarie (temperatura, precipitazione,
+umidità, vento). Verificato su più location e date nel maggio 2026.
+Il modello è probabilmente non ancora integrato nell'archivio Historical
+Forecast API di Open-Meteo, o ha un nome diverso internamente.
+
+**Risoluzione**: `ecmwf_aifs025` rimosso da `_OM_MODELS` in `fetchers.py`.
+Non incluso nel pivot `features_daily`. Eventuali righe già presenti nel DB
+con `source = 'open_meteo_ecmwf_aifs025'` hanno tutte le colonne metriche
+a NULL e possono essere cancellate (vedi nota DB sotto).
+
+**Nota DB**: se il backfill storico è già stato eseguito con AIFS attivo,
+eliminare le righe con:
+```sql
+DELETE FROM forecasts WHERE source = 'open_meteo_ecmwf_aifs025';
+```
+La pulizia è consigliata ma non bloccante — le righe null non influenzano
+il training perché il pivot SQL non referenzia quella sorgente.
+
+---
+
 ## KI-001 — SIR realtime richiede header Referer
 
 **Severità**: alta (blocca scraping se assente)

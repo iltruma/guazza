@@ -217,9 +217,10 @@ termica nella piana di Campi o Scandicci).
 **Decisione**:
 - Sostituire `ecmwf_ifs025` (25 km) con `ecmwf_ifs` (HRES, 9 km). Stessa fisica, orografia molto più dettagliata.
 - Aggiungere `icon_d2` (2.2 km). Modello convective-permitting del DWD che copre il Centro-Nord Italia, fondamentale per la dinamica locale.
-- Mantenere `ecmwf_aifs025` per diversità metodologica (AI-based).
+- Scartare `ecmwf_aifs025`: Open-Meteo restituisce null per tutte le variabili (vedi KI-011).
 - Mantenere `arome_france` (2.5 km) e `icon_eu` (7 km) come modelli ad alta risoluzione.
+- Aggiungere `italia_meteo_arpae_icon_2i` (2.2 km, ItaliaMeteo/ARPAE): unico modello che assimila osservazioni italiane, orizzonte 72h.
 
-**Conseguenza**: il dataset di training `features_daily` passa da 5 a 6 modelli
-NWP, aumentando la robustezza dell'ensemble probabilistico. Necessario
-rieseguire il backfill `historical` per i nuovi modelli.
+**Conseguenza**: il dataset di training `features_daily` usa 6 modelli NWP
+(ecmwf_ifs, icon_eu, icon_d2, gfs025, arome_france, icon_2i).
+Necessario rieseguire il backfill `historical` per i nuovi modelli.
