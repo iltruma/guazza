@@ -94,6 +94,66 @@ Skill temperature +25–27% vs NWP ensemble. CQR coverage ~0.90 su target 90%.
 
 ---
 
+## [0.3.0] — 2026-05-16
+
+Sprint 3 completato: feature engineering + QC migliorato.
+Training set materializzato in DuckDB con 44 feature (NWP, ensemble stats, obs, climatologia, calendario).
+
+### Added
+- **`features.py`**: `build_features_daily()` — tabella `features_daily` con schema
+  `(location_id, target_date, lead_time_h)`, 4 modelli NWP × 5 variabili, ensemble mean/spread,
+  obs SIR pesate del giorno precedente (lookahead-safe), climatologia mensile multi-anno,
+  features calendario (month, day_of_year)
+- **`jobs/features.py`**: CLI `features build` e `features info`
+- **QC ARPAT** in `qc.py`: 4 nuovi flag — `range_pm10_high`, `range_pm25_high`,
+  `range_no2_high`, `range_o3_high`
+- **QC realtime precip**: `range_precip_high` esteso a `granularity='realtime'`
+- **`--dry-run`** in `jobs/qc.py run`
+
+### Changed
+- `compute_quality_flags`: ora in `BEGIN TRANSACTION` / `COMMIT` / `ROLLBACK`
+- `compute_quality_flags`: restituisce breakdown dict per tipo flag; il job logga il dettaglio
+
+### Fixed
+- Progress bar nested su fetch storico Open-Meteo; logging aligned tra tutti i fetcher
+- `storage.py`: `INSERT OR REPLACE` sostituisce UPDATE+INSERT NOT EXISTS in `upsert_forecasts`
+
+---
+
+## [0.2.0] — 2026-05-16
+
+Sprint 1b (ARPAT qualità aria), Sprint 2b (backfill SIR pre-2022) e Sprint 2c (QC) completati.
+
+### Added
+- **`fetchers.py`** — ARPAT: `fetch_arpat_nrt()` (valori orari NO2/O3, `granularity='hourly'`),
+  `fetch_arpat_bollettini()` (PM10/PM2.5 giornalieri, `granularity='daily'`),
+  `fetch_arpat_all_locations()` (wrapper multi-location)
+- **`config/arpat_levels.yaml`**: scale qualità aria D.Lgs.155/2010 (PM10, PM2.5, NO2, O3, CO, benzene, SO2)
+- **`jobs/ingest.py`**: integrazione ARPAT in `realtime` (NRT) e `daily` (bollettini);
+  parallelizzazione fetch SIR + Open-Meteo con `ThreadPoolExecutor`
+- **Sprint 2b**: backfill SIR CSV oltre il 2022 — endpoint `download.php` supporta date precedenti
+- **`quality_flags`** in `schema.sql`: tabella spike/range con flag per SIR e ARPAT
+- **`qc.py`**: `compute_quality_flags()` — 4 flag SIR (`spike_tmin`, `spike_tmax`,
+  `inversion_temp`, `range_precip_high`)
+- **`jobs/qc.py`**: CLI `qc run` e `qc report`
+- **`--only-sir`**, **`--only-openmeteo`**, **`--only-arpat`**, **`--location`**:
+  flag selettivi in `historical` e `daily`
+- **`load_dotenv`** in `ingest.py` per `DB_PATH` locale
+
+### Changed
+- `upsert_sir_observations`: refactoring da `executemany` a staging table con dedup
+- Dati pre-2004 eliminati (31.918 righe): pluviometro SIR non disponibile prima del 2004
+- CFR Toscana rimosso da `sources.yaml` (coperto da SIR idrometria)
+
+### Fixed
+- Parser ARPAT bollettini + NRT adattato al formato reale API (`{"stazioni": [...]}`)
+- Endpoint ARPAT aggiornato a `api.arpat.toscana.it`
+- `upsert_sir_observations`: dedup batch prima di `executemany` (previene violazioni PK)
+- Chunk dinamico per modello ad alta risoluzione (ICON-D2, AROME: 90gg; altri: 180gg)
+- Rispetto di `Retry-After` su 429 Open-Meteo Historical
+
+---
+
 ## [0.1.0] — 2026-05-15
 
 Prima versione stabile dello Sprint 1: ingestion completa (SIR + Netatmo + Open-Meteo),
@@ -146,7 +206,11 @@ Bootstrap iniziale del progetto.
 - `docs/known_issues.md`: problemi noti e workaround
 - Agenti subagent per collaborazione multi-modello (Claude, Kimi)
 
-[Unreleased]: https://github.com/cosimo/guazza/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/cosimo/guazza/compare/v0.1.0...v0.4.0
+[Unreleased]: https://github.com/cosimo/guazza/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/cosimo/guazza/compare/v0.4.0...v0.5.0
+[0.4.1]: https://github.com/cosimo/guazza/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/cosimo/guazza/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/cosimo/guazza/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/cosimo/guazza/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cosimo/guazza/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/cosimo/guazza/releases/tag/v0.0.1
