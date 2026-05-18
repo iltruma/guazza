@@ -324,7 +324,7 @@ function renderDayStrip(days, activeDayIdx) {
   </div>`;
 
   const rows = days.map((day, idx) => {
-    const { target_date, forecasts: fc, indicators } = day;
+    const { target_date, lead_time_h, forecasts: fc, indicators } = day;
     const dots = Object.entries(indicators).map(([id, ind]) => {
       const meta = INDICATOR_META[id] ?? { label: id };
       const cls = VERDICT_CLASS[ind.verdict] ?? 'unknown';
