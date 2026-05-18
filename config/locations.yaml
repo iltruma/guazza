@@ -156,6 +156,45 @@ locations:
       Netatmo risolve il gap: stazione a 0.81km ΔQ=-15m con pioggia.
       Idro Arno a Incisa (11.1km): monitoraggio indicativo, non allerta locale.
 
+  casa_nicco:
+    upstream_pluvio_stations:
+      - TOS11000503   # Vaiano acquedotto     ~21km NW
+      - TOS01001273   # Fattoria Iavello      ~19km NW
+      - TOS11000093   # Santomato             ~20km NW
+      - TOS11000077   # Albano                ~33km W
+    label: "Casa Nicco - Firenze"
+    address: "Firenze (FI)"
+    lat: 43.791
+    lon: 11.219
+    elevation_m: 40
+    # SIR primaria: Firenze Università (Novoli) — ~1km, 84m, ΔQ=+44m
+    sir_station_id: TOS01001096
+    sir_stations:
+      termo:  [TOS03001097, TOS01001096, TOS01001215, TOS01001225]
+      # Orto Botanico 3.6km ΔQ+8m | Firenze Università ~1km ΔQ+44m | S. Giusto ΔQ+2m | Case Passerini ΔQ-7m
+      pluvio: [TOS01001096, TOS03001097, TOS01001215, TOS01004811]
+      anemo:  [TOS01001096, TOS01001215, TOS03001099, TOS01001225]
+      # Orto Botanico esclusa: no anemometro
+      igro:   [TOS03001097, TOS01001096, TOS01001215, TOS01001225]
+    arpat_station_id: FI-MOSSE
+    arpat_stations:
+      - id: FI-MOSSE
+        weight: 0.50
+      - id: FI-BOBOLI
+        weight: 0.30
+      - id: FI-GRAMSCI
+        weight: 0.15
+      - id: FI-LAVAGNINI
+        weight: 0.05
+    arpat_zone: "agglomerato_firenze"
+    extras:
+      - aria_qualita
+    notes: >
+      Firenze Novoli, pianura urbana 40m.
+      SIR primaria: Firenze Università (TOS01001096) ~1km ΔQ+44m — più vicina, set sensori completo.
+      Termo pesato su Orto Botanico (TOS03001097) ΔQ+8m come prima scelta per temperatura.
+      Nessuna stazione idrometrica assegnata.
+
 # ── Metadati globali ────────────────────────────────────────────────────────
 metadata:
   coordinate_source: "geocoding manuale"

@@ -95,7 +95,7 @@ sir_stations:
     hysto: true
     type: meteo
     sensors: [termometro, igrometro, anemometro, pluviometro, radiometro_solare]
-    used_by: [lavoro_cosimo]
+    used_by: [lavoro_cosimo, casa_nicco]
 
   TOS03001097:
     nome: "Firenze Orto Botanico"
@@ -106,7 +106,7 @@ sir_stations:
     hysto: true
     type: meteo
     sensors: [termometro, igrometro, pluviometro, radiometro_solare]
-    used_by: [lavoro_cosimo]
+    used_by: [lavoro_cosimo, casa_nicco]
     notes: "NO anemometro — esclusa da lista anemo."
 
   TOS01001096:
@@ -118,7 +118,8 @@ sir_stations:
     hysto: true
     type: meteo
     sensors: [termometro, igrometro, anemometro, pluviometro, radiometro_diretta]
-    used_by: [lavoro_cosimo]
+    used_by: [lavoro_cosimo, casa_nicco]
+    notes: "Stazione primaria casa_nicco (Novoli, ~1km). ΔQ=+44m."
 
   TOS01001269:
     nome: "La Ferruccia"
@@ -498,4 +499,37 @@ arpat_stations:
     sensors_daily: [BENZENE, CO, NO2, PM10, PM2.5]
     used_by: [casa_cesto]
     notes: "Stazione industriale ENEL, ~8km. Unica fonte PM2.5 e BENZENE per area Valdarno."
+
+  FI-MOSSE:
+    nome: "Firenze Le Mosse"
+    comune: "Firenze (FI)"
+    zona_omogenea: "Agglomerato di Firenze"
+    sensors_nrt:   [NO2, PM10]
+    sensors_daily: [NO2, PM10, PM2.5]
+    used_by: [casa_nicco]
+    notes: "Novoli, stazione più vicina a casa_nicco. Primaria ARPAT."
+
+  FI-BOBOLI:
+    nome: "Firenze Boboli"
+    comune: "Firenze (FI)"
+    zona_omogenea: "Agglomerato di Firenze"
+    sensors_nrt:   [NO2, O3]
+    sensors_daily: [NO2, O3, PM10]
+    used_by: [casa_nicco]
+
+  FI-GRAMSCI:
+    nome: "Firenze Gramsci"
+    comune: "Firenze (FI)"
+    zona_omogenea: "Agglomerato di Firenze"
+    sensors_nrt:   [NO2, CO]
+    sensors_daily: [NO2, CO, PM10]
+    used_by: [casa_nicco]
+
+  FI-LAVAGNINI:
+    nome: "Firenze Lavagnini"
+    comune: "Firenze (FI)"
+    zona_omogenea: "Agglomerato di Firenze"
+    sensors_nrt:   [NO2]
+    sensors_daily: [NO2, PM10]
+    used_by: [casa_nicco]
 

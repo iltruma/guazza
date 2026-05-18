@@ -8,6 +8,7 @@ const LOCATIONS = [
   { id: 'lavoro_cosimo', label: 'Lav. Cosimo' },
   { id: 'lavoro_madda',  label: 'Lav. Madda' },
   { id: 'casa_cesto',    label: 'Casa Cesto' },
+  { id: 'casa_nicco',    label: 'Casa Nicco' },
 ];
 
 const INDICATOR_META = {
