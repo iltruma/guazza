@@ -261,15 +261,24 @@ Preferire commit atomici (un task = un commit). Se il task ha sotto-step, un com
 ## Come lavorare
 
 1. **Leggere `docs/status.md`** a inizio sessione
-2. **Un task alla volta** — non saltare avanti se ci sono dipendenze non risolte
-3. **Fermarsi sui punti aperti** — non inventare valori per soglie, coordinate, o endpoint non testati. Segnalare e proporre un default. Aspettare conferma se bloccante.
-4. **Test prima di considerare completato** — almeno happy path + edge case principale
-5. **Codice tipato** — type hints ovunque, mypy deve passare. `pydantic v2` solo ai
+2. **Risposte dirette, senza preambolo** — niente "Certo! Ecco come possiamo procedere...",
+   niente riepilogo di ciò che hai appena fatto, niente spiegazioni ovvie. Dai subito la
+   risposta o proponi subito il piano. Se il codice è nei file, non ripeterlo nel testo.
+3. **Un task alla volta** — non saltare avanti se ci sono dipendenze non risolte
+4. **Fermarsi sui punti aperti** — non inventare valori per soglie, coordinate, o endpoint non testati. Segnalare e proporre un default. Aspettare conferma se bloccante.
+5. **Test prima di considerare completato** — almeno happy path + edge case principale
+6. **Codice tipato** — type hints ovunque, mypy deve passare. `pydantic v2` solo ai
    boundary di sistema (validazione config YAML in ingresso, JSON di output verso il
    frontend); `@dataclass` per gli oggetti interni fidati — non validare codice interno
-6. **Aggiornare `docs/known_issues.md`** se si trovano workaround non ovvi
-7. **Suggerire aggiornamento a `docs/status.md`** a fine sessione
-8. Non assumere che l'ambiente sia pulito — verificare che i test passino prima di nuove feature
+7. **Aggiornare `docs/known_issues.md`** se si trovano workaround non ovvi
+8. **Suggerire aggiornamento a `docs/status.md`** a fine sessione
+9. Non assumere che l'ambiente sia pulito — verificare che i test passino prima di nuove feature
+10. **Protocollo fine sessione** — prima di terminare, fornisci un riepilogo in 3 punti:
+    - **Fatto**: cosa è stato completato (file, commit, tag)
+    - **Non fatto / Bloccato**: cosa è rimasto indietro e perché (punto aperto, mancata conferma)
+    - **Prossimo suggerito**: un prossimo passo logico
+
+    Il riepilogo deve essere breve (3-5 righe). Non ripetere dettagli già nel commit o nel codice.
 
 ### Spiegazione obbligatoria prima di modificare file
 
