@@ -16,7 +16,10 @@ from guazza.output import (
     build_signals,
     compute_coverage_30d,
     compute_hourly_profile,
+    get_current_conditions,
     get_nwp_model_comparison,
+    get_nwp_models_hourly,
+    get_today_hourly,
     write_location_json,
 )
 from guazza.storage import DuckDBClient
@@ -514,3 +517,212 @@ def test_hourly_profile_in_json(
     data = json.loads(path.read_text())
     assert data["days"][0]["hourly"] is not None
     assert len(data["days"][0]["hourly"]) == 24
+
+
+def test_hourly_profile_has_humidity(seeded_db: Path) -> None:
+    """humidity_pct è presente nel risultato quando i dati NWP la contengono."""
+    import duckdb
+    from datetime import date
+
+    d = date(2026, 5, 19)
+    ts_run = datetime(d.year, d.month, d.day, 0, 0, 0)
+    records = []
+    for src in ("ecmwf_ifs", "icon_eu"):
+        for h in range(24):
+            ts_valid = datetime(d.year, d.month, d.day, h, 0, 0)
+            records.append((src, "casa_campi", ts_run, ts_valid, h, 15.0 + h * 0.2, 60.0 + h, 0.0))
+
+    con = duckdb.connect(str(seeded_db))
+    con.executemany(
+        "INSERT OR REPLACE INTO forecasts "
+        "(source, location_id, ts_run, ts_valid, lead_time_h, temp_c, humidity_pct, precip_mm) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        records,
+    )
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(db, "casa_campi", "2026-05-19", 5.0, 20.0, 0.0)
+    assert result is not None
+    hum_values = [r["humidity_pct"] for r in result if r["humidity_pct"] is not None]
+    assert len(hum_values) == 24
+    assert all(h >= 0 for h in hum_values)
+
+
+# ── get_current_conditions ────────────────────────────────────────────────────
+
+def test_current_conditions_no_data(seeded_db: Path) -> None:
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+    assert result is None
+
+
+def test_current_conditions_returns_data(seeded_db: Path) -> None:
+    import duckdb
+    from datetime import timedelta
+
+    now = datetime.now()
+    ts_recent = now - timedelta(minutes=10)
+
+    con = duckdb.connect(str(seeded_db))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, humidity_pct, precip_mm, wind_speed_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, ["sir", "ST001", "casa_campi", ts_recent, "realtime", 18.5, 65.0, 0.0, 1.2])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    assert "ts" in result
+    assert result["temp_c"] == pytest.approx(18.5)
+    assert result["humidity_pct"] == pytest.approx(65.0)
+    assert result["precip_mm"] == pytest.approx(0.0)
+    assert result["wind_speed_ms"] == pytest.approx(1.2)
+
+
+def test_current_conditions_old_data_ignored(seeded_db: Path) -> None:
+    """Obs più vecchie di 1h non devono contribuire al risultato."""
+    import duckdb
+    from datetime import timedelta
+
+    now = datetime.now()
+    ts_old = now - timedelta(hours=2)
+
+    con = duckdb.connect(str(seeded_db))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, ["sir", "ST001", "casa_campi", ts_old, "realtime", 10.0])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+    assert result is None
+
+
+# ── get_today_hourly ──────────────────────────────────────────────────────────
+
+def test_today_hourly_no_data(seeded_db: Path) -> None:
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_today_hourly(db, "casa_campi")
+    assert result is None
+
+
+def test_today_hourly_returns_future_hours(seeded_db: Path) -> None:
+    """Inserisce ore future di oggi e verifica che siano presenti nel risultato."""
+    import duckdb
+    from datetime import timedelta, date
+
+    today = date.today()
+    ts_run = datetime(today.year, today.month, today.day, 0, 0, 0)
+    now = datetime.now()
+    records = []
+    future_hours = []
+    for h in range(24):
+        ts_valid = datetime(today.year, today.month, today.day, h, 0, 0)
+        if ts_valid > now:
+            future_hours.append(h)
+            records.append(("open_meteo_ecmwf_ifs", "casa_campi", ts_run, ts_valid, h,
+                             15.0 + h * 0.3, 70.0, 0.0))
+
+    if not future_hours:
+        pytest.skip("No future hours left today — run test earlier in the day")
+
+    con = duckdb.connect(str(seeded_db))
+    con.executemany(
+        "INSERT OR REPLACE INTO forecasts "
+        "(source, location_id, ts_run, ts_valid, lead_time_h, temp_c, humidity_pct, precip_mm) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        records,
+    )
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_today_hourly(db, "casa_campi")
+
+    assert result is not None
+    assert len(result) == len(future_hours)
+    for item in result:
+        assert "hour" in item
+        assert "temp_c" in item
+        assert "humidity_pct" in item
+        assert "precip_mm" in item
+        assert "precip_prob" in item
+
+
+# ── get_nwp_models_hourly ─────────────────────────────────────────────────────
+
+def test_nwp_models_hourly_empty(seeded_db: Path) -> None:
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_nwp_models_hourly(db, "casa_campi")
+    assert result == []
+
+
+def test_nwp_models_hourly_structure_and_order(seeded_db: Path) -> None:
+    """Due modelli futuri: verifica struttura, ordine _MODEL_ORDER, e campi ts."""
+    import duckdb
+    from datetime import timedelta, date
+
+    tomorrow = date.today().isoformat()
+    ts_run = datetime.now()
+    records = []
+    for src in ("open_meteo_icon_eu", "open_meteo_ecmwf_ifs"):
+        for h in range(3):
+            ts_valid = datetime.now() + timedelta(hours=h + 1)
+            lead = h + 1
+            records.append((src, "casa_campi", ts_run, ts_valid, lead, 14.0 + h, 75.0, 0.0))
+
+    con = duckdb.connect(str(seeded_db))
+    con.executemany(
+        "INSERT OR REPLACE INTO forecasts "
+        "(source, location_id, ts_run, ts_valid, lead_time_h, temp_c, humidity_pct, precip_mm) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        records,
+    )
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_nwp_models_hourly(db, "casa_campi")
+
+    assert len(result) == 2
+    # ECMWF IFS viene prima di ICON-EU in _MODEL_ORDER
+    assert result[0]["source"] == "open_meteo_ecmwf_ifs"
+    assert result[1]["source"] == "open_meteo_icon_eu"
+    assert result[0]["label"] == "ECMWF IFS"
+
+    first_entry = result[0]["data"][0]
+    assert "ts" in first_entry
+    assert first_entry["ts"].endswith("Z"), "ts deve terminare con Z (UTC)"
+    assert "temp_c" in first_entry
+    assert "humidity_pct" in first_entry
+    assert "precip_mm" in first_entry
+
+
+# ── write_location_json — with db ─────────────────────────────────────────────
+
+def test_write_location_json_with_db_adds_realtime_fields(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+    seeded_db: Path,
+) -> None:
+    """Passando db, il JSON deve includere current, today_hourly, nwp_models_hourly."""
+    days = _make_days(sample_pred, sample_indicators)
+    with DuckDBClient(db_path=seeded_db) as db:
+        path = write_location_json(
+            location_id="casa_campi",
+            days=days,
+            coverage={},
+            output_dir=tmp_path,
+            db=db,
+        )
+    data = json.loads(path.read_text())
+    assert "current" in data
+    assert "today_hourly" in data
+    assert "nwp_models_hourly" in data
+    # Con DB vuoto, current e today_hourly saranno None/[], nwp_models_hourly []
+    assert data["nwp_models_hourly"] == []

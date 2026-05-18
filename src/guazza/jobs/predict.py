@@ -200,6 +200,7 @@ def cmd_run(
                     days=day_entries,
                     coverage=coverage,
                     output_dir=output_dir,
+                    db=db,
                 )
                 json_paths.append(path)
 

@@ -262,6 +262,139 @@ def compute_coverage_30d(
     }
 
 
+def get_current_conditions(
+    db: DuckDBClient,
+    location_id: str,
+) -> dict[str, Any] | None:
+    """Ultima lettura realtime aggregata per una location (media stazioni, ultimi 30min).
+
+    Returns:
+        {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms} oppure None se
+        non ci sono osservazioni recenti con temperatura disponibile.
+    """
+    row = db.execute("""
+        SELECT
+            strftime(MAX(ts), '%Y-%m-%dT%H:%M:%S') || '+00:00' AS ts,
+            ROUND(AVG(temp_c), 1)                               AS temp_c,
+            ROUND(AVG(humidity_pct), 0)                         AS humidity_pct,
+            ROUND(SUM(COALESCE(precip_mm, 0.0)), 2)             AS precip_mm,
+            ROUND(AVG(wind_speed_ms), 1)                        AS wind_speed_ms
+        FROM observations
+        WHERE location_id = ?
+          AND granularity = 'realtime'
+          AND ts >= NOW() - INTERVAL 1 HOUR
+          AND temp_c IS NOT NULL
+    """, [location_id]).fetchone()
+
+    if row is None or row[1] is None:
+        return None
+
+    ts, temp_c, humidity_pct, precip_mm, wind_speed_ms = row
+    return {
+        "ts":            ts,
+        "temp_c":        float(temp_c),
+        "humidity_pct":  float(humidity_pct) if humidity_pct is not None else None,
+        "precip_mm":     float(precip_mm) if precip_mm is not None else None,
+        "wind_speed_ms": float(wind_speed_ms) if wind_speed_ms is not None else None,
+    }
+
+
+def get_today_hourly(
+    db: DuckDBClient,
+    location_id: str,
+) -> list[dict[str, Any]] | None:
+    """Profilo orario NWP ensemble per le ore rimanenti di oggi (no rescaling ML).
+
+    Returns:
+        Lista di dict {hour, temp_c, humidity_pct, precip_mm, precip_prob} per le
+        ore future di oggi, oppure None se vuoto.
+    """
+    df = db.execute("""
+        SELECT
+            HOUR(ts_valid)                                                   AS hour,
+            ROUND(AVG(temp_c), 1)                                            AS temp_c,
+            ROUND(AVG(humidity_pct), 0)                                      AS humidity_pct,
+            ROUND(AVG(COALESCE(precip_mm, 0.0)), 2)                          AS precip_mm,
+            ROUND(AVG(CASE WHEN precip_mm IS NULL THEN NULL
+                           WHEN precip_mm > 0.1   THEN 1.0
+                           ELSE 0.0 END), 2)                                 AS precip_prob
+        FROM (
+            SELECT source, ts_valid, temp_c, humidity_pct, precip_mm
+            FROM forecasts
+            WHERE location_id = ?
+              AND CAST(ts_valid AS DATE) = CURRENT_DATE
+              AND ts_valid > NOW()
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY source, ts_valid ORDER BY ts_run DESC
+            ) = 1
+        ) latest
+        WHERE temp_c IS NOT NULL
+        GROUP BY hour
+        ORDER BY hour
+    """, [location_id]).df()
+
+    if df.empty:
+        return None
+
+    return [
+        {
+            "hour":        int(r["hour"]),
+            "temp_c":      float(r["temp_c"]) if r["temp_c"] is not None else None,
+            "humidity_pct": float(r["humidity_pct"]) if r["humidity_pct"] is not None else None,
+            "precip_mm":   float(r["precip_mm"]) if r["precip_mm"] is not None else None,
+            "precip_prob": float(r["precip_prob"]) if r["precip_prob"] is not None else None,
+        }
+        for _, r in df.iterrows()
+    ]
+
+
+def get_nwp_models_hourly(
+    db: DuckDBClient,
+    location_id: str,
+) -> list[dict[str, Any]]:
+    """Serie orarie per-modello NWP (ore future), per lo switch grafico frontend.
+
+    Returns:
+        Lista di {source, label, data: [{ts, temp_c, humidity_pct, precip_mm}]}
+        ordinata per _MODEL_ORDER. Modelli senza dati vengono omessi.
+    """
+    df = db.execute("""
+        SELECT
+            source,
+            strftime(ts_valid, '%Y-%m-%dT%H:%M:%SZ')   AS ts,
+            ROUND(temp_c, 1)                             AS temp_c,
+            ROUND(humidity_pct, 0)                       AS humidity_pct,
+            ROUND(COALESCE(precip_mm, 0.0), 2)           AS precip_mm
+        FROM forecasts
+        WHERE location_id = ?
+          AND ts_valid > NOW()
+          AND temp_c IS NOT NULL
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY source, ts_valid ORDER BY ts_run DESC
+        ) = 1
+        ORDER BY source, ts_valid
+    """, [location_id]).df()
+
+    if df.empty:
+        return []
+
+    by_source: dict[str, list[dict[str, Any]]] = {}
+    for _, r in df.iterrows():
+        src = str(r["source"])
+        by_source.setdefault(src, []).append({
+            "ts":           str(r["ts"]),
+            "temp_c":       float(r["temp_c"]) if r["temp_c"] is not None else None,
+            "humidity_pct": float(r["humidity_pct"]) if r["humidity_pct"] is not None else None,
+            "precip_mm":    float(r["precip_mm"]) if r["precip_mm"] is not None else None,
+        })
+
+    return [
+        {"source": src, "label": _MODEL_LABELS.get(src, src), "data": by_source[src]}
+        for src in _MODEL_ORDER
+        if src in by_source
+    ]
+
+
 def compute_hourly_profile(
     db: DuckDBClient,
     location_id: str,
@@ -280,19 +413,20 @@ def compute_hourly_profile(
     con precip > 0.1mm/h per quell'ora.
 
     Returns:
-        Lista di 24 dict {hour, temp_c, precip_mm, precip_prob} oppure None
-        se non ci sono dati NWP per il giorno richiesto.
+        Lista di 24 dict {hour, temp_c, humidity_pct, precip_mm, precip_prob} oppure
+        None se non ci sono dati NWP per il giorno richiesto.
     """
     df = db.execute("""
         SELECT
             HOUR(ts_valid)                                                      AS hour,
             AVG(temp_c)                                                         AS temp_mean,
+            AVG(humidity_pct)                                                   AS humidity_mean,
             AVG(COALESCE(precip_mm, 0.0))                                       AS precip_mean,
             AVG(CASE WHEN precip_mm IS NULL THEN NULL
                      WHEN precip_mm > 0.1   THEN 1.0
                      ELSE 0.0 END)                                              AS precip_prob
         FROM (
-            SELECT source, ts_valid, temp_c, precip_mm
+            SELECT source, ts_valid, temp_c, humidity_pct, precip_mm
             FROM forecasts
             WHERE location_id = ?
               AND CAST(ts_valid AS DATE) = ?
@@ -309,13 +443,17 @@ def compute_hourly_profile(
     if df.empty:
         return None
 
-    hour_data: dict[int, tuple[float, float, float | None]] = {
-        int(r["hour"]): (float(r["temp_mean"]), float(r["precip_mean"]),
-                         float(r["precip_prob"]) if r["precip_prob"] is not None else None)
+    hour_data: dict[int, tuple[float, float | None, float, float | None]] = {
+        int(r["hour"]): (
+            float(r["temp_mean"]),
+            float(r["humidity_mean"]) if r["humidity_mean"] is not None else None,
+            float(r["precip_mean"]),
+            float(r["precip_prob"]) if r["precip_prob"] is not None else None,
+        )
         for _, r in df.iterrows()
     }
 
-    raw_temps = [v for _, (v, _, _) in sorted(hour_data.items())]
+    raw_temps = [v for _, (v, _, _, _) in sorted(hour_data.items())]
     raw_min = min(raw_temps)
     raw_max = max(raw_temps)
 
@@ -327,7 +465,7 @@ def compute_hourly_profile(
             return round((tmin_p50 + tmax_p50) / 2.0, 1)
         return round(tmin_p50 + (v - raw_min) / span_raw * (tmax_p50 - tmin_p50), 1)
 
-    total_precip_raw = sum(v for _, (_, v, _) in hour_data.items())
+    total_precip_raw = sum(v for _, (_, _, v, _) in hour_data.items())
     if total_precip_raw > 0 and precip_p50 is not None and precip_p50 > 0:
         precip_scale = precip_p50 / total_precip_raw
     else:
@@ -336,16 +474,18 @@ def compute_hourly_profile(
     result: list[dict[str, float | None]] = []
     for h in range(24):
         if h in hour_data:
-            t_raw, p_raw, prob = hour_data[h]
+            t_raw, hum, p_raw, prob = hour_data[h]
             result.append({
-                "hour":        h,
-                "temp_c":      _rescale_temp(t_raw),
-                "precip_mm":   round(p_raw * precip_scale, 2),
-                "precip_prob": round(prob, 2) if prob is not None else None,
+                "hour":         h,
+                "temp_c":       _rescale_temp(t_raw),
+                "humidity_pct": round(hum, 0) if hum is not None else None,
+                "precip_mm":    round(p_raw * precip_scale, 2),
+                "precip_prob":  round(prob, 2) if prob is not None else None,
             })
         else:
             result.append({
-                "hour": h, "temp_c": None, "precip_mm": None, "precip_prob": None,
+                "hour": h, "temp_c": None, "humidity_pct": None,
+                "precip_mm": None, "precip_prob": None,
             })
 
     return result
@@ -356,6 +496,7 @@ def write_location_json(
     days: list[dict[str, Any]],
     coverage: dict[str, float | None],
     output_dir: Path,
+    db: DuckDBClient | None = None,
 ) -> Path:
     """Scrive il JSON di output per una location con previsioni multi-giorno.
 
@@ -364,9 +505,11 @@ def write_location_json(
               {target_date: str, lead_time_h: int,
                pred: {target: {quantile: float}},
                indicators: list[IndicatorResult]}
+        db:   se fornito, aggiunge current, today_hourly, nwp_models_hourly al payload
 
     Struttura JSON:
       {location_id, generated_at, coverage_empirical_30d,
+       current?, today_hourly?, nwp_models_hourly?,
        days: [{target_date, lead_time_h, forecasts, indicators, hourly}, ...]}
 
     Returns:
@@ -411,11 +554,15 @@ def write_location_json(
         })
 
     payload: dict[str, Any] = {
-        "location_id":           location_id,
-        "generated_at":          datetime.now(tz=UTC).isoformat(),
+        "location_id":            location_id,
+        "generated_at":           datetime.now(tz=UTC).isoformat(),
         "coverage_empirical_30d": coverage,
-        "days":                  day_payloads,
     }
+    if db is not None:
+        payload["current"]            = get_current_conditions(db, location_id)
+        payload["today_hourly"]       = get_today_hourly(db, location_id)
+        payload["nwp_models_hourly"]  = get_nwp_models_hourly(db, location_id)
+    payload["days"] = day_payloads
 
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{location_id}.json"
