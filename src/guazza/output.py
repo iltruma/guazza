@@ -282,7 +282,7 @@ def get_current_conditions(
         FROM observations
         WHERE location_id = ?
           AND granularity = 'realtime'
-          AND ts >= NOW() - INTERVAL 1 HOUR
+          AND ts >= NOW() - INTERVAL 3 HOURS
           AND temp_c IS NOT NULL
     """, [location_id]).fetchone()
 
