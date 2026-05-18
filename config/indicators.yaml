@@ -28,7 +28,7 @@ indicators:
       # alpha = 1/6 ≈ 0.17 → soglia bassa = molto conservativo
     logic:
       green: "P(precip > 0.2mm) < 0.15 AND P(RH > 80%) < 0.20"
-      yellow: "P(precip > 0.2mm) >= 0.15 AND P(precip > 0.2mm) <= 0.40"
+      yellow: "(P(precip > 0.2mm) >= 0.15 AND P(precip > 0.2mm) <= 0.40) OR P(RH > 80%) >= 0.20"
       red: "P(precip > 0.2mm) > 0.40"
     notes: "Soglie conservative per non rovinare bucato. Calibrare dopo 30gg."
 

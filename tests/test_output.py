@@ -311,6 +311,30 @@ def test_write_location_json_structure(
     assert day0["indicators"]["motorino"]["verdict"] == "giallo"
 
 
+def test_write_location_json_precip_clamp(
+    tmp_path: Path,
+    sample_indicators: list[IndicatorResult],
+) -> None:
+    """Valori precip leggermente negativi devono essere clampati a 0 nel JSON."""
+    pred_negative = {
+        "tmin_c":    {"p50": 10.0, "ci80_lo": 8.0, "ci80_hi": 12.0, "ci90_lo": 7.0, "ci90_hi": 13.0},
+        "tmax_c":    {"p50": 20.0, "ci80_lo": 18.0, "ci80_hi": 22.0, "ci90_lo": 17.0, "ci90_hi": 23.0},
+        "precip_mm": {"p50": -0.001, "ci80_lo": -0.05, "ci80_hi": 0.2, "ci90_lo": -0.1, "ci90_hi": 0.5},
+    }
+    path = write_location_json(
+        location_id="test_loc",
+        days=_make_days(pred_negative, sample_indicators),
+        coverage={},
+        output_dir=tmp_path,
+    )
+    data = json.loads(path.read_text())
+    fc = data["days"][0]["forecasts"]["precip_mm"]
+    assert fc["p50"] == 0.0
+    assert fc["ci80_lo"] == 0.0
+    assert fc["ci90_lo"] == 0.0
+    assert fc["ci80_hi"] == pytest.approx(0.2)
+
+
 def test_write_location_json_valid_json(
     tmp_path: Path,
     sample_pred: dict,

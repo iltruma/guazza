@@ -35,7 +35,7 @@ _CFG_PANNI = {
     "costs": {"fn": 5, "fp": 1},
     "logic": {
         "green":  "P(precip > 0.2mm) < 0.15 AND P(RH > 80%) < 0.20",
-        "yellow": "P(precip > 0.2mm) >= 0.15 AND P(precip > 0.2mm) <= 0.40",
+        "yellow": "(P(precip > 0.2mm) >= 0.15 AND P(precip > 0.2mm) <= 0.40) OR P(RH > 80%) >= 0.20",
         "red":    "P(precip > 0.2mm) > 0.40",
     },
 }
@@ -138,6 +138,15 @@ def test_panni_rosso() -> None:
     r = evaluate_indicator("panni", _CFG_PANNI, signals, "casa_campi")
     assert r is not None
     assert r.verdict == "rosso"
+
+
+def test_panni_giallo_alta_umidita() -> None:
+    # Precip bassa ma umidità alta → giallo (panni non asciugherebbero)
+    signals: SignalBag = {"P(precip > 0.2mm)": 0.10, "P(RH > 80%)": 0.67}
+    r = evaluate_indicator("panni", _CFG_PANNI, signals, "casa_campi")
+    assert r is not None
+    assert r.verdict == "giallo"
+    assert r.rule_matched == "yellow"
 
 
 def test_panni_alpha_correct() -> None:

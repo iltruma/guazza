@@ -311,6 +311,17 @@ def write_location_json(
             "ci90_lo": t.get("ci90_lo"), "ci90_hi": t.get("ci90_hi"),
         }
 
+    def _fmt_precip(t: dict[str, float]) -> dict[str, float | None]:
+        # Quantile regression può restituire valori leggermente negativi vicino a 0.
+        # Clamp fisico: la precipitazione non può essere negativa.
+        def _c(v: float | None) -> float | None:
+            return max(0.0, v) if v is not None else None
+        return {
+            "p50":     _c(t.get("p50")),
+            "ci80_lo": _c(t.get("ci80_lo")), "ci80_hi": _c(t.get("ci80_hi")),
+            "ci90_lo": _c(t.get("ci90_lo")), "ci90_hi": _c(t.get("ci90_hi")),
+        }
+
     day_payloads = []
     for day in days:
         pred: dict[str, dict[str, float]] = day["pred"]
@@ -321,7 +332,7 @@ def write_location_json(
             "forecasts": {
                 "tmin_c":    _fmt_target(pred.get("tmin_c",    {})),
                 "tmax_c":    _fmt_target(pred.get("tmax_c",    {})),
-                "precip_mm": _fmt_target(pred.get("precip_mm", {})),
+                "precip_mm": _fmt_precip(pred.get("precip_mm", {})),
             },
             "indicators": {
                 r.indicator_id: {"verdict": r.verdict, "rule_matched": r.rule_matched}
