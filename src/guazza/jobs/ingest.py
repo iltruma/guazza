@@ -49,6 +49,7 @@ from guazza.fetchers import (  # noqa: E402
     fetch_netatmo_all_locations,
     fetch_openmeteo_all_locations,
     fetch_openmeteo_historical_batch,
+    fetch_sir_bulk_realtime,
     fetch_sir_historical,
     fetch_sir_stations_realtime,
 )
@@ -125,6 +126,24 @@ def _ping_healthchecks(status: str = "") -> None:
         logger.debug(f"Healthchecks ping: {url}")
     except Exception as e:
         logger.warning(f"Healthchecks ping fallito: {e}")
+
+
+def _idro_station_ids(locations: dict[str, Any], stations: dict[str, Any]) -> set[str]:
+    """Restituisce gli ID delle stazioni idrometriche.
+
+    Include sia i sir_idro_id espliciti nelle location sia le stazioni con
+    sensore 'idrometro' in stations.yaml. Per queste stazioni il livello
+    idrometrico non è disponibile negli endpoint bulk (IDRO restituisce
+    livelli di allerta, non valori reali) — serve la chiamata per-stazione.
+    """
+    ids: set[str] = set()
+    for loc in locations.values():
+        if idro_id := loc.get("sir_idro_id"):
+            ids.add(idro_id)
+    for sid, s_data in stations.get("sir_stations", {}).items():
+        if "idrometro" in s_data.get("sensors", []):
+            ids.add(sid)
+    return ids
 
 
 def _location_id_for_station(
@@ -502,7 +521,7 @@ def cmd_realtime(
     """
     _setup_logging()
     cfg = Path(config_dir)
-    locations, _ = _load_config(cfg)
+    locations, stations = _load_config(cfg)
 
     if dry_run:
         typer.echo("[dry-run] Nessuna scrittura effettuata.")
@@ -519,19 +538,31 @@ def cmd_realtime(
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
 
-            # 1. SIR realtime — tutte le stazioni attive (deduplicate)
-            all_station_ids = sorted(_all_sir_station_ids(locations))
-            results = fetch_sir_stations_realtime(all_station_ids)
+            # 1a. SIR bulk (TERMO24/IGRO24/ANEMO24/PLUVIO) — 4 call per tutte le stazioni
+            all_station_ids = set(_all_sir_station_ids(locations))
+            bulk_results = fetch_sir_bulk_realtime(all_station_ids)
+
+            # 1b. SIR per-stazione per le idrometriche (level_m non in bulk)
+            idro_ids = _idro_station_ids(locations, stations)
+            if idro_ids:
+                idro_results = fetch_sir_stations_realtime(sorted(idro_ids))
+                for sid, rec in idro_results.items():
+                    level = rec.get("level_m")
+                    if level is not None:
+                        if sid in bulk_results:
+                            bulk_results[sid]["level_m"] = level
+                        else:
+                            bulk_results[sid] = rec
 
             records_with_loc: list[dict[str, Any]] = []
-            for sid, rec in results.items():
+            for sid, rec in bulk_results.items():
                 rec["location_id"] = _location_id_for_station(sid, locations)
                 records_with_loc.append(rec)
 
             if records_with_loc:
                 db.upsert_sir_observations(records_with_loc)
                 sir_total = len(records_with_loc)
-            logger.info(f"realtime SIR: {sir_total} stazioni")
+            logger.info(f"realtime SIR: {sir_total} stazioni ({len(idro_ids)} idro per-stazione)")
 
             # 2. Netatmo — tutte le location
             netatmo_results = fetch_netatmo_all_locations(db, locations)

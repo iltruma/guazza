@@ -394,6 +394,14 @@ def fetch_sir_realtime(station_id: str) -> dict[str, Any]:
             except ValueError:
                 pass
 
+    # idro — livello idrometrico in metri (stazioni tipo meteo+idro o idro)
+    if idro := data.get("idro"):
+        if v := idro.get("value"):
+            try:
+                record["level_m"] = float(v)
+            except ValueError:
+                pass
+
     return record
 
 
@@ -432,6 +440,164 @@ def fetch_sir_stations_realtime(
     status = "ok" if results else "fail"
     detail = f"{n_fail} stazioni fallite" if n_fail else ""
     _log_scrape("sir_realtime", status, rows=len(results), detail=detail)
+    return results
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SIR — Bulk realtime (TERMO24, IGRO24, ANEMO24, PLUVIO)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _parse_sir_bulk_meta_ts(meta_str: str) -> datetime | None:
+    """Estrae datetime naive dalla stringa meta SIR bulk.
+
+    Formato atteso: ' del DD/MM/YYYY HH.MM (ora solare)'
+    Restituisce None se il formato non è riconoscibile.
+    """
+    m = re.search(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}\.\d{2})", meta_str)
+    if not m:
+        return None
+    try:
+        return datetime.strptime(f"{m.group(1)} {m.group(2)}", "%d/%m/%Y %H.%M")
+    except ValueError:
+        return None
+
+
+def _parse_bulk_float(raw: str | None) -> float | None:
+    """Converte Valore da risposta bulk SIR in float.
+
+    Valori non numerici noti: '&nbsp;+&nbsp;' (fuori scala alto),
+    '&nbsp;-&nbsp;' (fuori scala basso), '' (assente).
+    Un singolo '+' o '-' senza cifre non è un numero valido → None.
+    """
+    if raw is None:
+        return None
+    cleaned = raw.replace("&nbsp;", "").strip()
+    if cleaned in ("", "+", "-", "N/A", "--", "ND"):
+        return None
+    try:
+        return float(cleaned.replace(",", "."))
+    except ValueError:
+        return None
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=15),
+    retry=retry_if_exception(_is_retryable_http),
+    before_sleep=_log_sir_retry,
+)
+def _fetch_sir_bulk_json(action: str) -> dict[str, Any]:
+    """Fetch JSON da un endpoint bulk SIR (TERMO24, IGRO24, ANEMO24, PLUVIO)."""
+    logger.debug(f"SIR bulk fetch: {action}")
+    with httpx.Client(timeout=15) as client:
+        r = client.get(
+            f"{_SIR_REALTIME_BASE}/actions.php",
+            params={"action": action},
+            headers=_SIR_RT_HEADERS,
+        )
+        r.raise_for_status()
+    return r.json()  # type: ignore[no-any-return]
+
+
+def fetch_sir_bulk_realtime(station_ids: set[str]) -> dict[str, dict[str, Any]]:
+    """Fetch realtime SIR via 4 endpoint bulk (TERMO24, IGRO24, ANEMO24, PLUVIO).
+
+    4 HTTP call invece di N per-stazione. Ogni endpoint restituisce tutte le
+    stazioni; filtriamo solo quelle in station_ids e mergiamo in record wide.
+
+    precip_interval_h è NULL per i valori PLUVIO (intervallo 15min non
+    rappresentabile come TINYINT nello schema).
+
+    Returns:
+        Dict {station_id: record_wide} per le stazioni trovate in almeno
+        un endpoint. Stazioni offline in un endpoint avranno il campo a None.
+    """
+    combined: dict[str, dict[str, Any]] = {}
+
+    def _ensure(sid: str, ts: datetime | None) -> dict[str, Any]:
+        if sid not in combined:
+            combined[sid] = {"ts": ts or datetime.now()}
+        elif ts is not None and ts > combined[sid].get("ts", ts):
+            combined[sid]["ts"] = ts
+        return combined[sid]
+
+    # TERMO24 — temperatura
+    try:
+        d = _fetch_sir_bulk_json("TERMO24")
+        ts = _parse_sir_bulk_meta_ts(d.get("meta", ""))
+        for entry in d.get("data", []):
+            sid = entry.get("IDStazione", "")
+            if sid in station_ids:
+                _ensure(sid, ts)["temp_c"] = _parse_bulk_float(entry.get("Valore"))
+        _log_scrape("sir_bulk:TERMO24", "ok",
+                    rows=sum(1 for s in combined.values() if "temp_c" in s))
+    except Exception as e:
+        logger.error(f"SIR bulk TERMO24 fallito: {e}")
+        _log_scrape("sir_bulk:TERMO24", "fail", detail=str(e))
+
+    # IGRO24 — umidità relativa
+    igro_count = 0
+    try:
+        d = _fetch_sir_bulk_json("IGRO24")
+        ts = _parse_sir_bulk_meta_ts(d.get("meta", ""))
+        for entry in d.get("data", []):
+            sid = entry.get("IDStazione", "")
+            if sid in station_ids:
+                _ensure(sid, ts)["humidity_pct"] = _parse_bulk_float(entry.get("Valore"))
+                igro_count += 1
+        _log_scrape("sir_bulk:IGRO24", "ok", rows=igro_count)
+    except Exception as e:
+        logger.error(f"SIR bulk IGRO24 fallito: {e}")
+        _log_scrape("sir_bulk:IGRO24", "fail", detail=str(e))
+
+    # ANEMO24 — velocità e direzione vento
+    anemo_count = 0
+    try:
+        d = _fetch_sir_bulk_json("ANEMO24")
+        ts = _parse_sir_bulk_meta_ts(d.get("meta", ""))
+        for entry in d.get("data", []):
+            sid = entry.get("IDStazione", "")
+            if sid in station_ids:
+                rec = _ensure(sid, ts)
+                rec["wind_speed_ms"] = _parse_bulk_float(entry.get("Valore"))
+                dir_raw = entry.get("Direzione")
+                rec["wind_dir_deg"] = _parse_bulk_float(
+                    str(dir_raw) if dir_raw is not None else None
+                )
+                anemo_count += 1
+        _log_scrape("sir_bulk:ANEMO24", "ok", rows=anemo_count)
+    except Exception as e:
+        logger.error(f"SIR bulk ANEMO24 fallito: {e}")
+        _log_scrape("sir_bulk:ANEMO24", "fail", detail=str(e))
+
+    # PLUVIO — precipitazione mm/15min (precip_interval_h=NULL, TINYINT non supporta 0.25)
+    pluvio_count = 0
+    try:
+        d = _fetch_sir_bulk_json("PLUVIO")
+        ts = _parse_sir_bulk_meta_ts(d.get("meta", ""))
+        for entry in d.get("data", []):
+            sid = entry.get("IDStazione", "")
+            if sid in station_ids:
+                _ensure(sid, ts)["precip_mm"] = _parse_bulk_float(entry.get("Valore"))
+                pluvio_count += 1
+        _log_scrape("sir_bulk:PLUVIO", "ok", rows=pluvio_count)
+    except Exception as e:
+        logger.error(f"SIR bulk PLUVIO fallito: {e}")
+        _log_scrape("sir_bulk:PLUVIO", "fail", detail=str(e))
+
+    # Assembla record wide
+    results: dict[str, dict[str, Any]] = {}
+    for sid, fields in combined.items():
+        ts_val = fields.pop("ts", datetime.now())
+        results[sid] = {
+            "source": "sir_toscana",
+            "station_id": sid,
+            "ts": ts_val,
+            "granularity": "realtime",
+            **fields,
+        }
+
+    _log_scrape("sir_bulk_realtime", "ok" if results else "fail", rows=len(results))
     return results
 
 

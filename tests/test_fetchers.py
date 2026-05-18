@@ -769,6 +769,92 @@ def test_parse_sir_realtime_ts_unparsable_fallback() -> None:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# SIR bulk — _parse_sir_bulk_meta_ts, _parse_bulk_float, fetch_sir_bulk_realtime
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_parse_sir_bulk_meta_ts_standard() -> None:
+    """Deve parsare il formato meta SIR bulk standard."""
+    from guazza.fetchers import _parse_sir_bulk_meta_ts
+    ts = _parse_sir_bulk_meta_ts(" del 18/05/2026 16.15 (ora solare)")
+    assert ts == datetime(2026, 5, 18, 16, 15)
+    assert ts is not None and ts.tzinfo is None
+
+
+def test_parse_sir_bulk_meta_ts_invalid() -> None:
+    """Stringa non parsabile deve restituire None."""
+    from guazza.fetchers import _parse_sir_bulk_meta_ts
+    assert _parse_sir_bulk_meta_ts("") is None
+    assert _parse_sir_bulk_meta_ts("nessun dato") is None
+
+
+def test_parse_bulk_float_valid() -> None:
+    from guazza.fetchers import _parse_bulk_float
+    assert _parse_bulk_float("18") == 18.0
+    assert _parse_bulk_float("-5") == -5.0
+    assert _parse_bulk_float("0") == 0.0
+    assert _parse_bulk_float("64") == 64.0
+
+
+def test_parse_bulk_float_invalid() -> None:
+    from guazza.fetchers import _parse_bulk_float
+    assert _parse_bulk_float(None) is None
+    assert _parse_bulk_float("") is None
+    assert _parse_bulk_float("&nbsp;+&nbsp;") is None
+    assert _parse_bulk_float("&nbsp;-&nbsp;") is None
+    assert _parse_bulk_float("+") is None
+    assert _parse_bulk_float("-") is None
+
+
+def test_fetch_sir_bulk_realtime_filters_stations(monkeypatch: Any) -> None:
+    """Deve filtrare solo le stazioni richieste e restituire record wide corretti."""
+    from guazza.fetchers import fetch_sir_bulk_realtime
+
+    fake_ts = datetime(2026, 5, 18, 16, 15)
+    # Ogni endpoint ha Valore diverso per verificare il merge corretto
+    _action_values = {"TERMO24": "20", "IGRO24": "65", "ANEMO24": "3", "PLUVIO": "0"}
+
+    def _fake_bulk(action: str) -> dict[str, Any]:
+        val = _action_values.get(action, "0")
+        entry_a = {"IDStazione": "TOS01000001", "Valore": val, "Direzione": "180"}
+        entry_b = {"IDStazione": "TOS01000002", "Valore": val, "Direzione": "90"}
+        entry_skip = {"IDStazione": "TOS99999999", "Valore": "10"}
+        return {"meta": " del 18/05/2026 16.15 (ora solare)", "data": [entry_a, entry_b, entry_skip]}
+
+    monkeypatch.setattr("guazza.fetchers._fetch_sir_bulk_json", _fake_bulk)
+
+    results = fetch_sir_bulk_realtime({"TOS01000001", "TOS01000002"})
+
+    assert "TOS01000001" in results
+    assert "TOS01000002" in results
+    assert "TOS99999999" not in results
+
+    rec = results["TOS01000001"]
+    assert rec["source"] == "sir_toscana"
+    assert rec["granularity"] == "realtime"
+    assert rec["ts"] == fake_ts
+    assert rec["temp_c"] == 20.0
+    assert rec["humidity_pct"] == 65.0
+    assert rec["wind_speed_ms"] == 3.0
+    assert rec["wind_dir_deg"] == 180.0
+    assert rec["precip_mm"] == 0.0
+
+
+def test_fetch_sir_bulk_realtime_handles_offline_station(monkeypatch: Any) -> None:
+    """Stazione offline (&nbsp;+&nbsp;) deve dare temp_c=None, non errore."""
+    from guazza.fetchers import fetch_sir_bulk_realtime
+
+    def _fake_bulk(action: str) -> dict[str, Any]:
+        entry = {"IDStazione": "TOS01000001", "Valore": "&nbsp;+&nbsp;", "Direzione": "0"}
+        return {"meta": " del 18/05/2026 16.15 (ora solare)", "data": [entry]}
+
+    monkeypatch.setattr("guazza.fetchers._fetch_sir_bulk_json", _fake_bulk)
+
+    results = fetch_sir_bulk_realtime({"TOS01000001"})
+    assert "TOS01000001" in results
+    assert results["TOS01000001"]["temp_c"] is None
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # ARPAT — fetch_arpat_nrt + fetch_arpat_bollettini
 # ═════════════════════════════════════════════════════════════════════════════
 
