@@ -355,11 +355,14 @@ class DuckDBClient:
                 if rec.get("hum_med_pct") is not None
                 else rec.get("humidity_pct")
             )
+            ts = rec["ts"]
+            if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
             rows.append([
                 rec.get("source", "sir_toscana"),
                 rec["station_id"],
                 rec.get("location_id", ""),
-                rec["ts"],
+                ts,
                 rec["granularity"],
                 rec.get("tmax_c"),
                 rec.get("tmin_c"),

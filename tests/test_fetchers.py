@@ -739,29 +739,32 @@ def test_sir_realtime_precip_interval_1() -> None:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def test_parse_sir_realtime_ts_from_termo() -> None:
-    """Deve parsare la data dal campo termo.date."""
+    """Deve parsare la data dal campo termo.date come naive (ora locale SIR)."""
     from guazza.fetchers import _parse_sir_realtime_ts
     data = {"termo": {"value": "18.0", "date": "15/05/2026 10:30"}}
     ts = _parse_sir_realtime_ts(data)
-    assert ts == datetime(2026, 5, 15, 10, 30, tzinfo=UTC)
+    assert ts == datetime(2026, 5, 15, 10, 30)
+    assert ts.tzinfo is None
 
 
 def test_parse_sir_realtime_ts_fallback_now() -> None:
-    """Senza campo date deve tornare un ts vicino a now(UTC)."""
+    """Senza campo date deve tornare un ts naive vicino a now locale."""
     from guazza.fetchers import _parse_sir_realtime_ts
-    before = datetime.now(tz=UTC)
+    before = datetime.now()
     ts = _parse_sir_realtime_ts({})
-    after = datetime.now(tz=UTC)
+    after = datetime.now()
+    assert ts.tzinfo is None
     assert before <= ts <= after
 
 
 def test_parse_sir_realtime_ts_unparsable_fallback() -> None:
-    """Se date non è parsabile deve tornare un ts vicino a now(UTC)."""
+    """Se date non è parsabile deve tornare un ts naive vicino a now locale."""
     from guazza.fetchers import _parse_sir_realtime_ts
     data = {"termo": {"value": "18.0", "date": "invalid-date"}}
-    before = datetime.now(tz=UTC)
+    before = datetime.now()
     ts = _parse_sir_realtime_ts(data)
-    after = datetime.now(tz=UTC)
+    after = datetime.now()
+    assert ts.tzinfo is None
     assert before <= ts <= after
 
 

@@ -292,10 +292,15 @@ _SIR_RT_DATE_FORMATS = ["%d/%m/%Y %H:%M", "%d/%m/%Y %H:%M:%S"]
 
 
 def _parse_sir_realtime_ts(data: dict[str, Any]) -> datetime:
-    """Estrae il timestamp dalla risposta JSON SIR realtime.
+    """Estrae il timestamp dalla risposta JSON SIR realtime come datetime naive.
+
+    SIR pubblica l'orario in ora locale italiana (CEST/CET) senza indicazione TZ.
+    Restituiamo un datetime naive che rappresenta quell'ora locale: DuckDB lo
+    salva in TIMESTAMP as-is senza conversioni. Il frontend riceve la stringa
+    senza suffisso e il browser la interpreta come ora locale → visualizzazione corretta.
 
     Tenta di parsare il campo "date" dal primo sensore disponibile (termo, igro, anemo).
-    Fallback a now(UTC) se il campo è assente o non parsabile.
+    Fallback a datetime.now() (ora locale naive) se assente o non parsabile.
     """
     for sensor_key in ("termo", "igro", "anemo"):
         sensor = data.get(sensor_key)
@@ -306,12 +311,12 @@ def _parse_sir_realtime_ts(data: dict[str, Any]) -> datetime:
             continue
         for fmt in _SIR_RT_DATE_FORMATS:
             try:
-                return datetime.strptime(date_str, fmt).replace(tzinfo=UTC)
+                return datetime.strptime(date_str, fmt)
             except ValueError:
                 continue
         logger.debug(f"SIR realtime: date non parsabile: {date_str!r}")
         break
-    return datetime.now(tz=UTC)
+    return datetime.now()
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
