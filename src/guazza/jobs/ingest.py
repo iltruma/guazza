@@ -206,7 +206,6 @@ def _ingest_sir_historical_range(
 
     def _fetch_one(sid: str, idst: str, loc_id: str) -> tuple[str, str, list[dict[str, Any]]] | None:
         """Fetch e filtra un singolo combo stazione+sensore."""
-        time.sleep(1.0)
         try:
             records = fetch_sir_historical(sid, idst, loc_id)
             filtered = [r for r in records if start_dt <= r["ts"] <= end_dt]
@@ -228,7 +227,7 @@ def _ingest_sir_historical_range(
 
     results: list[tuple[str, str, list[dict[str, Any]]]] = []
     _tty = sys.stderr.isatty()
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(_fetch_one, sid, idst, loc_id): (sid, idst)
             for sid, idst, loc_id in combos
