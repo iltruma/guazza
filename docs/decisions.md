@@ -251,3 +251,32 @@ non è il segnale primario per queste decisioni.
 **Conseguenza**: Sprint 5 deve esporre sia le previsioni ML (per temp) sia le
 probabilità ensemble NWP (per precip) nel JSON di output. Non sono due prodotti
 separati — sono due colonne dello stesso oggetto previsione.
+
+---
+
+## D-015 — `build_signals_today`: indicatori DLE per D+0 da osservazioni realtime
+
+**Data**: 2026-05-18
+
+**Contesto**: per il giorno corrente (D+0), il DLE può usare sia le previsioni
+ML (lead ~0-6h) sia le osservazioni realtime della stazione SIR/Netatmo degli
+ultimi 30-60 minuti.
+
+**Problema**: usare solo le previsioni ML per gli indicatori di oggi introduce
+uno scarto rispetto alla realtà osservata. Se piove adesso, il SignalBag ML
+potrebbe dare `P(precip > 0.2mm)` = 0.3 (probabilistica), mentre il realtime
+dice 1.0 (osservato).
+
+**Decisione**: per D+0 si usa `build_signals_today()` che parte da `build_signals()`
+e sovrascrive i segnali osservabili con valori deterministici 0/1:
+- Precip/vento/umidità → 0 o 1 da misura realtime
+- `T2m_p50` → temperatura corrente osservata
+- `P(Tmin < X)` e `Tmin_p10` → restano da ML (la notte non è ancora terminata)
+
+**Conseguenza**: gli indicatori di oggi sul frontend riflettono la situazione
+*attuale* (realtime), non la previsione. Questo è il comportamento atteso per
+uno strumento operativo. Se il realtime non è disponibile (`current_obs=None`),
+si usa il fallback ML puro senza degradazione.
+
+**Limitazione**: il vento realtime è spesso `null` (KI-014), quindi `P(wind > 40kmh)`
+resta da NWP ensemble anche con `build_signals_today`.

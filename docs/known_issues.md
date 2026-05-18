@@ -190,12 +190,11 @@ invariata; rimossa solo la staging table fisica.
 ## KI-012 — Indicatore `bisenzio` fallback giallo: soglie idrometriche non popolate
 
 **Severità**: bassa (indicatore di sola allerta, non previsionale)
-**Stato**: da implementare in Sprint 7+
+**Stato**: risolto (Pre-Sprint 6, 2026-05-18)
 
-**Problema**: il DLE valuta `bisenzio` con condizioni tipo `level_sir < threshold_1`.
-Il SignalBag include `level_sir` (da obs real-time), ma `threshold_1` e `threshold_2`
-non hanno sorgente dati — nessuna API SIR espone le soglie di allerta idraulica per
-stazione. Il DLE non trova le variabili e cade sempre nel ramo `fallback → giallo`.
+Soglie statiche inserite in `config/indicators.yaml` (threshold_1=3.5m, threshold_2=5.5m,
+threshold_3=7.0m). `evaluate_indicator` inietta `cfg["thresholds"]` nel SignalBag prima
+dell'eval — indicatore sbloccato dal fallback giallo.
 
 **Workaround attuale**: fallback "giallo" è conservativo — non peggio di "non so".
 
@@ -223,3 +222,44 @@ per il training.
 **Nota**: l'ipotesi iniziale di una finestra 08:00–08:00 CEST era errata —
 basata su un confronto con cumulativo realtime SIR che usava una finestra
 temporale diversa (09:00 del 13/05 → 09:00 del 14/05).
+
+---
+
+## KI-013 — Timestamp SIR realtime: naive CEST salvato senza timezone
+
+**Severità**: bassa (impatto solo display frontend, non training)
+**Stato**: workaround stabile (2026-05-18)
+
+**Problema**: il fetcher SIR realtime salva i timestamp delle osservazioni come
+`datetime` naive in Python, che DuckDB tratta come ora locale CEST. Il backend
+in `get_current_conditions` aggiungeva il suffisso `+00:00` al timestamp
+formattato, facendo credere al browser JS che fosse UTC → conversione a CEST
+→ display con +2h di scarto.
+
+**Workaround**: rimosso `|| '+00:00'` dal `strftime` in `get_current_conditions`.
+Il timestamp viene restituito come stringa ISO naked; `new Date("...T17:15:00")`
+senza suffisso viene interpretato come ora locale dal browser (corretto).
+
+**Conseguenza residua**: c'è una discrepanza di ~0-60 minuti tra il timestamp
+mostrato e l'ora locale attesa, causata dal fatto che SIR aggiorna i dati con
+qualche minuto di ritardo e/o usa boundary temporali (es. ultima ora intera).
+Non è un bug del codice — è la latenza nativa del sistema SIR.
+
+---
+
+## KI-014 — Vento realtime quasi sempre null (Netatmo base, stazioni SIR senza anemometro)
+
+**Severità**: bassa (informativa — non impatta training né indicatori DLE)
+**Stato**: by design / limitazione hardware
+
+**Problema**: il pannello "Condizioni attuali" mostra `—` per il vento nella
+maggior parte delle location. Le stazioni Netatmo base non montano il modulo
+anemometro; le stazioni SIR a volte lo hanno ma i dati realtime non sempre sono
+disponibili.
+
+**Conseguenza**: `P(wind > 40kmh)` e `P(wind < 5kmh)` nel SignalBag vengono
+calcolati dal NWP ensemble (non da obs realtime) anche con `build_signals_today`.
+Per gli indicatori `motorino` (vento < 5 km/h) e simili, questo introduce una
+discrepanza tra display realtime e logica DLE.
+
+**Nessun fix pianificato**: limitazione hardware/dati a monte.

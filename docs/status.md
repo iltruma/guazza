@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-18 (Sprint 6 frontend redesign completato)
+> Aggiornato: 2026-05-18 (Sprint 6 completato + fix post-deploy)
 
 ## Cosa è stato fatto
 
@@ -98,7 +98,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **215 test** (38 test_output, +9 nuovi Sprint 6), tutti verdi
+- **47 test in test_output.py**, tutti verdi (38 base + 9 Sprint 6/build_signals_today)
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -239,31 +239,50 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 
 ### Sprint 6 — Frontend (completato — 2026-05-18)
 
-- HTML + JS vanilla; **Tailwind CSS + DaisyUI** (CDN jsDelivr) + **Chart.js** (CDN); nginx statico; Cloudflare CDN/WAF
-- **Redesign completo** ispirato a Google Weather (sintesi) + Foreca (dettaglio):
-  - Card **Condizioni ora**: temp/umidità/vento/precip da obs realtime SIR (ultimi 60 min)
-  - **Grafico combinato multi-giorno scrollabile**: temperatura (arancio) + umidità (blu
-    tratteggiato) + precipitazioni (barre) per oggi + D+1…D+7 in un'unica viewport
-  - **Switch modello**: Guazza ML ↔ 6 modelli NWP (ECMWF IFS, ICON-EU, ICON-D2, GFS, AROME, ICON-2I)
-    — cambia la linea di temperatura/umidità nel grafico senza ricaricare i dati
-  - **Day strip**: card orizzontali scrollabili con indicatori (dots colorati) per tutti i giorni
-  - **Day expanded**: dettaglio del giorno selezionato — 3 forecast card con CI bar + 9 indicatori + tabella NWP
-  - Badge coverage in fondo; stale warning se dati > 6h
-- **Refactor stack UI** (Tailwind + DaisyUI + Chart.js):
-  - Grafico multi-giorno sostituito con Chart.js (mixed line/bar, tooltip hover, due assi Y)
-  - Switch modello aggiorna solo i dataset Chart.js senza re-render pagina
-  - Tutte le classi CSS custom sostituite con DaisyUI (`card`, `btn`, `badge`, `alert`, `table`)
-  - `style.css` ridotto a ~25 righe (solo CI bar + indicatori + chart scroll)
-  - Dark mode via `data-theme` DaisyUI, aggiornato su `prefers-color-scheme` change
-- **Nuovi campi JSON** (output.py + predict.py):
-  - `current`: condizioni realtime aggregate (AVG stazioni, ultima 1h)
-  - `today_hourly`: profilo orario NWP ensemble ore rimanenti di oggi (no rescaling ML)
-  - `nwp_models_hourly`: serie orarie per-modello per lo switch grafico
-  - `humidity_pct` aggiunto al profilo orario `days[].hourly`
-- 9 nuovi test (38 totali in test_output.py), mypy e ruff OK
+Stack: HTML + JS vanilla; **Tailwind CSS + DaisyUI v4** (CDN jsDelivr) + **Chart.js** (CDN); nginx statico; Cloudflare CDN/WAF.
 
-🟡 **Punto aperto**: `current` sarà `null` finché non ci sono stazioni SIR con `granularity='realtime'`
-   nelle ultime 60 min nel DB locale — si popola solo in produzione con il job realtime.
+#### Layout a 3 sezioni stile Foreca
+
+**Sezione A — Condizioni attuali** (pannello principale)
+- Temperatura grande + icona meteo derivata da realtime
+- **Temperatura percepita** (`feels_like_c`, Steadman/BoM) e **punto di rugiada** (`dewpoint_c`, Magnus), calcolati server-side in `output.py`
+- Mini-stats: Vento / Umidità / Precipitazione
+- **Indicatori DLE di oggi** (`build_signals_today`): calcolati dalle osservazioni realtime
+  (precip/vento/umidità deterministici 0/1; Tmin resta da ML perché la notte non è ancora finita)
+
+**Sezione B — Previsioni giornaliere**
+- Striscia card orizzontale scrollabile: oggi + D+1…D+7, icona meteo + Tmax/Tmin/precip + indicator dots
+- Clic su card espande dettaglio: CI bar 80/90% per Tmin/Tmax/precip + 9 indicatori DLE + tabella confronto modelli NWP con **data ultimo run per modello** (`last_run`)
+
+**Sezione C — Grafico unico multi-giorno**
+- Chart.js mixed (line/bar): temperatura (arancio) + umidità (blu tratteggiato) + precipitazioni (barre, opacità proporzionale a `precip_prob`) + **vento km/h** (verde tratteggiato, asse destra)
+- **Crosshair verticale** inline plugin
+- Switch modello: Guazza ML ↔ 6 modelli NWP senza reload
+
+#### Campi JSON aggiunti (output.py)
+
+| Campo | Dove | Contenuto |
+|---|---|---|
+| `current.dewpoint_c` | payload root | Punto di rugiada calcolato (Magnus) |
+| `current.feels_like_c` | payload root | Temperatura apparente (Steadman/BoM) |
+| `current.wind_speed_ms` | payload root | Vento realtime SIR (spesso null su Netatmo base) |
+| `today_hourly[].wind_speed_ms` | payload root | Vento NWP ensemble (ore future di oggi) |
+| `days[].hourly[].wind_speed_ms` | per giorno | Vento NWP ensemble per ora (no rescaling) |
+| `nwp_models_hourly[].data[].wind_speed_ms` | per modello | Vento per modello NWP |
+| `days[].nwp_comparison[].last_run` | per giorno | Data ultimo run per modello (`strftime`) |
+
+#### Fix post-deploy (2026-05-18)
+
+- **Timestamp SIR +2h nel browser**: rimosso `|| '+00:00'` dal `strftime` in `get_current_conditions`. I timestamp SIR sono salvati come CEST naive; aggiungere il suffisso UTC causava +2h nella conversione browser.
+- **Lead time +48h invece di +24h per domani**: la QUALIFY in `predict.py` usava `lead_time_h DESC` per i giorni futuri, selezionando il forecast più vecchio. Corretto in `lead_time_h ASC` (forecast più recente) per tutti i giorni.
+
+#### Indicatori realtime (`build_signals_today`)
+
+Per `target_date == today`, `predict.py` chiama `build_signals_today` che sovrascrive i segnali probabilistici (precip/vento/umidità) con valori deterministici 0/1 dalle ultime osservazioni realtime. Temperatura minima resta da ML (la notte non è ancora completata).
+
+🟡 **Punto aperto**: `current` è `null` finché non ci sono osservazioni SIR/Netatmo con `granularity='realtime'` nelle ultime 3h nel DB. In locale richiede `ingest realtime` manuale prima di `predict run`; in produzione il cron ogni 30min lo mantiene fresco.
+
+🟡 **Punto aperto**: wind in `current` è quasi sempre `null` — le stazioni Netatmo base non riportano il vento, e solo alcune SIR lo misurano in realtime. Da valutare in Sprint 7+.
 
 ### Sprint 7 — Deploy VPS
 **Dipendenza**: tutto funzionante e testato in locale
