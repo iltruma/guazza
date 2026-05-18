@@ -145,7 +145,6 @@ function fmtDayLabel(isoDate) {
   const diff = Math.round((target - todayMid) / 86400000);
   if (diff === 0) return 'Oggi';
   if (diff === 1) return 'Domani';
-  if (diff === 2) return 'Dopodomani';
   return target.toLocaleDateString('it-IT', { weekday: 'long' });
 }
 
@@ -156,7 +155,6 @@ function fmtDayShort(isoDate) {
   const diff = Math.round((target - todayMid) / 86400000);
   if (diff === 0) return 'Oggi';
   if (diff === 1) return 'Dom.';
-  if (diff === 2) return 'Dopo.';
   const wd = target.toLocaleDateString('it-IT', { weekday: 'short' });
   return wd.charAt(0).toUpperCase() + wd.slice(1);
 }
