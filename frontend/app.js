@@ -349,7 +349,7 @@ function renderDayCards(days, activeDayIdx) {
     </div>`;
   }).join('');
 
-  return `<section class="flex gap-2 overflow-x-auto pb-2 mb-4" style="-webkit-overflow-scrolling:touch;scrollbar-width:thin">${cards}</section>`;
+  return `<section class="flex gap-2 overflow-x-auto p-1 mb-3" style="-webkit-overflow-scrolling:touch;scrollbar-width:thin">${cards}</section>`;
 }
 
 // ── NWP comparison table ──────────────────────────────────────────────────────
@@ -449,31 +449,33 @@ function renderModelSwitch(data) {
 
 // ── Sezione C: Grafico unico multi-giorno ─────────────────────────────────────
 
-function buildChartPoints(data, model) {
+function buildChartPoints(data, model, targetDate) {
+  const [y, m, d] = targetDate.split('-').map(Number);
+  const dayStart = new Date(y, m - 1, d, 0, 0, 0);
+  const dayEnd   = new Date(y, m - 1, d, 23, 59, 59);
   const points = [];
+
   if (model === 'guazza') {
-    const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
-    (data.today_hourly || []).forEach(h => {
-      const ts = new Date(todayMid); ts.setHours(h.hour, 0, 0, 0);
-      points.push({ ts, temp_c: h.temp_c, humidity_pct: h.humidity_pct,
+    const n = new Date();
+    const isTodayDate = y === n.getFullYear() && m === (n.getMonth() + 1) && d === n.getDate();
+    const hourlyData = isTodayDate
+      ? (data.today_hourly || [])
+      : (data.days.find(day => day.target_date === targetDate)?.hourly || []);
+    hourlyData.forEach(h => {
+      points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0),
+                    temp_c: h.temp_c, humidity_pct: h.humidity_pct,
                     precip_mm: h.precip_mm, precip_prob: h.precip_prob,
                     wind_speed_ms: h.wind_speed_ms });
     });
-    (data.days || []).forEach(day => {
-      const [y, m, d] = day.target_date.split('-').map(Number);
-      (day.hourly || []).forEach(h => {
-        points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0),
-                      temp_c: h.temp_c, humidity_pct: h.humidity_pct,
-                      precip_mm: h.precip_mm, precip_prob: h.precip_prob,
-                      wind_speed_ms: h.wind_speed_ms });
-      });
-    });
   } else {
-    const modelData = (data.nwp_models_hourly || []).find(m => m.source === model);
+    const modelData = (data.nwp_models_hourly || []).find(mdl => mdl.source === model);
     (modelData?.data || []).forEach(pt => {
-      points.push({ ts: new Date(pt.ts), temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
-                    precip_mm: pt.precip_mm, precip_prob: null,
-                    wind_speed_ms: pt.wind_speed_ms });
+      const ts = new Date(pt.ts);
+      if (ts >= dayStart && ts <= dayEnd) {
+        points.push({ ts, temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
+                      precip_mm: pt.precip_mm, precip_prob: null,
+                      wind_speed_ms: pt.wind_speed_ms });
+      }
     });
   }
   return points.sort((a, b) => a.ts - b.ts);
@@ -524,20 +526,18 @@ const crosshairPlugin = {
   },
 };
 
-function initChart(data, model) {
+function initChart(data, model, targetDate) {
   const canvas = document.getElementById('meteo-chart');
   if (!canvas) return;
   if (meteoChart) { meteoChart.destroy(); meteoChart = null; }
 
-  const points = buildChartPoints(data, model);
-  const noData = document.getElementById('chart-no-data');
-  if (points.length < 2) {
-    canvas.style.display = 'none';
-    if (noData) noData.classList.remove('hidden');
-    return;
-  }
+  const [y, m, d] = targetDate.split('-').map(Number);
+  const xMin = new Date(y, m - 1, d, 0, 0, 0);
+  const xMax = new Date(y, m - 1, d, 23, 0, 0);
+
+  const points = buildChartPoints(data, model, targetDate);
   canvas.style.display = '';
-  if (noData) noData.classList.add('hidden');
+  document.getElementById('chart-no-data')?.classList.add('hidden');
 
   const p = chartPalette();
   const { data: precipData, bg: precipBg } = precipDatasets(points);
@@ -621,9 +621,11 @@ function initChart(data, model) {
       scales: {
         x: {
           type: 'time',
-          time: { unit: 'hour', displayFormats: { hour: 'HH', day: 'EEE d' } },
+          min: xMin,
+          max: xMax,
+          time: { unit: 'hour', displayFormats: { hour: 'HH' } },
           grid: { color: p.grid },
-          ticks: { color: p.label, maxTicksLimit: 14, font: { size: 9 } },
+          ticks: { color: p.label, maxTicksLimit: 13, stepSize: 2, font: { size: 9 } },
         },
         yTemp: {
           position: 'left',
@@ -649,9 +651,9 @@ function initChart(data, model) {
   });
 }
 
-function updateChartModel(data, model) {
-  if (!meteoChart) { initChart(data, model); return; }
-  const points = buildChartPoints(data, model);
+function updateChartModel(data, model, targetDate) {
+  if (!meteoChart) { initChart(data, model, targetDate); return; }
+  const points = buildChartPoints(data, model, targetDate);
   const { data: precipData, bg: precipBg } = precipDatasets(points);
   meteoChart.data.datasets[0].data = points.filter(pt => pt.temp_c != null).map(pt => ({ x: pt.ts, y: pt.temp_c }));
   meteoChart.data.datasets[1].data = points.filter(pt => pt.humidity_pct != null).map(pt => ({ x: pt.ts, y: pt.humidity_pct }));
@@ -667,6 +669,7 @@ function updateChartModel(data, model) {
 function render(container, data) {
   if (selectedDayIdx >= data.days.length) selectedDayIdx = 0;
   const day = data.days[selectedDayIdx];
+  const targetDate = day?.target_date ?? data.days[0]?.target_date;
 
   if (meteoChart) { meteoChart.destroy(); meteoChart = null; }
 
@@ -705,7 +708,12 @@ function render(container, data) {
     ${coverageBadge(data.coverage_empirical_30d)}
   `;
 
-  initChart(data, selectedModel);
+  // trigger fade-in
+  container.classList.remove('anim-fade-in');
+  void container.offsetWidth;
+  container.classList.add('anim-fade-in');
+
+  if (targetDate) initChart(data, selectedModel, targetDate);
 
   container.querySelectorAll('[data-idx]').forEach(card => {
     card.addEventListener('click', () => {
@@ -725,7 +733,7 @@ function render(container, data) {
       document.getElementById('model-switch')?.querySelectorAll('[data-src]').forEach(b => {
         b.className = `btn btn-xs ${b.dataset.src === selectedModel ? 'btn-primary' : 'btn-outline'}`;
       });
-      updateChartModel(data, selectedModel);
+      updateChartModel(data, selectedModel, targetDate);
     });
   });
 }

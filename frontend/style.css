@@ -22,3 +22,10 @@
 
 /* Chart container — overflow for horizontal scroll on mobile */
 .combined-chart-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 6px; }
+
+/* Fade-in animation for location/day transitions */
+@keyframes guazza-fade-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.anim-fade-in { animation: guazza-fade-in 0.2s ease-out both; }
