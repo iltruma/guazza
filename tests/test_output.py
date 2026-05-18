@@ -16,6 +16,7 @@ from guazza.output import (
     build_signals,
     compute_coverage_30d,
     compute_hourly_profile,
+    get_nwp_model_comparison,
     write_location_json,
 )
 from guazza.storage import DuckDBClient
@@ -232,6 +233,59 @@ def test_coverage_30d_perfect_coverage(seeded_db: Path) -> None:
 
     assert cov["tmin_ci80"] == pytest.approx(1.0)
     assert cov["tmin_ci90"] == pytest.approx(1.0)
+
+
+# ── get_nwp_model_comparison ────────────────────────────────────────────────
+
+def test_nwp_model_comparison_returns_ordered_models(
+    seeded_db: Path,
+) -> None:
+    with DuckDBClient(db_path=seeded_db) as db:
+        db.execute("""
+            INSERT INTO forecasts
+                (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, precip_mm)
+            VALUES
+                ('open_meteo_ecmwf_ifs', 'casa_campi', '2026-05-18 00:00', '2026-05-19 06:00', 30, 11.0, 0.5),
+                ('open_meteo_ecmwf_ifs', 'casa_campi', '2026-05-18 00:00', '2026-05-19 12:00', 36, 18.0, 0.0),
+                ('open_meteo_ecmwf_ifs', 'casa_campi', '2026-05-18 00:00', '2026-05-19 18:00', 42, 15.0, 0.2),
+                ('open_meteo_icon_eu',   'casa_campi', '2026-05-18 00:00', '2026-05-19 06:00', 30, 10.5, 1.0),
+                ('open_meteo_icon_eu',   'casa_campi', '2026-05-18 00:00', '2026-05-19 12:00', 36, 19.5, 0.0)
+        """)
+        result = get_nwp_model_comparison(db, "casa_campi", "2026-05-19")
+
+    labels = [r["label"] for r in result]
+    assert labels == ["ECMWF IFS", "ICON-EU"]
+
+    ecmwf = result[0]
+    assert ecmwf["tmin_c"] == pytest.approx(11.0)
+    assert ecmwf["tmax_c"] == pytest.approx(18.0)
+    assert ecmwf["precip_mm"] == pytest.approx(0.7)
+
+
+def test_nwp_model_comparison_empty_when_no_data(
+    seeded_db: Path,
+) -> None:
+    with DuckDBClient(db_path=seeded_db) as db:
+        result = get_nwp_model_comparison(db, "casa_campi", "2026-05-19")
+    assert result == []
+
+
+def test_nwp_model_comparison_latest_run_wins(
+    seeded_db: Path,
+) -> None:
+    """Il run più recente prevale per lo stesso (source, ts_valid)."""
+    with DuckDBClient(db_path=seeded_db) as db:
+        db.execute("""
+            INSERT INTO forecasts
+                (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, precip_mm)
+            VALUES
+                ('open_meteo_icon_eu', 'casa_campi', '2026-05-18 00:00', '2026-05-19 12:00', 36, 20.0, 0.0),
+                ('open_meteo_icon_eu', 'casa_campi', '2026-05-18 06:00', '2026-05-19 12:00', 30, 21.0, 0.0)
+        """)
+        result = get_nwp_model_comparison(db, "casa_campi", "2026-05-19")
+
+    assert len(result) == 1
+    assert result[0]["tmax_c"] == pytest.approx(21.0)  # il run 06:00 vince
 
 
 # ── write_location_json ──────────────────────────────────────────────────────

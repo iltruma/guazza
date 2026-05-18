@@ -35,6 +35,7 @@ from guazza.output import (
     build_signals,
     compute_coverage_30d,
     compute_hourly_profile,
+    get_nwp_model_comparison,
     write_location_json,
 )
 from guazza.storage import DuckDBClient
@@ -157,12 +158,17 @@ def cmd_run(
                         precip_p50=pred["precip_mm"].get("p50"),
                     )
 
+                    nwp_comparison = get_nwp_model_comparison(
+                        db, location_id, str(target_date_obj),
+                    )
+
                     day_entries.append({
-                        "target_date": str(target_date_obj),
-                        "lead_time_h": lead_time_h,
-                        "pred":        pred,
-                        "indicators":  results,
-                        "hourly":      hourly,
+                        "target_date":    str(target_date_obj),
+                        "lead_time_h":    lead_time_h,
+                        "pred":           pred,
+                        "indicators":     results,
+                        "hourly":         hourly,
+                        "nwp_comparison": nwp_comparison,
                     })
 
                     if dry_run:

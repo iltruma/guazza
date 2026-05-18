@@ -39,6 +39,24 @@ _NWP_HUM_COLS = [
     "gfs_humidity_pct",   "arome_humidity_pct", "icon2i_humidity_pct",
 ]
 
+# Ordine e label per il confronto modelli nel frontend
+_MODEL_ORDER = [
+    "open_meteo_ecmwf_ifs",
+    "open_meteo_icon_eu",
+    "open_meteo_icon_d2",
+    "open_meteo_gfs025",
+    "open_meteo_arome_france",
+    "open_meteo_italia_meteo_arpae_icon_2i",
+]
+_MODEL_LABELS: dict[str, str] = {
+    "open_meteo_ecmwf_ifs":                  "ECMWF IFS",
+    "open_meteo_icon_eu":                    "ICON-EU",
+    "open_meteo_icon_d2":                    "ICON-D2",
+    "open_meteo_gfs025":                     "GFS 0.25°",
+    "open_meteo_arome_france":               "AROME",
+    "open_meteo_italia_meteo_arpae_icon_2i": "ICON-2I",
+}
+
 
 def _get(row: pd.Series, col: str) -> float | None:
     """Legge un valore dalla Series, restituendo None per NaN."""
@@ -83,6 +101,56 @@ def _nwp_frac(vals: list[float | None], pred: Any) -> float:
     if not valid:
         return 0.5
     return sum(1 for v in valid if pred(v)) / len(valid)
+
+
+def get_nwp_model_comparison(
+    db: DuckDBClient,
+    location_id: str,
+    target_date: str,
+) -> list[dict[str, Any]]:
+    """Aggregato giornaliero per modello NWP: tmin, tmax, precip.
+
+    Prende l'ultimo ts_run per ogni (source, ora) e aggrega la giornata intera.
+    Modelli senza dati temp vengono omessi. Risultato ordinato per _MODEL_ORDER.
+
+    Returns:
+        Lista di {source, label, tmin_c, tmax_c, precip_mm}.
+    """
+    df = db.execute("""
+        SELECT
+            source,
+            ROUND(MIN(temp_c), 1)                   AS tmin_c,
+            ROUND(MAX(temp_c), 1)                   AS tmax_c,
+            ROUND(SUM(COALESCE(precip_mm, 0.0)), 1) AS precip_mm
+        FROM (
+            SELECT source, ts_valid, temp_c, precip_mm
+            FROM forecasts
+            WHERE location_id = ?
+              AND CAST(ts_valid AS DATE) = ?
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY source, ts_valid ORDER BY ts_run DESC
+            ) = 1
+        ) latest
+        WHERE temp_c IS NOT NULL
+        GROUP BY source
+    """, [location_id, target_date]).df()
+
+    if df.empty:
+        return []
+
+    by_source = {row["source"]: row for _, row in df.iterrows()}
+
+    return [
+        {
+            "source":    src,
+            "label":     _MODEL_LABELS.get(src, src),
+            "tmin_c":    _get(by_source[src], "tmin_c"),
+            "tmax_c":    _get(by_source[src], "tmax_c"),
+            "precip_mm": _get(by_source[src], "precip_mm"),
+        }
+        for src in _MODEL_ORDER
+        if src in by_source
+    ]
 
 
 def build_signals(
@@ -338,7 +406,8 @@ def write_location_json(
                 r.indicator_id: {"verdict": r.verdict, "rule_matched": r.rule_matched}
                 for r in inds
             },
-            "hourly": day.get("hourly"),
+            "hourly":          day.get("hourly"),
+            "nwp_comparison":  day.get("nwp_comparison"),
         })
 
     payload: dict[str, Any] = {

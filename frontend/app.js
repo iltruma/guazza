@@ -237,6 +237,41 @@ function hourlyChart(hourly) {
     </div>`;
 }
 
+// ── NWP model comparison ─────────────────────────────────────────────────────
+
+function renderNwpComparison(day) {
+  const nwp = day.nwp_comparison;
+  const fc  = day.forecasts;
+  if (!nwp || nwp.length === 0) return '';
+
+  const nwpRows = nwp.map(m => `
+    <tr>
+      <td class="model-name">${m.label}</td>
+      <td>${m.tmin_c != null ? m.tmin_c.toFixed(1) + '°' : '—'}</td>
+      <td>${m.tmax_c != null ? m.tmax_c.toFixed(1) + '°' : '—'}</td>
+      <td>${m.precip_mm != null ? m.precip_mm.toFixed(1) + ' mm' : '—'}</td>
+    </tr>`).join('');
+
+  return `
+    <div class="nwp-comparison">
+      <h4>Confronto modelli</h4>
+      <table class="model-table">
+        <thead>
+          <tr><th>Modello</th><th>Tmin</th><th>Tmax</th><th>Precip</th></tr>
+        </thead>
+        <tbody>
+          ${nwpRows}
+          <tr class="model-row-guazza">
+            <td class="model-name">★ Guazza ML</td>
+            <td>${fmtTemp(fc.tmin_c.p50)}</td>
+            <td>${fmtTemp(fc.tmax_c.p50)}</td>
+            <td>${fmtPrecip(fc.precip_mm.p50)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+}
+
 // ── Day hero ──────────────────────────────────────────────────────────────────
 
 function renderDayHero(day) {
@@ -277,6 +312,7 @@ function renderDayHero(day) {
         </div>
       </div>
       <div class="indicators-grid">${indHtml}</div>
+      ${renderNwpComparison(day)}
     </section>`;
 }
 
