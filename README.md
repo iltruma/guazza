@@ -55,7 +55,7 @@ guazza/
 │   ├── features.py         # build_features_daily() — 50 feature, tabella materializzata
 │   ├── models.py           # LightGBM quantile + CQR, train_all(), predict()
 │   ├── indicators.py       # Decision Logic Engine: evaluate_all(), log_results()
-│   ├── output.py           # build_signals(), compute_coverage_30d(), write_location_json()
+│   ├── output.py           # build_signals(), build_signals_today(), dewpoint/apparent_temp, write_location_json()
 │   ├── qc.py               # Quality control osservazioni SIR + ARPAT
 │   ├── _logging.py         # setup_logging() — TTY pretty / cron JSON strutturato
 │   └── jobs/
@@ -89,7 +89,7 @@ guazza/
 | Sprint 3 | Feature engineering, 50 feature, ring upstream pluvio | ✅ Completato |
 | Sprint 4 | LightGBM quantile + CQR, skill +25% vs NWP su temperatura | ✅ Completato |
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
-| Sprint 6 | Frontend HTML+JS vanilla | — |
+| Sprint 6 | Frontend HTML+JS+Tailwind+DaisyUI+Chart.js, layout Foreca a 3 sezioni | ✅ Completato |
 | Sprint 7 | Deploy VPS, backup R2, crontab | — |
 | Sprint 8 | Model monitoring, coverage alert | — |
 | Sprint 9 | Calibrazione soglie DLE post-deploy | — |
@@ -103,7 +103,7 @@ guazza/
 - **Orchestrazione**: cron Linux (no Prefect, no Airflow)
 - **Storage**: DuckDB (colonnare, file singolo) + R2 backup
 - **ML**: LightGBM quantile regression + CQR calibration
-- **Frontend**: HTML+JS vanilla (Sprint 6)
+- **Frontend**: HTML+JS vanilla + Tailwind CSS + DaisyUI v4 + Chart.js (CDN, statico)
 - **DNS/CDN/WAF**: Cloudflare (gratis)
 - **Monitoring**: Healthchecks.io + UptimeRobot (free tier)
 
@@ -148,13 +148,21 @@ uv run python -m guazza.jobs.train eval --db data/guazza.duckdb
 ### Predizioni + indicatori
 
 ```bash
+# Refresh condizioni realtime (necessario per il campo `current` nel JSON)
+uv run python -m guazza.jobs.ingest realtime
+
 # Genera predizioni quantile + DLE + JSON (schedulare ogni 6h dopo il job forecasts)
 uv run python -m guazza.jobs.predict run --db data/guazza.duckdb \
     --model-dir data/models --output-dir data/output
 ```
 
 Output: `data/output/{location_id}.json` con CI80/CI90 per tmin/tmax/precip,
-9 indicatori semaforo (panni, motorino, gelata, ...) e `coverage_empirical_30d`.
+9 indicatori semaforo (panni, motorino, gelata, ...), `coverage_empirical_30d`,
+condizioni realtime aggregate (`current` con dewpoint e temperatura percepita),
+profili orari NWP con vento, e confronto modelli con data ultimo run.
+
+> **Nota locale**: prima di `predict run` eseguire `ingest realtime` per avere
+> il campo `current` popolato. In produzione il cron ogni 30 min lo mantiene fresco.
 
 ### Opzioni comuni
 
@@ -164,6 +172,52 @@ Output: `data/output/{location_id}.json` con CI80/CI90 per tmin/tmax/precip,
 ```
 
 Variabile d'ambiente `HEALTHCHECKS_URL` per il ping dead-man switch.
+
+---
+
+## Frontend
+
+Il frontend è una SPA statica servita da nginx. Non richiede build step.
+
+### Sviluppo locale
+
+```bash
+# Il symlink frontend/data → ../data/output deve esistere (già nel repo)
+cd frontend && python3 -m http.server 8080
+# Apri http://localhost:8080
+```
+
+### Layout (3 sezioni stile Foreca)
+
+| Sezione | Contenuto |
+|---|---|
+| **A — Condizioni attuali** | Temperatura grande, icona meteo, temperatura percepita (Steadman), punto di rugiada (Magnus), vento/umidità/precipitazione realtime SIR, indicatori DLE calcolati su obs realtime |
+| **B — Previsioni giornaliere** | Striscia card D+0…D+7 con icona/Tmax/Tmin/precip/indicator-dots; clic espande CI bar 80/90% + 9 indicatori + tabella NWP con data ultimo run |
+| **C — Grafico multi-giorno** | Chart.js: temperatura, umidità, precipitazioni, vento — switch Guazza ML ↔ 6 modelli NWP, crosshair verticale |
+
+### Struttura file frontend
+
+```
+frontend/
+├── index.html      # HTML + CDN links (Tailwind, DaisyUI v4, Chart.js)
+├── app.js          # Logica completa (rendering, chart, routing)
+├── style.css       # Solo CI bar + indicatori DLE + chart scroll (~25 righe)
+└── data/           # Symlink → ../data/output (JSON per ogni location)
+```
+
+### JSON di output (`data/output/{location_id}.json`)
+
+```
+{location_id, generated_at, coverage_empirical_30d,
+ current: {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, dewpoint_c, feels_like_c},
+ today_hourly: [{hour, temp_c, humidity_pct, precip_mm, precip_prob, wind_speed_ms}],
+ nwp_models_hourly: [{source, label, data: [{ts, temp_c, humidity_pct, precip_mm, wind_speed_ms}]}],
+ days: [{target_date, lead_time_h,
+         forecasts: {tmin_c, tmax_c, precip_mm} ciascuno con p50+CI80+CI90,
+         indicators: {panni, motorino, gelata, ...} con verdict+rule_matched,
+         hourly: [{hour, temp_c, humidity_pct, precip_mm, precip_prob, wind_speed_ms}],
+         nwp_comparison: [{source, label, tmin_c, tmax_c, precip_mm, last_run}]}]}
+```
 
 ---
 
