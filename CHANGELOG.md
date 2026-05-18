@@ -9,6 +9,19 @@ Versioning: major per sprint, minor per milestone interne.
 ## [Unreleased]
 
 ### Added
+- _(nessuna)_
+
+### Changed
+- _(nessuna)_
+
+### Fixed
+- _(nessuno)_
+
+---
+
+## [0.6.1] — 2026-05-18
+
+### Added
 - **Quinta location `casa_nicco`** (Firenze Novoli, 43.791/11.219, 40m)
   - Primaria SIR: TOS01001096 Firenze Università; termo pesato su TOS03001097 Orto Botanico (ΔQ+8m)
   - 4 stazioni ARPAT Firenze: FI-MOSSE (0.50), FI-BOBOLI (0.30), FI-GRAMSCI (0.15), FI-LAVAGNINI (0.05)
@@ -239,7 +252,8 @@ Bootstrap iniziale del progetto.
 - `docs/known_issues.md`: problemi noti e workaround
 - Agenti subagent per collaborazione multi-modello (Claude, Kimi)
 
-[Unreleased]: https://github.com/cosimo/guazza/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/cosimo/guazza/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/cosimo/guazza/compare/v0.6.0...v0.6.1
 [0.5.0]: https://github.com/cosimo/guazza/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/cosimo/guazza/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/cosimo/guazza/compare/v0.3.0...v0.4.0

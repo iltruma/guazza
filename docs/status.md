@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-18 (Sprint 6 completato + qualità aria nel pannello realtime)
+> Aggiornato: 2026-05-18 (v0.6.1 — Sprint 6 completato + qualità aria nel pannello realtime)
 
 ## Cosa è stato fatto
 
