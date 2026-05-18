@@ -31,7 +31,12 @@ from loguru import logger
 from guazza._logging import setup_logging
 from guazza.indicators import evaluate_all, load_indicators, log_results
 from guazza.models import load_artifacts, predict
-from guazza.output import build_signals, compute_coverage_30d, write_location_json
+from guazza.output import (
+    build_signals,
+    compute_coverage_30d,
+    compute_hourly_profile,
+    write_location_json,
+)
 from guazza.storage import DuckDBClient
 
 app = typer.Typer(help="Predizioni ML per Guazza.")
@@ -145,11 +150,19 @@ def cmd_run(
                         + " ".join(f"{r.indicator_id}={r.verdict[0]}" for r in results)
                     )
 
+                    hourly = compute_hourly_profile(
+                        db, location_id, str(target_date_obj),
+                        tmin_p50=pred["tmin_c"].get("p50"),
+                        tmax_p50=pred["tmax_c"].get("p50"),
+                        precip_p50=pred["precip_mm"].get("p50"),
+                    )
+
                     day_entries.append({
                         "target_date": str(target_date_obj),
                         "lead_time_h": lead_time_h,
                         "pred":        pred,
                         "indicators":  results,
+                        "hourly":      hourly,
                     })
 
                     if dry_run:

@@ -194,6 +194,95 @@ def compute_coverage_30d(
     }
 
 
+def compute_hourly_profile(
+    db: DuckDBClient,
+    location_id: str,
+    target_date: str,
+    tmin_p50: float | None,
+    tmax_p50: float | None,
+    precip_p50: float | None,
+) -> list[dict[str, float | None]] | None:
+    """Profilo orario disaggregato da NWP ensemble, ancorato alle previsioni ML.
+
+    Temperatura: rescaling lineare del profilo ensemble-mean da [raw_min, raw_max]
+    a [tmin_p50, tmax_p50]. Se tmin_p50/tmax_p50 sono None usa i valori raw.
+
+    Precipitazione: distribuzione oraria NWP scalata proporzionalmente così che la
+    somma giornaliera corrisponda a precip_p50 ML. precip_prob = frazione modelli
+    con precip > 0.1mm/h per quell'ora.
+
+    Returns:
+        Lista di 24 dict {hour, temp_c, precip_mm, precip_prob} oppure None
+        se non ci sono dati NWP per il giorno richiesto.
+    """
+    df = db.execute("""
+        SELECT
+            HOUR(ts_valid)                                                      AS hour,
+            AVG(temp_c)                                                         AS temp_mean,
+            AVG(COALESCE(precip_mm, 0.0))                                       AS precip_mean,
+            AVG(CASE WHEN precip_mm IS NULL THEN NULL
+                     WHEN precip_mm > 0.1   THEN 1.0
+                     ELSE 0.0 END)                                              AS precip_prob
+        FROM (
+            SELECT source, ts_valid, temp_c, precip_mm
+            FROM forecasts
+            WHERE location_id = ?
+              AND CAST(ts_valid AS DATE) = ?
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY source, ts_valid
+                ORDER BY ts_run DESC
+            ) = 1
+        ) latest
+        WHERE temp_c IS NOT NULL
+        GROUP BY hour
+        ORDER BY hour
+    """, [location_id, target_date]).df()
+
+    if df.empty:
+        return None
+
+    hour_data: dict[int, tuple[float, float, float | None]] = {
+        int(r["hour"]): (float(r["temp_mean"]), float(r["precip_mean"]),
+                         float(r["precip_prob"]) if r["precip_prob"] is not None else None)
+        for _, r in df.iterrows()
+    }
+
+    raw_temps = [v for _, (v, _, _) in sorted(hour_data.items())]
+    raw_min = min(raw_temps)
+    raw_max = max(raw_temps)
+
+    def _rescale_temp(v: float) -> float:
+        if tmin_p50 is None or tmax_p50 is None:
+            return round(v, 1)
+        span_raw = raw_max - raw_min
+        if span_raw <= 0:
+            return round((tmin_p50 + tmax_p50) / 2.0, 1)
+        return round(tmin_p50 + (v - raw_min) / span_raw * (tmax_p50 - tmin_p50), 1)
+
+    total_precip_raw = sum(v for _, (_, v, _) in hour_data.items())
+    if total_precip_raw > 0 and precip_p50 is not None and precip_p50 > 0:
+        precip_scale = precip_p50 / total_precip_raw
+    else:
+        precip_scale = 0.0
+
+    result: list[dict[str, float | None]] = []
+    for h in range(24):
+        if h in hour_data:
+            t_raw, p_raw, prob = hour_data[h]
+            result.append({
+                "hour":        h,
+                "temp_c":      _rescale_temp(t_raw),
+                "precip_mm":   round(p_raw * precip_scale, 2),
+                "precip_prob": round(prob, 2) if prob is not None else None,
+            })
+        else:
+            result.append({
+                "hour": h, "temp_c": None, "precip_mm": None, "precip_prob": None,
+            })
+
+    return result
+
+
 def write_location_json(
     location_id: str,
     days: list[dict[str, Any]],
@@ -210,7 +299,7 @@ def write_location_json(
 
     Struttura JSON:
       {location_id, generated_at, coverage_empirical_30d,
-       days: [{target_date, lead_time_h, forecasts, indicators}, ...]}
+       days: [{target_date, lead_time_h, forecasts, indicators, hourly}, ...]}
 
     Returns:
         Path del file scritto.
@@ -238,6 +327,7 @@ def write_location_json(
                 r.indicator_id: {"verdict": r.verdict, "rule_matched": r.rule_matched}
                 for r in inds
             },
+            "hourly": day.get("hourly"),
         })
 
     payload: dict[str, Any] = {

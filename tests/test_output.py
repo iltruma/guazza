@@ -15,6 +15,7 @@ from guazza.output import (
     _prob_exceeds,
     build_signals,
     compute_coverage_30d,
+    compute_hourly_profile,
     write_location_json,
 )
 from guazza.storage import DuckDBClient
@@ -341,3 +342,97 @@ def test_write_location_json_multiday_order(
     data = json.loads(path.read_text())
     assert [d["target_date"] for d in data["days"]] == ["2026-05-19", "2026-05-20", "2026-05-21"]
     assert [d["lead_time_h"] for d in data["days"]] == [24, 48, 72]
+
+
+# ── compute_hourly_profile ────────────────────────────────────────────────────
+
+def _insert_hourly_nwp(db_path: Path, location_id: str, target_date: str) -> None:
+    """Inserisce 24h di NWP fittizio per due sorgenti."""
+    import duckdb
+    from datetime import date
+
+    d = date.fromisoformat(target_date)
+    ts_run = datetime(d.year, d.month, d.day, 0, 0, 0)
+    records = []
+    for src in ("ecmwf_ifs", "icon_eu"):
+        for h in range(24):
+            ts_valid = datetime(d.year, d.month, d.day, h, 0, 0)
+            lead_time_h = h
+            # Temp: parabola con min alle 6, max alle 14; precip solo ore 10-12
+            raw_temp = 5.0 + 10.0 * math.sin(math.pi * (h - 6) / 18) if h >= 6 else 5.0
+            precip = 2.0 if 10 <= h <= 12 else 0.0
+            records.append((src, location_id, ts_run, ts_valid, lead_time_h, raw_temp, precip))
+
+    con = duckdb.connect(str(db_path))
+    con.executemany(
+        "INSERT OR REPLACE INTO forecasts "
+        "(source, location_id, ts_run, ts_valid, lead_time_h, temp_c, precip_mm) "
+        "VALUES (?,?,?,?,?,?,?)",
+        records,
+    )
+    con.close()
+
+
+def test_hourly_profile_no_data(seeded_db: Path) -> None:
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(db, "casa_campi", "2026-05-19", 5.0, 20.0, 3.0)
+    assert result is None
+
+
+def test_hourly_profile_length(seeded_db: Path) -> None:
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(db, "casa_campi", "2026-05-19", 5.0, 20.0, 3.0)
+    assert result is not None
+    assert len(result) == 24
+    assert [r["hour"] for r in result] == list(range(24))
+
+
+def test_hourly_profile_temp_anchored(seeded_db: Path) -> None:
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    tmin, tmax = 4.0, 22.0
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(db, "casa_campi", "2026-05-19", tmin, tmax, 0.0)
+    assert result is not None
+    temps = [r["temp_c"] for r in result if r["temp_c"] is not None]
+    assert min(temps) == pytest.approx(tmin, abs=0.2)
+    assert max(temps) == pytest.approx(tmax, abs=0.2)
+
+
+def test_hourly_profile_precip_total(seeded_db: Path) -> None:
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    precip_p50 = 5.0
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(db, "casa_campi", "2026-05-19", 5.0, 20.0, precip_p50)
+    assert result is not None
+    total = sum(r["precip_mm"] for r in result if r["precip_mm"] is not None)
+    assert total == pytest.approx(precip_p50, rel=0.01)
+
+
+def test_hourly_profile_precip_zero_when_dry(seeded_db: Path) -> None:
+    """Se precip_p50=0, tutte le ore devono essere 0."""
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(db, "casa_campi", "2026-05-19", 5.0, 20.0, 0.0)
+    assert result is not None
+    assert all(r["precip_mm"] == 0.0 for r in result)
+
+
+def test_hourly_profile_in_json(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+    seeded_db: Path,
+) -> None:
+    """Il campo hourly viene scritto correttamente nel JSON."""
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        hourly = compute_hourly_profile(db, "casa_campi", "2026-05-19", 5.0, 20.0, 3.0)
+    days = [{"target_date": "2026-05-19", "lead_time_h": 24,
+             "pred": sample_pred, "indicators": sample_indicators, "hourly": hourly}]
+    path = write_location_json(
+        location_id="casa_campi", days=days, coverage={}, output_dir=tmp_path,
+    )
+    data = json.loads(path.read_text())
+    assert data["days"][0]["hourly"] is not None
+    assert len(data["days"][0]["hourly"]) == 24
