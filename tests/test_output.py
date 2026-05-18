@@ -235,6 +235,20 @@ def test_coverage_30d_perfect_coverage(seeded_db: Path) -> None:
 
 # ── write_location_json ──────────────────────────────────────────────────────
 
+def _make_days(
+    pred: dict,
+    indicators: list[IndicatorResult],
+    dates: list[tuple[str, int]] | None = None,
+) -> list[dict]:
+    """Helper: costruisce una lista day_entries per write_location_json."""
+    if dates is None:
+        dates = [("2026-05-19", 24)]
+    return [
+        {"target_date": d, "lead_time_h": lt, "pred": pred, "indicators": indicators}
+        for d, lt in dates
+    ]
+
+
 def test_write_location_json_creates_file(
     tmp_path: Path,
     sample_pred: dict,
@@ -247,10 +261,7 @@ def test_write_location_json_creates_file(
     }
     path = write_location_json(
         location_id="casa_campi",
-        target_date="2026-05-18",
-        lead_time_h=24,
-        pred=sample_pred,
-        indicators=sample_indicators,
+        days=_make_days(sample_pred, sample_indicators),
         coverage=coverage,
         output_dir=tmp_path,
     )
@@ -266,34 +277,37 @@ def test_write_location_json_structure(
     coverage: dict = {"tmin_ci80": None, "tmin_ci90": None,
                       "tmax_ci80": None, "tmax_ci90": None,
                       "precip_ci80": None, "precip_ci90": None}
+    days = _make_days(
+        sample_pred, sample_indicators,
+        dates=[("2026-05-19", 24), ("2026-05-20", 48)],
+    )
     path = write_location_json(
         location_id="lavoro_cosimo",
-        target_date="2026-05-18",
-        lead_time_h=24,
-        pred=sample_pred,
-        indicators=sample_indicators,
+        days=days,
         coverage=coverage,
         output_dir=tmp_path,
     )
     data = json.loads(path.read_text())
 
     assert data["location_id"] == "lavoro_cosimo"
-    assert data["target_date"] == "2026-05-18"
-    assert data["lead_time_h"] == 24
     assert "generated_at" in data
+    assert data["coverage_empirical_30d"]["tmin_ci80"] is None
 
-    fc = data["forecasts"]
+    assert len(data["days"]) == 2
+    day0 = data["days"][0]
+    assert day0["target_date"] == "2026-05-19"
+    assert day0["lead_time_h"] == 24
+
+    fc = day0["forecasts"]
     assert "tmin_c" in fc and "tmax_c" in fc and "precip_mm" in fc
     for target in fc.values():
         assert "p50" in target
         assert "ci80_lo" in target and "ci80_hi" in target
         assert "ci90_lo" in target and "ci90_hi" in target
 
-    assert "panni" in data["indicators"]
-    assert data["indicators"]["panni"]["verdict"] == "verde"
-    assert data["indicators"]["motorino"]["verdict"] == "giallo"
-
-    assert data["coverage_empirical_30d"]["tmin_ci80"] is None
+    assert "panni" in day0["indicators"]
+    assert day0["indicators"]["panni"]["verdict"] == "verde"
+    assert day0["indicators"]["motorino"]["verdict"] == "giallo"
 
 
 def test_write_location_json_valid_json(
@@ -304,12 +318,26 @@ def test_write_location_json_valid_json(
     coverage: dict = {}
     path = write_location_json(
         location_id="test_loc",
-        target_date="2026-05-18",
-        lead_time_h=0,
-        pred=sample_pred,
-        indicators=sample_indicators,
+        days=_make_days(sample_pred, sample_indicators),
         coverage=coverage,
         output_dir=tmp_path,
     )
-    # Deve essere JSON valido
     json.loads(path.read_text())
+
+
+def test_write_location_json_multiday_order(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+) -> None:
+    """I giorni compaiono nel JSON nell'ordine in cui vengono passati."""
+    dates = [("2026-05-19", 24), ("2026-05-20", 48), ("2026-05-21", 72)]
+    path = write_location_json(
+        location_id="casa_cesto",
+        days=_make_days(sample_pred, sample_indicators, dates=dates),
+        coverage={},
+        output_dir=tmp_path,
+    )
+    data = json.loads(path.read_text())
+    assert [d["target_date"] for d in data["days"]] == ["2026-05-19", "2026-05-20", "2026-05-21"]
+    assert [d["lead_time_h"] for d in data["days"]] == [24, 48, 72]

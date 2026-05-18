@@ -3,13 +3,15 @@
 Pipeline per ogni location (ordine):
   1. ensure_predictions_schema()    — migrazione schema v0.5 se necessario
   2. backfill_prediction_obs()      — riempie *_obs su predictions passate
-  3. query features_daily           — ultima riga disponibile per location
-  4. models.predict()               — quantile CI tmin/tmax/precip
-  5. upsert_predictions()           — salva in DuckDB
-  6. build_signals() + DLE          — valuta indicatori
-  7. log_results()                  — indicator_log
-  8. compute_coverage_30d()         — copertura empirica rolling
-  9. write_location_json()          — {output_dir}/{location_id}.json
+  3. query features_daily           — miglior lead_time_h per ogni (location, data futura)
+  4. per ogni (location, data):
+       models.predict()             — quantile CI tmin/tmax/precip
+       upsert_predictions()         — salva in DuckDB
+       build_signals() + DLE        — valuta indicatori
+       log_results()                — indicator_log
+  5. per ogni location:
+       compute_coverage_30d()       — copertura empirica rolling
+       write_location_json()        — {output_dir}/{location_id}.json (tutti i giorni)
 
 Cron: ogni 6h, subito dopo il job forecasts + features build.
 """
@@ -17,8 +19,9 @@ Cron: ogni 6h, subito dopo il job forecasts + features build.
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pandas as pd
@@ -70,6 +73,10 @@ def _fetch_obs_summary(db: DuckDBClient, location_id: str) -> dict[str, float | 
     }
 
 
+def _to_date(val: Any) -> Any:
+    return val.date() if hasattr(val, "date") else val
+
+
 @app.command("run")
 def cmd_run(
     db_path:    Path = typer.Option(_DB_PATH,    "--db",         help="Path DuckDB"),
@@ -77,7 +84,7 @@ def cmd_run(
     output_dir: Path = typer.Option(_OUTPUT_DIR, "--output-dir", help="Directory output JSON"),
     dry_run:    bool = typer.Option(False,       "--dry-run",    help="Non scrive su disco né in DB"),
 ) -> None:
-    """Genera predizioni ML + indicatori DLE per tutte le location."""
+    """Genera predizioni ML + indicatori DLE per tutte le location (D+1…D+7)."""
     setup_logging()
     _ping_healthchecks("/start")
 
@@ -89,92 +96,89 @@ def cmd_run(
         indicators_cfg = load_indicators()
 
         with DuckDBClient(db_path=db_path) as db:
-            # Schema migration e backfill obs prima di qualsiasi predict
             if not dry_run:
                 db.ensure_predictions_schema()
                 n_backfilled = db.backfill_prediction_obs()
                 if n_backfilled:
                     logger.info(f"Obs backfilled: {n_backfilled} predictions aggiornate")
 
-            # Ultima riga disponibile per ogni location (data più recente, lead time massimo)
-            df_predict = db.execute("""
+            # Miglior lead_time_h per ogni (location_id, target_date) futuro
+            df_all = db.execute("""
                 SELECT *
                 FROM features_daily
+                WHERE target_date > CURRENT_DATE
                 QUALIFY ROW_NUMBER() OVER (
-                    PARTITION BY location_id
-                    ORDER BY target_date DESC, lead_time_h DESC
+                    PARTITION BY location_id, target_date
+                    ORDER BY lead_time_h DESC
                 ) = 1
+                ORDER BY location_id, target_date
             """).df()
 
-            if df_predict.empty:
-                logger.error("features_daily vuota — esegui prima: features build")
-                raise typer.Exit(1)
+            if df_all.empty:
+                logger.warning(
+                    "Nessuna data futura in features_daily "
+                    "— esegui prima il job forecasts + features build"
+                )
+                _ping_healthchecks()
+                return
 
-            today = datetime.now(tz=UTC).date()
             json_paths: list[Path] = []
 
-            for _, row in df_predict.iterrows():
-                location_id = str(row["location_id"])
-                target_date = row["target_date"]
-                lead_time_h = int(row["lead_time_h"])
+            for location_id, loc_df in df_all.groupby("location_id"):
+                location_id = str(location_id)
+                obs_summary = _fetch_obs_summary(db, location_id)
+                day_entries: list[dict[str, Any]] = []
 
-                if hasattr(target_date, "date"):
-                    target_date_obj = target_date.date() if hasattr(target_date, "date") else target_date
-                else:
-                    target_date_obj = target_date
-                if target_date_obj < today:
-                    logger.warning(
-                        f"[{location_id}] target_date {target_date_obj} è nel passato "
-                        f"— in produzione esegui prima il job forecasts"
+                for _, row in loc_df.iterrows():
+                    target_date_obj = _to_date(row["target_date"])
+                    lead_time_h = int(row["lead_time_h"])
+
+                    X = pd.DataFrame([row[artifacts.feature_cols]])
+                    X["location_id"] = X["location_id"].astype("category")
+                    pred = predict(artifacts, X, lead_h=lead_time_h)
+
+                    signals = build_signals(pred, row, obs_summary)
+                    results = evaluate_all(indicators_cfg, signals, location_id)
+
+                    logger.info(
+                        f"[{location_id}] {target_date_obj} lead={lead_time_h}h "
+                        + " ".join(f"{r.indicator_id}={r.verdict[0]}" for r in results)
                     )
 
-                # Feature vector per il modello
-                X = pd.DataFrame([row[artifacts.feature_cols]])
-                X["location_id"] = X["location_id"].astype("category")
+                    day_entries.append({
+                        "target_date": str(target_date_obj),
+                        "lead_time_h": lead_time_h,
+                        "pred":        pred,
+                        "indicators":  results,
+                    })
 
-                pred = predict(artifacts, X, lead_h=lead_time_h)
+                    if dry_run:
+                        continue
 
-                # Segnali per il DLE: ML quantile + NWP ensemble + obs real-time
-                obs_summary = _fetch_obs_summary(db, location_id)
-                signals = build_signals(pred, row, obs_summary)
-
-                # Valutazione indicatori
-                results = evaluate_all(indicators_cfg, signals, location_id)
-
-                logger.info(
-                    f"[{location_id}] {target_date_obj} lead={lead_time_h}h "
-                    + " ".join(f"{r.indicator_id}={r.verdict[0]}" for r in results)
-                )
+                    ts_valid = datetime(
+                        target_date_obj.year, target_date_obj.month, target_date_obj.day,
+                        tzinfo=None,
+                    )
+                    db.upsert_predictions([{
+                        "model_version": model_version,
+                        "location_id":   location_id,
+                        "ts_valid":      ts_valid,
+                        "lead_time_h":   lead_time_h,
+                        "tmin_c":        pred["tmin_c"],
+                        "tmax_c":        pred["tmax_c"],
+                        "precip_mm":     pred["precip_mm"],
+                    }])
+                    log_results(db, results, input_summary={
+                        k: v for k, v in signals.items() if v is not None
+                    })
 
                 if dry_run:
                     continue
 
-                # Persistenza DuckDB
-                ts_valid = datetime(
-                    target_date_obj.year, target_date_obj.month, target_date_obj.day,
-                    tzinfo=None,
-                )
-                db.upsert_predictions([{
-                    "model_version": model_version,
-                    "location_id":   location_id,
-                    "ts_valid":      ts_valid,
-                    "lead_time_h":   lead_time_h,
-                    "tmin_c":        pred["tmin_c"],
-                    "tmax_c":        pred["tmax_c"],
-                    "precip_mm":     pred["precip_mm"],
-                }])
-                log_results(db, results, input_summary={
-                    k: v for k, v in signals.items() if v is not None
-                })
-
-                # Coverage e output JSON
                 coverage = compute_coverage_30d(db, location_id)
                 path = write_location_json(
                     location_id=location_id,
-                    target_date=str(target_date_obj),
-                    lead_time_h=lead_time_h,
-                    pred=pred,
-                    indicators=results,
+                    days=day_entries,
                     coverage=coverage,
                     output_dir=output_dir,
                 )

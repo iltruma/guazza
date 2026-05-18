@@ -1,10 +1,10 @@
 """Output JSON writer + signal bridge per il Decision Logic Engine.
 
 Pipeline per ogni location:
-  1. build_signals(pred, row, obs_summary) → SignalBag
-  2. indicators.evaluate_all(signals) → list[IndicatorResult]
-  3. compute_coverage_30d(db, location_id) → dict
-  4. write_location_json(...) → Path
+  1. build_signals(pred, row, obs_summary) → SignalBag        [per ogni giorno]
+  2. indicators.evaluate_all(signals) → list[IndicatorResult] [per ogni giorno]
+  3. compute_coverage_30d(db, location_id) → dict             [una volta per location]
+  4. write_location_json(location_id, days, coverage, ...) → Path
 
 SignalBag contract (chiavi riconosciute dal DLE):
   Precipitazione  — P(precip > 0.2mm), P(precip > 3mm), P(precip > 5mm/h)
@@ -196,46 +196,55 @@ def compute_coverage_30d(
 
 def write_location_json(
     location_id: str,
-    target_date: str,
-    lead_time_h: int,
-    pred: dict[str, dict[str, float]],
-    indicators: list[IndicatorResult],
+    days: list[dict[str, Any]],
     coverage: dict[str, float | None],
     output_dir: Path,
 ) -> Path:
-    """Scrive il JSON di output per una location.
+    """Scrive il JSON di output per una location con previsioni multi-giorno.
 
-    Struttura:
-      location_id, generated_at, target_date, lead_time_h,
-      forecasts: {tmin_c, tmax_c, precip_mm} × {p50, ci80_lo/hi, ci90_lo/hi},
-      indicators: {id: {verdict, rule_matched}},
-      coverage_empirical_30d: {tmin_ci80, ..., precip_ci90}
+    Args:
+        days: lista ordinata per data, ogni elemento:
+              {target_date: str, lead_time_h: int,
+               pred: {target: {quantile: float}},
+               indicators: list[IndicatorResult]}
+
+    Struttura JSON:
+      {location_id, generated_at, coverage_empirical_30d,
+       days: [{target_date, lead_time_h, forecasts, indicators}, ...]}
 
     Returns:
         Path del file scritto.
     """
     def _fmt_target(t: dict[str, float]) -> dict[str, float | None]:
         return {
-            "p50":    t.get("p50"),
+            "p50":     t.get("p50"),
             "ci80_lo": t.get("ci80_lo"), "ci80_hi": t.get("ci80_hi"),
             "ci90_lo": t.get("ci90_lo"), "ci90_hi": t.get("ci90_hi"),
         }
 
+    day_payloads = []
+    for day in days:
+        pred: dict[str, dict[str, float]] = day["pred"]
+        inds: list[IndicatorResult] = day["indicators"]
+        day_payloads.append({
+            "target_date": day["target_date"],
+            "lead_time_h": day["lead_time_h"],
+            "forecasts": {
+                "tmin_c":    _fmt_target(pred.get("tmin_c",    {})),
+                "tmax_c":    _fmt_target(pred.get("tmax_c",    {})),
+                "precip_mm": _fmt_target(pred.get("precip_mm", {})),
+            },
+            "indicators": {
+                r.indicator_id: {"verdict": r.verdict, "rule_matched": r.rule_matched}
+                for r in inds
+            },
+        })
+
     payload: dict[str, Any] = {
-        "location_id":  location_id,
-        "generated_at": datetime.now(tz=UTC).isoformat(),
-        "target_date":  target_date,
-        "lead_time_h":  lead_time_h,
-        "forecasts": {
-            "tmin_c":    _fmt_target(pred.get("tmin_c",   {})),
-            "tmax_c":    _fmt_target(pred.get("tmax_c",   {})),
-            "precip_mm": _fmt_target(pred.get("precip_mm", {})),
-        },
-        "indicators": {
-            r.indicator_id: {"verdict": r.verdict, "rule_matched": r.rule_matched}
-            for r in indicators
-        },
+        "location_id":           location_id,
+        "generated_at":          datetime.now(tz=UTC).isoformat(),
         "coverage_empirical_30d": coverage,
+        "days":                  day_payloads,
     }
 
     output_dir.mkdir(parents=True, exist_ok=True)
