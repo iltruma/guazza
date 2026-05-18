@@ -78,6 +78,18 @@ function fmtDate(isoDate) {
   });
 }
 
+function fmtDayLabel(isoDate) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const todayMid = new Date();
+  todayMid.setHours(0, 0, 0, 0);
+  const target = new Date(y, m - 1, d);
+  const diff = Math.round((target - todayMid) / 86400000);
+  if (diff === 0) return 'Oggi';
+  if (diff === 1) return 'Domani';
+  if (diff === 2) return 'Dopodomani';
+  return target.toLocaleDateString('it-IT', { weekday: 'long' });
+}
+
 function fmtDateTime(iso) {
   return new Date(iso).toLocaleString('it-IT', {
     day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
@@ -86,6 +98,12 @@ function fmtDateTime(iso) {
 
 function fmtTemp(v)   { return v != null ? `${v.toFixed(1)}°` : '—'; }
 function fmtPrecip(v) { return v != null ? `${v.toFixed(1)} mm` : '—'; }
+
+function staleWarning(generatedAt) {
+  const ageH = (Date.now() - new Date(generatedAt).getTime()) / 3600000;
+  if (ageH < 6) return '';
+  return ` <span class="stale-warn" title="Dati generati ${ageH.toFixed(0)}h fa">⚠️ dati vecchi</span>`;
+}
 
 // ── Coverage badge ────────────────────────────────────────────────────────────
 
@@ -134,12 +152,21 @@ function ciBar(fc, unit) {
 
 // ── Hourly SVG chart ──────────────────────────────────────────────────────────
 
+function niceYTicks(min, max) {
+  const rawStep = (max - min) / 4;
+  const step = rawStep <= 1 ? 1 : rawStep <= 2.5 ? 2 : rawStep <= 5 ? 5 : 10;
+  const start = Math.ceil(min / step) * step;
+  const ticks = [];
+  for (let t = start; t <= max && ticks.length < 7; t += step) ticks.push(t);
+  return ticks;
+}
+
 function hourlyChart(hourly) {
   if (!hourly || hourly.length === 0) {
     return '<div class="no-hourly">Dati orari non disponibili</div>';
   }
 
-  const W = 700, H = 130;
+  const W = 700, H = 150;
   const padL = 36, padR = 52, padT = 12, padB = 28;
   const cW = W - padL - padR;
   const cH = H - padT - padB;
@@ -177,21 +204,27 @@ function hourlyChart(hourly) {
     `<text x="${xPos(h).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="chart-label">${String(h).padStart(2, '0')}</text>`
   ).join('');
 
-  const ticks = [minT + 1, Math.round((minT + maxT) / 2), maxT - 1];
+  const ticks = niceYTicks(minT, maxT);
   const yLabels = ticks.map(t =>
     `<text x="${padL - 4}" y="${yT(t).toFixed(1)}" text-anchor="end" dominant-baseline="middle" class="chart-label">${t}°</text>`
   ).join('');
 
-  const gridLines = [0.25, 0.5, 0.75].map(f => {
-    const y = (padT + f * cH).toFixed(1);
-    return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" class="chart-grid"/>`;
-  }).join('');
+  // Grid lines aligned to temp ticks
+  const gridLines = ticks.map(t =>
+    `<line x1="${padL}" y1="${yT(t).toFixed(1)}" x2="${W - padR}" y2="${yT(t).toFixed(1)}" class="chart-grid"/>`
+  ).join('');
+
+  // 0°C reference line (useful in winter)
+  const zeroLine = (minT < 0 && maxT > 0)
+    ? `<line x1="${padL}" y1="${yT(0).toFixed(1)}" x2="${W - padR}" y2="${yT(0).toFixed(1)}" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,2" opacity="0.6"/>`
+    : '';
 
   const precipLabel = `<text x="${W - padR + 4}" y="${(yPBase - precipMaxH * 0.5).toFixed(1)}" dominant-baseline="middle" class="chart-label" style="fill:#3b82f6">${maxP.toFixed(1)}mm</text>`;
 
   return `
     <svg viewBox="0 0 ${W} ${H}" class="hourly-chart" aria-hidden="true">
       ${gridLines}
+      ${zeroLine}
       ${precipBars}
       ${linePath ? `<path d="${linePath}" fill="none" stroke="#f97316" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
       ${xLabels}
@@ -222,8 +255,9 @@ function renderDayHero(day) {
   return `
     <section class="day-hero">
       <div class="day-title">
-        <span class="day-date">${fmtDate(target_date)}</span>
-        <span class="day-lead">lead +${lead_time_h}h</span>
+        <span class="day-date">${fmtDayLabel(target_date)}</span>
+        <span class="day-date-sub">${fmtDate(target_date)}</span>
+        <span class="day-lead">+${lead_time_h}h</span>
       </div>
       <div class="forecast-grid">
         <div class="forecast-card">
@@ -255,13 +289,17 @@ function renderDayStrip(days, activeDayIdx) {
 
   const rows = days.map((day, idx) => {
     const { target_date, forecasts: fc, indicators } = day;
-    const dots = Object.values(indicators).map(ind => {
+    const dots = Object.entries(indicators).map(([id, ind]) => {
+      const meta = INDICATOR_META[id] ?? { label: id };
       const cls = VERDICT_CLASS[ind.verdict] ?? 'unknown';
-      return `<span class="dot dot-${cls}" title="${ind.verdict}"></span>`;
+      return `<span class="dot dot-${cls}" title="${meta.label}: ${ind.verdict}"></span>`;
     }).join('');
 
     return `<div class="strip-row${idx === activeDayIdx ? ' active' : ''}" data-idx="${idx}">
-      <span class="strip-date">${fmtDate(target_date)}</span>
+      <span class="strip-date">
+        ${fmtDayLabel(target_date)}
+        <span class="strip-lead">+${lead_time_h}h</span>
+      </span>
       <span class="strip-temp">${fmtTemp(fc.tmin_c.p50)} / ${fmtTemp(fc.tmax_c.p50)}</span>
       <span class="strip-precip">${fmtPrecip(fc.precip_mm.p50)}</span>
       <span class="strip-inds">${dots}</span>
@@ -280,7 +318,7 @@ function render(container, data) {
   const day = data.days[selectedDayIdx];
 
   container.innerHTML = `
-    <div class="meta-bar">Aggiornato: ${fmtDateTime(data.generated_at)}</div>
+    <div class="meta-bar">Aggiornato: ${fmtDateTime(data.generated_at)}${staleWarning(data.generated_at)}</div>
     ${coverageBadge(data.coverage_empirical_30d)}
     ${renderDayHero(day)}
     <section class="hourly-section">
@@ -294,6 +332,11 @@ function render(container, data) {
     row.addEventListener('click', () => {
       selectedDayIdx = parseInt(row.dataset.idx, 10);
       render(container, data);
+      const hero = container.querySelector('.day-hero');
+      if (hero) {
+        const headerH = document.querySelector('header')?.offsetHeight ?? 0;
+        window.scrollTo({ top: hero.getBoundingClientRect().top + window.scrollY - headerH - 8, behavior: 'smooth' });
+      }
     });
   });
 }
