@@ -322,6 +322,57 @@ def compute_coverage_30d(
     }
 
 
+def get_current_air_quality(
+    db: DuckDBClient,
+    location_id: str,
+) -> dict[str, float | None] | None:
+    """Ultimi valori qualità aria ARPAT per una location.
+
+    PM10/PM2.5: media ultime 2 giornate bollettini (granularity='daily').
+    NO2/O3: media ultime 3h NRT orario (granularity='hourly').
+
+    Returns:
+        {pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3} oppure None se nessun dato.
+    """
+    row = db.execute("""
+        SELECT
+            ROUND(AVG(pm10_ugm3) FILTER (
+                WHERE pm10_ugm3 IS NOT NULL
+                  AND granularity = 'daily'
+                  AND ts >= CURRENT_DATE - INTERVAL 2 DAYS
+            ), 1) AS pm10_ugm3,
+            ROUND(AVG(pm25_ugm3) FILTER (
+                WHERE pm25_ugm3 IS NOT NULL
+                  AND granularity = 'daily'
+                  AND ts >= CURRENT_DATE - INTERVAL 2 DAYS
+            ), 1) AS pm25_ugm3,
+            ROUND(AVG(no2_ugm3) FILTER (
+                WHERE no2_ugm3 IS NOT NULL
+                  AND granularity = 'hourly'
+                  AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
+            ), 1) AS no2_ugm3,
+            ROUND(AVG(o3_ugm3) FILTER (
+                WHERE o3_ugm3 IS NOT NULL
+                  AND granularity = 'hourly'
+                  AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
+            ), 1) AS o3_ugm3
+        FROM observations
+        WHERE location_id = ?
+          AND source = 'arpat'
+    """, [location_id]).fetchone()
+
+    if row is None or all(v is None for v in row):
+        return None
+
+    pm10, pm25, no2, o3 = row
+    return {
+        "pm10_ugm3": float(pm10) if pm10 is not None else None,
+        "pm25_ugm3": float(pm25) if pm25 is not None else None,
+        "no2_ugm3":  float(no2)  if no2  is not None else None,
+        "o3_ugm3":   float(o3)   if o3   is not None else None,
+    }
+
+
 def get_current_conditions(
     db: DuckDBClient,
     location_id: str,
@@ -639,6 +690,7 @@ def write_location_json(
         payload["current"]            = get_current_conditions(db, location_id)
         payload["today_hourly"]       = get_today_hourly(db, location_id)
         payload["nwp_models_hourly"]  = get_nwp_models_hourly(db, location_id)
+        payload["air_quality"]        = get_current_air_quality(db, location_id)
     payload["days"] = day_payloads
 
     output_dir.mkdir(parents=True, exist_ok=True)

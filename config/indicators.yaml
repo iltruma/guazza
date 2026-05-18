@@ -120,23 +120,6 @@ indicators:
       nel semaforo a 3 colori — rosso scatta già a >= threshold_2.
       Questo indicatore è REAL-TIME, non previsionale. Mostra stato attuale idrometria.
 
-  aria:
-    label: "Qualita aria PM10"
-    icon: "wind"
-    horizon_h: 24
-    costs:
-      fn: 3   # esposizione a aria inquinata — impatto salute cronico
-      fp: 1   # evito uscita con aria ok — inconveniente minore
-      # alpha = 1/4 = 0.25
-    logic:
-      green: "pm10_predicted < 30"      # µg/m³
-      yellow: "pm10_predicted >= 30 AND pm10_predicted < 50"
-      red: "pm10_predicted >= 50"
-    notes: >
-      Soglie WHO 2021: valore giornaliero 15 µg/m³ (raccomandazione),
-      limite EU 50 µg/m³. Uso 50 come soglia "rosso" per pragmatismo.
-      pm10_predicted = interpolazione ARPAT + eventuale correzione ML futura.
-      DA DISCUTERE con utente se abbassare a 30 µg/m³ per giallo.
 
   annaffia:
     label: "Devo annaffiare le piante?"

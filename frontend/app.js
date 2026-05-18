@@ -18,7 +18,6 @@ const INDICATOR_META = {
   temporale:{ label: 'Temporale', icon: '⛈️' },
   nebbia:   { label: 'Nebbia',    icon: '🌫️' },
   bisenzio: { label: 'Bisenzio',  icon: '🌊' },
-  aria:     { label: 'Aria',      icon: '💨' },
   annaffia: { label: 'Annaffia',  icon: '💧' },
   clima:    { label: 'Clima',     icon: '☀️' },
 };
@@ -170,6 +169,46 @@ function fmtTemp(v)   { return v != null ? `${v.toFixed(1)}°` : '—'; }
 function fmtPrecip(v) { return v != null ? `${v.toFixed(1)} mm` : '—'; }
 function fmtWind(v)   { return v != null ? `${(v * 3.6).toFixed(0)} km/h` : '—'; }
 
+// Soglie ARPAT livelli 1–2 = verde, 3–4 = giallo, 5–7 = rosso
+const AQ_THRESHOLDS = {
+  pm10: [20, 40],   // <20 verde, 20–40 giallo, ≥40 rosso
+  pm25: [10, 20],   // <10 verde, 10–20 giallo, ≥20 rosso
+  no2:  [40, 160],  // <40 verde, 40–160 giallo, ≥160 rosso
+  o3:   [72, 144],  // <72 verde, 72–144 giallo, ≥144 rosso
+};
+
+function aqColorCls(key, value) {
+  if (value == null) return 'text-base-content';
+  const [lo, hi] = AQ_THRESHOLDS[key] ?? [0, Infinity];
+  if (value < lo)  return 'text-success';
+  if (value < hi)  return 'text-warning';
+  return 'text-error';
+}
+
+function renderAirQuality(aq) {
+  if (!aq) return '';
+  const items = [
+    { key: 'pm10', label: 'PM10',  value: aq.pm10_ugm3 },
+    { key: 'pm25', label: 'PM2.5', value: aq.pm25_ugm3 },
+    { key: 'no2',  label: 'NO₂',   value: aq.no2_ugm3  },
+    { key: 'o3',   label: 'O₃',    value: aq.o3_ugm3   },
+  ].filter(it => it.value != null);
+  if (items.length === 0) return '';
+
+  const cards = items.map(it => `
+    <div class="bg-base-200 rounded-lg p-2.5 text-center">
+      <div class="text-xs text-base-content/60 mb-0.5">${it.label}</div>
+      <div class="font-semibold text-sm ${aqColorCls(it.key, it.value)}">${it.value.toFixed(0)}</div>
+      <div class="text-xs text-base-content/40">µg/m³</div>
+    </div>`).join('');
+
+  return `
+    <div class="mt-3">
+      <div class="text-xs text-base-content/40 mb-1">Qualità aria</div>
+      <div class="grid gap-2" style="grid-template-columns:repeat(${items.length},1fr)">${cards}</div>
+    </div>`;
+}
+
 function isToday(isoDate) {
   const [y, m, d] = isoDate.split('-').map(Number);
   const now = new Date();
@@ -295,6 +334,8 @@ function renderCurrentPanel(data) {
       </div>
     </div>`;
 
+  const aqSection = renderAirQuality(data.air_quality);
+
   const noRealtimeNote = !current
     ? `<p class="text-xs text-base-content/50 mt-3 italic">Dati realtime non disponibili — indicatori calcolati su previsione</p>`
     : `<p class="text-xs text-base-content/40 mt-3">SIR/Netatmo${ts ? ` · ${ts}` : ''}</p>`;
@@ -316,6 +357,7 @@ function renderCurrentPanel(data) {
           </div>
         </div>
         ${statsRow}
+        ${aqSection}
         ${noRealtimeNote}
         ${indSection}
       </div>
