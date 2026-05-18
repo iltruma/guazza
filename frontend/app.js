@@ -558,10 +558,13 @@ function precipDatasets(points) {
 const crosshairPlugin = {
   id: 'crosshair',
   afterDraw(chart) {
-    const active = chart.tooltip._active;
-    if (!active || !active.length) return;
+    const active = chart.tooltip.getActiveElements();
+    if (!active.length) return;
     const ctx = chart.ctx;
-    const x = active[0].element.x;
+    const { datasetIndex, index } = active[0];
+    const el = chart.getDatasetMeta(datasetIndex).data[index];
+    if (!el) return;
+    const x = el.x;
     const { top, bottom } = chart.chartArea;
     ctx.save();
     ctx.beginPath();
