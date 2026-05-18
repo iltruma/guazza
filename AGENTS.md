@@ -31,15 +31,8 @@ Leggi **`docs/status.md`** — unica fonte di verità sullo stato. Punti aperti 
 
 ## Le 5 location
 
-```yaml
-casa_campi:      # Campi Bisenzio (FI), ~35m
-lavoro_cosimo:   # Scandicci (FI), ~50m
-lavoro_madda:    # Prato (PO), ~60m
-casa_cesto:      # Figline Valdarno (FI), ~200m
-casa_nicco:      # Firenze Novoli (FI), ~40m
-```
-
-Coordinate complete in `config/locations.yaml`.
+Vedi `config/locations.yaml` — coordinate complete, stazioni SIR primarie e secondarie,
+stazioni ARPAT, stazioni upstream pluvio per ogni location.
 
 ## Stack blindato
 
@@ -148,6 +141,7 @@ guazza/
 │   ├── models/             # artefatti LightGBM pickle (non committati)
 │   └── output/             # JSON per il frontend (non committati)
 ├── deploy/                 # nginx.conf, Caddyfile, crontab template
+├── frontend/               # app.js, index.html, style.css (statico, CDN via jsDelivr)
 ├── tests/
 └── docs/
     ├── status.md           # stato corrente — leggere a inizio sessione
@@ -219,15 +213,37 @@ Scope: modulo o componente (`ingestion`, `storage`, `indicators`, `config`)
 
 **Non committare mai:** `.env`, file con credenziali, dati grezzi (`*.parquet`, `*.db`), output temporanei.
 
-### Tag versione — proporre quando opportuno
+### Tag versione + CHANGELOG — obbligatorio a fine sessione significativa
 
-Proporre un tag semantico (`v0.X.0`) al completamento di uno sprint funzionale
-completo o di una milestone significativa (es. primo modello trainato, prima
-previsione in produzione). Non taggare refactoring, fix o migliorie minori.
+Alla fine di ogni sessione che include **almeno uno** di questi trigger, **chiedere
+all'utente** se serve bump di versione + aggiornamento CHANGELOG:
 
-Formato proposta:
+- Nuova location, nuova sorgente dati, nuovo modello NWP
+- Nuovo modulo/funzionalità (feat) in `src/guazza/`
+- Frontend redesign o modifica strutturale al JSON contract
+- Refactoring che modifica schema DuckDB o rimuove codice obsoleto
+- 5+ commit feat/fix nella stessa sessione
+
+Procedura:
+1. Revisionare i commit della sessione e categorizzare (feat/fix/refactor/docs/chore)
+2. Proporre versione e aggiornamento CHANGELOG con formato:
+   ```
+   Propongo v<X>.<Y>.<Z> — <motivo>. Modifiche:
+   - pyproject.toml → version
+   - CHANGELOG.md → nuova sezione
+   - docs/status.md → aggiornamento header data
+   ```
+3. Non eseguire bump senza conferma esplicita
+4. Dopo conferma: commit + tag annotato con messaggio descrittivo
+
+Trigger che **non** richiedono proposta (saltare):
+- Fix banali, lint, test, refactor interni senza impatto esterno
+- Doc fix, readme, known_issues
+- Sessione con solo chore/dipendenze
+
+Formato proposta tag:
 ```
-Propongo tag v0.X.0 — <milestone raggiunta>. Confermo?
+Propongo tag vX.Y.Z — <milestone raggiunta>. Confermo?
 ```
 
 Non creare il tag senza conferma esplicita dell'utente.
@@ -370,6 +386,7 @@ Struttura multi-giorno: ogni file contiene la striscia `days` da D+0 a D+7.
 - [ ] Nessun dead code, nessun codice sperimentale residuo
 - [ ] Punto aperto segnalato se il task ne dipende
 - [ ] `docs/known_issues.md` aggiornato se workaround
+- [ ] Versione e CHANGELOG proposti se la sessione lo richiede (vedi "Tag versione + CHANGELOG")
 - [ ] Commit creato con formato `tipo(scope): descrizione`
 
 ## Comandi utili
