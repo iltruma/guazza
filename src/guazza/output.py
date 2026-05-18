@@ -437,57 +437,6 @@ def get_current_conditions(
     }
 
 
-def get_today_hourly(
-    db: DuckDBClient,
-    location_id: str,
-) -> list[dict[str, Any]] | None:
-    """Profilo orario NWP ensemble per le ore rimanenti di oggi (no rescaling ML).
-
-    Returns:
-        Lista di dict {hour, temp_c, humidity_pct, precip_mm, precip_prob} per le
-        ore future di oggi, oppure None se vuoto.
-    """
-    df = db.execute("""
-        SELECT
-            HOUR(ts_valid)                                                   AS hour,
-            ROUND(AVG(temp_c), 1)                                            AS temp_c,
-            ROUND(AVG(humidity_pct), 0)                                      AS humidity_pct,
-            ROUND(AVG(COALESCE(precip_mm, 0.0)), 2)                          AS precip_mm,
-            ROUND(AVG(CASE WHEN precip_mm IS NULL THEN NULL
-                           WHEN precip_mm > 0.1   THEN 1.0
-                           ELSE 0.0 END), 2)                                 AS precip_prob,
-            ROUND(AVG(wind_speed_ms), 1)                                     AS wind_speed_ms
-        FROM (
-            SELECT source, ts_valid, temp_c, humidity_pct, precip_mm, wind_speed_ms
-            FROM forecasts
-            WHERE location_id = ?
-              AND CAST(ts_valid AS DATE) = CURRENT_DATE
-              AND ts_valid > NOW()
-            QUALIFY ROW_NUMBER() OVER (
-                PARTITION BY source, ts_valid ORDER BY ts_run DESC
-            ) = 1
-        ) latest
-        WHERE temp_c IS NOT NULL
-        GROUP BY hour
-        ORDER BY hour
-    """, [location_id]).df()
-
-    if df.empty:
-        return None
-
-    return [
-        {
-            "hour":          int(r["hour"]),
-            "temp_c":        float(r["temp_c"]) if r["temp_c"] is not None else None,
-            "humidity_pct":  float(r["humidity_pct"]) if r["humidity_pct"] is not None else None,
-            "precip_mm":     float(r["precip_mm"]) if r["precip_mm"] is not None else None,
-            "precip_prob":   float(r["precip_prob"]) if r["precip_prob"] is not None else None,
-            "wind_speed_ms": float(r["wind_speed_ms"]) if r["wind_speed_ms"] is not None else None,
-        }
-        for _, r in df.iterrows()
-    ]
-
-
 def get_nwp_models_hourly(
     db: DuckDBClient,
     location_id: str,
@@ -650,11 +599,11 @@ def write_location_json(
               {target_date: str, lead_time_h: int,
                pred: {target: {quantile: float}},
                indicators: list[IndicatorResult]}
-        db:   se fornito, aggiunge current, today_hourly, nwp_models_hourly al payload
+        db:   se fornito, aggiunge current, air_quality, nwp_models_hourly al payload
 
     Struttura JSON:
       {location_id, generated_at, coverage_empirical_30d,
-       current?, today_hourly?, nwp_models_hourly?,
+       current?, air_quality?, nwp_models_hourly?,
        days: [{target_date, lead_time_h, forecasts, indicators, hourly}, ...]}
 
     Returns:
@@ -705,7 +654,6 @@ def write_location_json(
     }
     if db is not None:
         payload["current"]            = get_current_conditions(db, location_id)
-        payload["today_hourly"]       = get_today_hourly(db, location_id)
         payload["nwp_models_hourly"]  = get_nwp_models_hourly(db, location_id)
         payload["air_quality"]        = get_current_air_quality(db, location_id)
     payload["days"] = day_payloads

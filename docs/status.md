@@ -266,7 +266,6 @@ Stack: HTML + JS vanilla; **Tailwind CSS + DaisyUI v4** (CDN jsDelivr) + **Chart
 | `current.dewpoint_c` | payload root | Punto di rugiada calcolato (Magnus) |
 | `current.feels_like_c` | payload root | Temperatura apparente (Steadman/BoM) |
 | `current.wind_speed_ms` | payload root | Vento realtime SIR (spesso null su Netatmo base) |
-| `today_hourly[].wind_speed_ms` | payload root | Vento NWP ensemble (ore future di oggi) |
 | `days[].hourly[].wind_speed_ms` | per giorno | Vento NWP ensemble per ora (no rescaling) |
 | `nwp_models_hourly[].data[].wind_speed_ms` | per modello | Vento per modello NWP |
 | `days[].nwp_comparison[].last_run` | per giorno | Data ultimo run per modello (`strftime`) |
@@ -339,6 +338,16 @@ Il server `www.sir.toscana.it` serializza le connessioni lato server (~3s per re
   scartati (`None` in VAR_MAP). 3 colonne nuove in `observations` (`co_mgm3`,
   `benzene_ugm3`, `so2_ugm3`), migrazione idempotente `_ensure_aq_columns()`.
 - **Doc fix**: il comando è `predict` (modulo a comando singolo), non `predict run`.
+
+#### Fix grafico tendenza vuoto (2026-05-18)
+
+- **Grafico tendenza vuoto all'apertura**: `buildChartPoints` per il giorno corrente
+  usava `today_hourly` (solo ore future di oggi → vuoto a fine giornata). Ora il grafico
+  usa sempre `days[].hourly` (profilo completo 24h) per il modello `guazza`.
+- **Rimosso `today_hourly`** dal payload JSON e `get_today_hourly()` da `output.py`:
+  non più consumato dal frontend dopo il fix sopra.
+- **Crosshair su Edge**: `chart.tooltip._active` → optional chaining; `chart.tooltip`
+  è `undefined` durante i primi `afterDraw` su Edge.
 
 ### Sprint 7 — Deploy VPS
 **Dipendenza**: tutto funzionante e testato in locale

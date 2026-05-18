@@ -28,8 +28,15 @@ Versioning: major per sprint, minor per milestone interne.
 - **Indicatore DLE `aria`**: la qualità aria è un dato osservativo, non un semaforo
   previsionale — `config/indicators.yaml` passa da 9 a 8 indicatori
 - **`frontend-v1/`**: vecchio frontend, sostituito da `frontend/`
+- **`today_hourly`** dal payload JSON e `get_today_hourly()` da `output.py`: non più
+  consumato dal frontend dopo il fix del grafico tendenza
 
 ### Fixed
+- **Frontend — grafico tendenza vuoto all'apertura**: `buildChartPoints` per il giorno
+  corrente usava `today_hourly` (solo ore future di oggi → vuoto a fine giornata);
+  ora usa sempre `days[].hourly` (profilo 24h) per il modello `guazza`
+- **Frontend — crash crosshair su Edge**: `chart.tooltip._active` con optional chaining;
+  `chart.tooltip` è `undefined` durante i primi `afterDraw` su Edge
 - **Frontend — card border clipping**: `ring-2` della card attiva veniva tagliato da `overflow-x-auto`; fix `p-1` sul wrapper scrollabile
 - **SIR historical — sleep inutile**: rimosso `time.sleep(1.0)` da `_fetch_one`; il server SIR serializza le connessioni lato server, il sleep aggiungeva solo overhead (~28s su backfill completo)
 - **Docs**: comando corretto `predict` (non `predict run`) in AGENTS.md, README e status.md

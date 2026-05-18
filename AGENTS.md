@@ -321,8 +321,6 @@ Struttura multi-giorno: ogni file contiene la striscia `days` da D+0 a D+7.
                   "no2_ugm3": float | null, "o3_ugm3": float | null,
                   "co_mgm3": float | null, "benzene_ugm3": float | null,
                   "so2_ugm3": float | null},
-  "today_hourly": [{"hour": int, "temp_c": float, "humidity_pct": float,
-                    "precip_mm": float, "precip_prob": float, "wind_speed_ms": float}],
   "nwp_models_hourly": [{"source": str, "label": str, "data": [{...}]}],
   "days": [
     {

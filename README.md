@@ -212,7 +212,6 @@ frontend/
 {location_id, generated_at, coverage_empirical_30d,
  current: {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, dewpoint_c, feels_like_c},
  air_quality: {pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3, co_mgm3, benzene_ugm3, so2_ugm3},
- today_hourly: [{hour, temp_c, humidity_pct, precip_mm, precip_prob, wind_speed_ms}],
  nwp_models_hourly: [{source, label, data: [{ts, temp_c, humidity_pct, precip_mm, wind_speed_ms}]}],
  days: [{target_date, lead_time_h,
          forecasts: {tmin_c, tmax_c, precip_mm} ciascuno con p50+CI80+CI90,

@@ -21,7 +21,6 @@ from guazza.output import (
     get_current_conditions,
     get_nwp_model_comparison,
     get_nwp_models_hourly,
-    get_today_hourly,
     write_location_json,
 )
 from guazza.storage import DuckDBClient
@@ -710,58 +709,6 @@ def test_current_conditions_has_derived_fields(seeded_db: Path) -> None:
     assert result["dewpoint_c"] < result["temp_c"]  # rugiada sempre < temperatura
 
 
-# ── get_today_hourly ──────────────────────────────────────────────────────────
-
-def test_today_hourly_no_data(seeded_db: Path) -> None:
-    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
-        result = get_today_hourly(db, "casa_campi")
-    assert result is None
-
-
-def test_today_hourly_returns_future_hours(seeded_db: Path) -> None:
-    """Inserisce ore future di oggi e verifica che siano presenti nel risultato."""
-    from datetime import date
-
-    import duckdb
-
-    today = date.today()
-    ts_run = datetime(today.year, today.month, today.day, 0, 0, 0)
-    now = datetime.now()
-    records = []
-    future_hours = []
-    for h in range(24):
-        ts_valid = datetime(today.year, today.month, today.day, h, 0, 0)
-        if ts_valid > now:
-            future_hours.append(h)
-            records.append(("open_meteo_ecmwf_ifs", "casa_campi", ts_run, ts_valid, h,
-                             15.0 + h * 0.3, 70.0, 0.0))
-
-    if not future_hours:
-        pytest.skip("No future hours left today — run test earlier in the day")
-
-    con = duckdb.connect(str(seeded_db))
-    con.executemany(
-        "INSERT OR REPLACE INTO forecasts "
-        "(source, location_id, ts_run, ts_valid, lead_time_h, temp_c, humidity_pct, precip_mm) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        records,
-    )
-    con.close()
-
-    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
-        result = get_today_hourly(db, "casa_campi")
-
-    assert result is not None
-    assert len(result) == len(future_hours)
-    for item in result:
-        assert "hour" in item
-        assert "temp_c" in item
-        assert "humidity_pct" in item
-        assert "precip_mm" in item
-        assert "precip_prob" in item
-        assert "wind_speed_ms" in item
-
-
 # ── get_nwp_models_hourly ─────────────────────────────────────────────────────
 
 def test_nwp_models_hourly_empty(seeded_db: Path) -> None:
@@ -819,7 +766,7 @@ def test_write_location_json_with_db_adds_realtime_fields(
     sample_indicators: list[IndicatorResult],
     seeded_db: Path,
 ) -> None:
-    """Passando db, il JSON deve includere current, today_hourly, nwp_models_hourly."""
+    """Passando db, il JSON deve includere current, air_quality, nwp_models_hourly."""
     days = _make_days(sample_pred, sample_indicators)
     with DuckDBClient(db_path=seeded_db) as db:
         path = write_location_json(
@@ -831,7 +778,7 @@ def test_write_location_json_with_db_adds_realtime_fields(
         )
     data = json.loads(path.read_text())
     assert "current" in data
-    assert "today_hourly" in data
+    assert "air_quality" in data
     assert "nwp_models_hourly" in data
-    # Con DB vuoto, current e today_hourly saranno None/[], nwp_models_hourly []
+    # Con DB vuoto, current e air_quality saranno None, nwp_models_hourly []
     assert data["nwp_models_hourly"] == []
