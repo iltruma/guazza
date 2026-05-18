@@ -42,8 +42,8 @@ DB_PATH=/tmp/guazza_test.duckdb uv run python -m guazza.storage verify-schema
 ```
 guazza/
 ├── config/
-│   ├── locations.yaml      # 4 location con stazioni SIR e upstream_pluvio_stations
-│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio ring)
+│   ├── locations.yaml      # 5 location con stazioni SIR e upstream_pluvio_stations
+│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio ring) + 9 ARPAT
 │   ├── indicators.yaml     # 9 indicatori DLE con soglie e costi asimmetrici
 │   ├── arpat_levels.yaml   # Scale qualità aria D.Lgs.155/2010
 │   └── sources.yaml        # Endpoint sorgenti dati e stato

@@ -8,6 +8,20 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Added
+- **Quinta location `casa_nicco`** (Firenze Novoli, 43.791/11.219, 40m)
+  - Primaria SIR: TOS01001096 Firenze Università; termo pesato su TOS03001097 Orto Botanico (ΔQ+8m)
+  - 4 stazioni ARPAT Firenze: FI-MOSSE (0.50), FI-BOBOLI (0.30), FI-GRAMSCI (0.15), FI-LAVAGNINI (0.05)
+  - Tab frontend aggiunta
+
+### Changed
+- **Frontend — grafico tendenza day-scoped**: `buildChartPoints` filtra al giorno selezionato; asse X fisso 00-23h sempre; grafico vuoto (non nascosto) se il modello non ha dati per quel giorno
+- **Frontend — animazione transizione**: fade-in + slide-up 200ms su ogni cambio location o giorno
+
+### Fixed
+- **Frontend — card border clipping**: `ring-2` della card attiva veniva tagliato da `overflow-x-auto`; fix `p-1` sul wrapper scrollabile
+- **SIR historical — sleep inutile**: rimosso `time.sleep(1.0)` da `_fetch_one`; il server SIR serializza le connessioni lato server, il sleep aggiungeva solo overhead (~28s su backfill completo)
+
 ---
 
 ## [0.5.0] — 2026-05-17

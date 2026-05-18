@@ -276,6 +276,12 @@ Stack: HTML + JS vanilla; **Tailwind CSS + DaisyUI v4** (CDN jsDelivr) + **Chart
 - **Timestamp SIR +2h nel browser**: rimosso `|| '+00:00'` dal `strftime` in `get_current_conditions`. I timestamp SIR sono salvati come CEST naive; aggiungere il suffisso UTC causava +2h nella conversione browser.
 - **Lead time +48h invece di +24h per domani**: la QUALIFY in `predict.py` usava `lead_time_h DESC` per i giorni futuri, selezionando il forecast più vecchio. Corretto in `lead_time_h ASC` (forecast più recente) per tutti i giorni.
 
+#### Fix e miglioramenti frontend (2026-05-18 — post Sprint 6)
+
+- **Card border clipping**: il `ring-2` della card attiva veniva tagliato dall'`overflow-x-auto`. Fix: `p-1` sul wrapper scrollabile.
+- **Grafico tendenza day-scoped**: `buildChartPoints` ora filtra al giorno selezionato. Asse X fisso 00-23h indipendentemente dalla disponibilità dati — se il modello non ha dati per quel giorno il grafico è vuoto ma l'asse resta.
+- **Animazione transizione**: fade-in + slide-up 200ms (`@keyframes guazza-fade-in`) su ogni cambio location o giorno, riavviato via reflow forzato (`void el.offsetWidth`).
+
 #### Indicatori realtime (`build_signals_today`)
 
 Per `target_date == today`, `predict.py` chiama `build_signals_today` che sovrascrive i segnali probabilistici (precip/vento/umidità) con valori deterministici 0/1 dalle ultime osservazioni realtime. Temperatura minima resta da ML (la notte non è ancora completata).
@@ -283,6 +289,39 @@ Per `target_date == today`, `predict.py` chiama `build_signals_today` che sovras
 🟡 **Punto aperto**: `current` è `null` finché non ci sono osservazioni SIR/Netatmo con `granularity='realtime'` nelle ultime 3h nel DB. In locale richiede `ingest realtime` manuale prima di `predict run`; in produzione il cron ogni 30min lo mantiene fresco.
 
 🟡 **Punto aperto**: wind in `current` è quasi sempre `null` — le stazioni Netatmo base non riportano il vento, e solo alcune SIR lo misurano in realtime. Da valutare in Sprint 7+.
+
+### Configurazione e manutenzione (2026-05-18)
+
+#### Quinta location: casa_nicco (Firenze Novoli)
+
+- **`config/locations.yaml`**: nuova location `casa_nicco` (43.791, 11.219, 40m)
+  - Primaria SIR: `TOS01001096` Firenze Università (~1km, ΔQ+44m) — più vicina, set sensori completo incluso anemo
+  - Termo pesato su `TOS03001097` Orto Botanico (3.6km, ΔQ+8m) come prima scelta per temperatura
+  - ARPAT: FI-MOSSE 0.50, FI-BOBOLI 0.30, FI-GRAMSCI 0.15, FI-LAVAGNINI 0.05
+  - upstream_pluvio_stations: Vaiano, Fattoria Iavello, Santomato, Albano (NW/W)
+  - Nessuna stazione idrometrica (Arno FI non in anagrafica SIR)
+- **`config/stations.yaml`**: `used_by` aggiornato per TOS01001096, TOS03001097, TOS03001099; aggiunte 4 stazioni ARPAT Firenze
+- **`frontend/app.js`**: aggiunta tab "Casa Nicco"
+
+🟡 **Da fare post-config**: `uv run python -m guazza.weights refresh` per popolare `upstream_ring_station` con casa_nicco; poi `ingest historical --only-sir --location casa_nicco` per backfill SIR (le stazioni sono già in DB via lavoro_cosimo, ma verificare).
+
+#### Analisi ring coverage (2026-05-18)
+
+Verificata copertura per tutte e 5 le location:
+
+| Location | Ring1 (≤20km) | Ring2 (20-50km) | Ring3 (50-100km) |
+|---|---|---|---|
+| casa_campi | 15 stazioni | 14 | 1 |
+| lavoro_cosimo | 12 | 17 | 1 |
+| lavoro_madda | 18 | 9 | 3 |
+| casa_cesto | 7 | 14 | 9 |
+| casa_nicco | 11 | 18 | 1 |
+
+Ring3 scarno per le location di pianura FI (1 stazione = Bagni di Lucca ~57km). Nessuna stazione SIR nel Mugello in anagrafica — gap geografico N/NE pre-esistente per tutte le location FI.
+
+#### Fix SIR historical parallelismo (2026-05-18)
+
+Il server `www.sir.toscana.it` serializza le connessioni lato server (~3s per request per IP): `ThreadPoolExecutor` non accelera il throughput. Rimosso `time.sleep(1.0)` da `_fetch_one` (era overhead puro su un processo già serializzato a livello di rete). `max_workers=3` mantenuto. Risparmio: ~28s su un backfill completo (28 combo).
 
 ### Sprint 7 — Deploy VPS
 **Dipendenza**: tutto funzionante e testato in locale
