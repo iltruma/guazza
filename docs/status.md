@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-17 (Sprint 5 completato, tag v0.5.0)
+> Aggiornato: 2026-05-18 (Pre-Sprint 6 completato, tag v0.6.0)
 
 ## Cosa è stato fatto
 
@@ -98,7 +98,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **194 test** (165 pre-Sprint 4 + 11 test_models + 18 test_output), tutti verdi in ~72s
+- **201 test** (165 pre-Sprint 4 + 11 test_models + 25 test_output), tutti verdi in ~63s
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -222,23 +222,20 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 🟡 **Punto aperto — `bisenzio` threshold**: `threshold_1`/`threshold_2` non sono nel SignalBag → fallback giallo.
    Nessuna sorgente dati per le soglie idrometriche di allerta SIR. Da implementare in Sprint 7+ (config o API SIR).
 
-### Pre-Sprint 6 — task da completare prima del frontend
+### Pre-Sprint 6 — completato (2026-05-18)
 
-🟡 **Soglie idrometriche `bisenzio`** (KI-012): aggiungere `threshold_1`/`threshold_2`
-per la stazione TOS01004791 (S. Piero a Ponti) in `config/locations.yaml` o `indicators.yaml`,
-e popolare il SignalBag in `build_signals()`. Sblocca l'indicatore dal fallback giallo.
+- **Soglie idrometriche `bisenzio`** (KI-012): soglie statiche in `config/indicators.yaml`
+  (threshold_1=3.5m, threshold_2=5.5m, threshold_3=7.0m). `evaluate_indicator` inietta
+  `cfg["thresholds"]` nel SignalBag prima dell'eval — indicatore sbloccato dal fallback giallo.
 
-🟡 **Predict job multi-giorno**: ora genera un solo JSON per la data più lontana disponibile
-(`MAX(target_date)`). Serve iterare tutte le date future (D+1…D+7) e includerle nel JSON
-come array `days`. Necessario per il frontend Sprint 6 e per avere la previsione di domani.
-`write_location_json` e `build_signals` sono già pronti; cambia solo il loop in `jobs/predict.py`.
+- **Predict job multi-giorno**: SQL con QUALIFY seleziona il miglior `lead_time_h` per ogni
+  `(location_id, target_date)` futuro. JSON ha struttura `{location_id, generated_at,
+  coverage_empirical_30d, days: [{target_date, lead_time_h, forecasts, indicators, hourly}]}`.
 
-🟡 **Profilo orario (disaggregazione NWP)**: aggiungere array `hourly` (24 elementi) al JSON
-di output. Temperatura: rescaling lineare del profilo NWP ensemble-mean ancorato a tmin/tmax ML.
-Precipitazione: NWP scalato proporzionalmente a `precip_p50` + `precip_prob` (frazione modelli
-con precip > 0.1mm per ora). Nessuna modifica a DB o modelli — calcolato al momento della
-scrittura JSON dalla tabella `forecasts` esistente. Implementare in `output.py` +
-`jobs/predict.py` + nuovi test.
+- **Profilo orario**: `compute_hourly_profile()` in `output.py`. Ensemble-mean NWP (latest
+  ts_run per source) → temp rescalata su `[tmin_p50, tmax_p50]` ML; precip riscalata a
+  sommare `precip_p50` ML; `precip_prob` = frazione modelli > 0.1mm/h. Ogni giorno nel JSON
+  include `hourly: [{hour, temp_c, precip_mm, precip_prob}]` (24 elementi, null se no dati).
 
 ### Sprint 6 — Frontend
 **Dipendenza**: JSON output Sprint 5 stabile + pre-Sprint 6 completato
