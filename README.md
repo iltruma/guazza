@@ -152,16 +152,16 @@ uv run python -m guazza.jobs.train eval --db data/guazza.duckdb
 uv run python -m guazza.jobs.ingest realtime
 
 # Genera predizioni quantile + DLE + JSON (schedulare ogni 6h dopo il job forecasts)
-uv run python -m guazza.jobs.predict run --db data/guazza.duckdb \
+uv run python -m guazza.jobs.predict --db data/guazza.duckdb \
     --model-dir data/models --output-dir data/output
 ```
 
 Output: `data/output/{location_id}.json` con CI80/CI90 per tmin/tmax/precip,
-9 indicatori semaforo (panni, motorino, gelata, ...), `coverage_empirical_30d`,
+8 indicatori semaforo (panni, motorino, gelata, ...), `coverage_empirical_30d`,
 condizioni realtime aggregate (`current` con dewpoint e temperatura percepita),
 profili orari NWP con vento, e confronto modelli con data ultimo run.
 
-> **Nota locale**: prima di `predict run` eseguire `ingest realtime` per avere
+> **Nota locale**: prima di `predict` eseguire `ingest realtime` per avere
 > il campo `current` popolato. In produzione il cron ogni 30 min lo mantiene fresco.
 
 ### Opzioni comuni
@@ -246,7 +246,7 @@ uv run python -m guazza.jobs.features build
 uv run python -m guazza.jobs.train run
 
 # 8. Prima previsione
-uv run python -m guazza.jobs.predict run
+uv run python -m guazza.jobs.predict
 
 # 9. Installa crontab sul VPS
 crontab deploy/crontab.template
