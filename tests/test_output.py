@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -25,7 +25,6 @@ from guazza.output import (
     write_location_json,
 )
 from guazza.storage import DuckDBClient
-
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -269,11 +268,11 @@ def test_coverage_30d_insufficient_samples(seeded_db: Path) -> None:
 
 
 def test_coverage_30d_perfect_coverage(seeded_db: Path) -> None:
-    from datetime import timedelta, timezone
+    from datetime import timedelta
 
     with DuckDBClient(db_path=seeded_db) as db:
         # 15 predictions entro i 30 giorni con obs dentro il CI
-        now = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+        now = datetime.now(tz=UTC).replace(tzinfo=None)
         recs = []
         for i in range(15):
             d = now - timedelta(days=i)
@@ -493,8 +492,9 @@ def test_write_location_json_multiday_order(
 
 def _insert_hourly_nwp(db_path: Path, location_id: str, target_date: str) -> None:
     """Inserisce 24h di NWP fittizio per due sorgenti."""
-    import duckdb
     from datetime import date
+
+    import duckdb
 
     d = date.fromisoformat(target_date)
     ts_run = datetime(d.year, d.month, d.day, 0, 0, 0)
@@ -585,8 +585,9 @@ def test_hourly_profile_in_json(
 
 def test_hourly_profile_has_humidity(seeded_db: Path) -> None:
     """humidity_pct è presente nel risultato quando i dati NWP la contengono."""
-    import duckdb
     from datetime import date
+
+    import duckdb
 
     d = date(2026, 5, 19)
     ts_run = datetime(d.year, d.month, d.day, 0, 0, 0)
@@ -631,8 +632,9 @@ def test_current_conditions_no_data(seeded_db: Path) -> None:
 
 
 def test_current_conditions_returns_data(seeded_db: Path) -> None:
-    import duckdb
     from datetime import timedelta
+
+    import duckdb
 
     now = datetime.now()
     ts_recent = now - timedelta(minutes=10)
@@ -658,8 +660,9 @@ def test_current_conditions_returns_data(seeded_db: Path) -> None:
 
 def test_current_conditions_old_data_ignored(seeded_db: Path) -> None:
     """Obs più vecchie di 3h non devono contribuire al risultato."""
-    import duckdb
     from datetime import timedelta
+
+    import duckdb
 
     now = datetime.now()
     ts_old = now - timedelta(hours=4)
@@ -684,8 +687,9 @@ def test_dewpoint_known_value() -> None:
 
 def test_current_conditions_has_derived_fields(seeded_db: Path) -> None:
     """get_current_conditions aggiunge dewpoint_c e feels_like_c."""
-    import duckdb
     from datetime import timedelta
+
+    import duckdb
 
     now = datetime.now()
     con = duckdb.connect(str(seeded_db))
@@ -716,8 +720,9 @@ def test_today_hourly_no_data(seeded_db: Path) -> None:
 
 def test_today_hourly_returns_future_hours(seeded_db: Path) -> None:
     """Inserisce ore future di oggi e verifica che siano presenti nel risultato."""
+    from datetime import date
+
     import duckdb
-    from datetime import timedelta, date
 
     today = date.today()
     ts_run = datetime(today.year, today.month, today.day, 0, 0, 0)
@@ -767,10 +772,10 @@ def test_nwp_models_hourly_empty(seeded_db: Path) -> None:
 
 def test_nwp_models_hourly_structure_and_order(seeded_db: Path) -> None:
     """Due modelli futuri: verifica struttura, ordine _MODEL_ORDER, e campi ts."""
-    import duckdb
-    from datetime import timedelta, date
+    from datetime import timedelta
 
-    tomorrow = date.today().isoformat()
+    import duckdb
+
     ts_run = datetime.now()
     records = []
     for src in ("open_meteo_icon_eu", "open_meteo_ecmwf_ifs"):
