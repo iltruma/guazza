@@ -32,6 +32,9 @@ logs/
 # Output JSON (generati a runtime)
 data/
 
+# Symlink locale frontend → data/output (ricreato con: ln -s ../data/output frontend/data)
+frontend/data
+
 # macOS
 .DS_Store
 
