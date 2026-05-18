@@ -45,6 +45,7 @@ _CFG_BISENZIO = {
     "horizon_h": 0,
     "location_specific": ["casa_campi"],
     "costs": {"fn": 10, "fp": 1},
+    "thresholds": {"threshold_1": 1.2, "threshold_2": 2.0, "threshold_3": 3.0},
     "logic": {
         "green":  "level_sir < threshold_1",
         "yellow": "level_sir >= threshold_1 AND level_sir < threshold_2",
@@ -147,27 +148,27 @@ def test_panni_alpha_correct() -> None:
 
 
 def test_bisenzio_location_specific_match() -> None:
-    signals: SignalBag = {"level_sir": 0.5, "threshold_1": 1.2, "threshold_2": 2.0}
+    signals: SignalBag = {"level_sir": 0.5}
     r = evaluate_indicator("bisenzio", _CFG_BISENZIO, signals, "casa_campi")
     assert r is not None
     assert r.verdict == "verde"
 
 
 def test_bisenzio_location_specific_skip() -> None:
-    signals: SignalBag = {"level_sir": 0.5, "threshold_1": 1.2, "threshold_2": 2.0}
+    signals: SignalBag = {"level_sir": 0.5}
     r = evaluate_indicator("bisenzio", _CFG_BISENZIO, signals, "lavoro_cosimo")
     assert r is None
 
 
 def test_bisenzio_giallo() -> None:
-    signals: SignalBag = {"level_sir": 1.5, "threshold_1": 1.2, "threshold_2": 2.0}
+    signals: SignalBag = {"level_sir": 1.5}
     r = evaluate_indicator("bisenzio", _CFG_BISENZIO, signals, "casa_campi")
     assert r is not None
     assert r.verdict == "giallo"
 
 
 def test_bisenzio_rosso() -> None:
-    signals: SignalBag = {"level_sir": 2.5, "threshold_1": 1.2, "threshold_2": 2.0}
+    signals: SignalBag = {"level_sir": 2.5}
     r = evaluate_indicator("bisenzio", _CFG_BISENZIO, signals, "casa_campi")
     assert r is not None
     assert r.verdict == "rosso"
@@ -184,7 +185,6 @@ def test_evaluate_all_filters_location_specific() -> None:
     signals: SignalBag = {
         "P(precip > 0.2mm)": 0.05, "P(RH > 80%)": 0.10,
         "Tmin_p10": 8.0, "level_sir": 0.5,
-        "threshold_1": 1.2, "threshold_2": 2.0,
     }
     results = evaluate_all(_ALL_INDICATORS, signals, "lavoro_cosimo")
     ids = {r.indicator_id for r in results}
@@ -197,7 +197,6 @@ def test_evaluate_all_includes_location_specific() -> None:
     signals: SignalBag = {
         "P(precip > 0.2mm)": 0.05, "P(RH > 80%)": 0.10,
         "Tmin_p10": 8.0, "level_sir": 0.5,
-        "threshold_1": 1.2, "threshold_2": 2.0,
     }
     results = evaluate_all(_ALL_INDICATORS, signals, "casa_campi")
     ids = {r.indicator_id for r in results}

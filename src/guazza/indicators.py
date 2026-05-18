@@ -92,9 +92,12 @@ def evaluate_indicator(
     alpha = _compute_alpha(costs)
     logic: dict[str, str] = cfg.get("logic", {})
 
+    static_thresholds = {k: float(v) for k, v in cfg.get("thresholds", {}).items()}
+    effective_signals: SignalBag = {**signals, **static_thresholds}
+
     for rule in ("red", "yellow", "green"):
         condition = logic.get(rule, "")
-        if condition and _eval_condition(condition, signals):
+        if condition and _eval_condition(condition, effective_signals):
             verdict_it = {"green": "verde", "yellow": "giallo", "red": "rosso"}[rule]
             return IndicatorResult(
                 indicator_id=indicator_id,

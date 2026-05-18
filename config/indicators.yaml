@@ -106,13 +106,18 @@ indicators:
       fn: 10  # allerta mancata — rischio esondazione
       fp: 1   # allerta inutile — disagio trascurabile
       # alpha = 1/11 ≈ 0.09 → massimamente conservativo
+    thresholds:
+      threshold_1: 3.5   # primo livello di guardia (m)
+      threshold_2: 5.5   # secondo livello di guardia (m)
+      threshold_3: 7.0   # rischio esondazione (m) — non usato nel semaforo
     logic:
       green: "level_sir < threshold_1"
       yellow: "level_sir >= threshold_1 AND level_sir < threshold_2"
       red: "level_sir >= threshold_2"
     notes: >
-      Soglie threshold_1/threshold_2/threshold_3 lette da SIR idrometria
-      (stazione TOS01004791 — S. Piero a Ponti, Bisenzio, 1.8km da casa_campi).
+      Soglie statiche da config (stazione TOS01004791 — S. Piero a Ponti,
+      Bisenzio, 1.8km da casa_campi). threshold_3=7.0m (esondazione) non usato
+      nel semaforo a 3 colori — rosso scatta già a >= threshold_2.
       Questo indicatore è REAL-TIME, non previsionale. Mostra stato attuale idrometria.
 
   aria:
