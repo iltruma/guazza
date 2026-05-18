@@ -515,7 +515,7 @@ function buildChartPoints(data, model, targetDate) {
   } else {
     const modelData = (data.nwp_models_hourly || []).find(mdl => mdl.source === model);
     (modelData?.data || []).forEach(pt => {
-      const ts = new Date(pt.ts);
+      const ts = new Date(pt.ts.replace('Z', ''));
       if (ts >= dayStart && ts <= dayEnd) {
         points.push({ ts, temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
                       precip_mm: pt.precip_mm, precip_prob: null,

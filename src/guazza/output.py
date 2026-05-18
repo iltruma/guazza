@@ -457,7 +457,7 @@ def get_nwp_models_hourly(
             ROUND(wind_speed_ms, 1)                      AS wind_speed_ms
         FROM forecasts
         WHERE location_id = ?
-          AND ts_valid > NOW()
+          AND CAST(ts_valid AS DATE) >= CURRENT_DATE
           AND temp_c IS NOT NULL
         QUALIFY ROW_NUMBER() OVER (
             PARTITION BY source, ts_valid ORDER BY ts_run DESC
