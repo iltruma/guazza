@@ -171,10 +171,13 @@ function fmtWind(v)   { return v != null ? `${(v * 3.6).toFixed(0)} km/h` : '—
 
 // Soglie ARPAT livelli 1–2 = verde, 3–4 = giallo, 5–7 = rosso
 const AQ_THRESHOLDS = {
-  pm10: [20, 40],   // <20 verde, 20–40 giallo, ≥40 rosso
-  pm25: [10, 20],   // <10 verde, 10–20 giallo, ≥20 rosso
-  no2:  [40, 160],  // <40 verde, 40–160 giallo, ≥160 rosso
-  o3:   [72, 144],  // <72 verde, 72–144 giallo, ≥144 rosso
+  pm10:    [20, 40],   // µg/m³: <20 verde, 20–40 giallo, ≥40 rosso
+  pm25:    [10, 20],   // µg/m³
+  no2:     [40, 160],  // µg/m³
+  o3:      [72, 144],  // µg/m³
+  co:      [2,  8],    // mg/m³: livelli ARPAT <2 verde, 2–8 giallo, ≥8 rosso
+  benzene: [1,  4],    // µg/m³
+  so2:     [70, 280],  // µg/m³
 };
 
 function aqColorCls(key, value) {
@@ -188,24 +191,27 @@ function aqColorCls(key, value) {
 function renderAirQuality(aq) {
   if (!aq) return '';
   const items = [
-    { key: 'pm10', label: 'PM10',  value: aq.pm10_ugm3 },
-    { key: 'pm25', label: 'PM2.5', value: aq.pm25_ugm3 },
-    { key: 'no2',  label: 'NO₂',   value: aq.no2_ugm3  },
-    { key: 'o3',   label: 'O₃',    value: aq.o3_ugm3   },
+    { key: 'pm10',    label: 'PM10',   value: aq.pm10_ugm3,    unit: 'µg/m³', dec: 0 },
+    { key: 'pm25',    label: 'PM2.5',  value: aq.pm25_ugm3,    unit: 'µg/m³', dec: 0 },
+    { key: 'no2',     label: 'NO₂',    value: aq.no2_ugm3,     unit: 'µg/m³', dec: 0 },
+    { key: 'o3',      label: 'O₃',     value: aq.o3_ugm3,      unit: 'µg/m³', dec: 0 },
+    { key: 'co',      label: 'CO',     value: aq.co_mgm3,      unit: 'mg/m³', dec: 1 },
+    { key: 'benzene', label: 'C₆H₆',  value: aq.benzene_ugm3, unit: 'µg/m³', dec: 1 },
+    { key: 'so2',     label: 'SO₂',    value: aq.so2_ugm3,     unit: 'µg/m³', dec: 0 },
   ].filter(it => it.value != null);
   if (items.length === 0) return '';
 
   const cards = items.map(it => `
     <div class="bg-base-200 rounded-lg p-2.5 text-center">
       <div class="text-xs text-base-content/60 mb-0.5">${it.label}</div>
-      <div class="font-semibold text-sm ${aqColorCls(it.key, it.value)}">${it.value.toFixed(0)}</div>
-      <div class="text-xs text-base-content/40">µg/m³</div>
+      <div class="font-semibold text-sm ${aqColorCls(it.key, it.value)}">${it.value.toFixed(it.dec)}</div>
+      <div class="text-xs text-base-content/40">${it.unit}</div>
     </div>`).join('');
 
   return `
     <div class="mt-3">
       <div class="text-xs text-base-content/40 mb-1">Qualità aria</div>
-      <div class="grid gap-2" style="grid-template-columns:repeat(${items.length},1fr)">${cards}</div>
+      <div class="grid gap-2" style="grid-template-columns:repeat(${items.length},minmax(0,1fr))">${cards}</div>
     </div>`;
 }
 

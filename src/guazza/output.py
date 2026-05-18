@@ -355,7 +355,21 @@ def get_current_air_quality(
                 WHERE o3_ugm3 IS NOT NULL
                   AND granularity = 'hourly'
                   AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
-            ), 1) AS o3_ugm3
+            ), 1) AS o3_ugm3,
+            ROUND(AVG(co_mgm3) FILTER (
+                WHERE co_mgm3 IS NOT NULL
+                  AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
+            ), 2) AS co_mgm3,
+            ROUND(AVG(benzene_ugm3) FILTER (
+                WHERE benzene_ugm3 IS NOT NULL
+                  AND granularity = 'daily'
+                  AND ts >= CURRENT_DATE - INTERVAL 2 DAYS
+            ), 2) AS benzene_ugm3,
+            ROUND(AVG(so2_ugm3) FILTER (
+                WHERE so2_ugm3 IS NOT NULL
+                  AND granularity = 'hourly'
+                  AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
+            ), 1) AS so2_ugm3
         FROM observations
         WHERE location_id = ?
           AND source = 'arpat'
@@ -364,12 +378,15 @@ def get_current_air_quality(
     if row is None or all(v is None for v in row):
         return None
 
-    pm10, pm25, no2, o3 = row
+    pm10, pm25, no2, o3, co, benzene, so2 = row
     return {
-        "pm10_ugm3": float(pm10) if pm10 is not None else None,
-        "pm25_ugm3": float(pm25) if pm25 is not None else None,
-        "no2_ugm3":  float(no2)  if no2  is not None else None,
-        "o3_ugm3":   float(o3)   if o3   is not None else None,
+        "pm10_ugm3":     float(pm10)    if pm10    is not None else None,
+        "pm25_ugm3":     float(pm25)    if pm25    is not None else None,
+        "no2_ugm3":      float(no2)     if no2     is not None else None,
+        "o3_ugm3":       float(o3)      if o3      is not None else None,
+        "co_mgm3":       float(co)      if co      is not None else None,
+        "benzene_ugm3":  float(benzene) if benzene is not None else None,
+        "so2_ugm3":      float(so2)     if so2     is not None else None,
     }
 
 

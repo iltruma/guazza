@@ -258,14 +258,14 @@ def test_log_results_empty_no_crash(seeded_db: Path) -> None:
         log_results(db, [])
 
 
-def test_load_real_config_has_9_indicators() -> None:
+def test_load_real_config_has_8_indicators() -> None:
     try:
         indicators = load_indicators()
     except FileNotFoundError:
         pytest.skip("Config non disponibile in questo ambiente")
-    assert len(indicators) == 9
+    assert len(indicators) == 8
     expected = {"panni", "motorino", "gelata", "temporale", "nebbia",
-                "bisenzio", "aria", "annaffia", "clima"}
+                "bisenzio", "annaffia", "clima"}
     assert set(indicators.keys()) == expected
 
 

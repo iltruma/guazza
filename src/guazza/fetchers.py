@@ -1482,20 +1482,22 @@ _ARPAT_BOLLETTINI_URL = "https://api.arpat.toscana.it/app/air/bollettini/dati"
 _arpat_nrt_first_call_logged = False
 
 # Mapping nome variabile ARPAT → colonna observations wide (None = non in schema, ignorato)
-_ARPAT_NRT_VAR_MAP: dict[str, str | None] = {
+_ARPAT_NRT_VAR_MAP: dict[str, str] = {
     "NO2":     "no2_ugm3",
     "O3":      "o3_ugm3",
-    "CO":      None,   # non in schema wide — ignorato (CO non in observations)
-    "BENZENE": None,   # non in schema wide — ignorato
+    "CO":      "co_mgm3",
+    "BENZENE": "benzene_ugm3",
+    "SO2":     "so2_ugm3",
 }
 
-_ARPAT_BOLL_VAR_MAP: dict[str, str | None] = {
+_ARPAT_BOLL_VAR_MAP: dict[str, str] = {
     "PM10":    "pm10_ugm3",
     "PM2.5":   "pm25_ugm3",
     "NO2":     "no2_ugm3",
     "O3":      "o3_ugm3",
-    "CO":      None,
-    "BENZENE": None,
+    "CO":      "co_mgm3",
+    "BENZENE": "benzene_ugm3",
+    "SO2":     "so2_ugm3",
 }
 
 
@@ -1599,8 +1601,6 @@ def fetch_arpat_nrt(
             "qc_pass": True,
         }
         for arpat_var, col in _ARPAT_NRT_VAR_MAP.items():
-            if col is None:
-                continue
             entry = inq_map.get(arpat_var.upper())
             raw = entry[0] if entry is not None else None
             try:
@@ -1697,8 +1697,6 @@ def fetch_arpat_bollettini(
             "qc_pass": True,
         }
         for arpat_var, col in _ARPAT_BOLL_VAR_MAP.items():
-            if col is None:
-                continue
             raw = inq_map.get(arpat_var.upper())
             try:
                 rec[col] = float(raw) if raw is not None else None
@@ -1787,8 +1785,6 @@ def _fetch_one_arpat_bollettini_station(
             "qc_pass": True,
         }
         for arpat_var, col in _ARPAT_BOLL_VAR_MAP.items():
-            if col is None:
-                continue
             raw = inq_map.get(arpat_var.upper())
             try:
                 rec[col] = float(raw) if raw is not None else None
