@@ -505,11 +505,7 @@ function buildChartPoints(data, model, targetDate) {
   const points = [];
 
   if (model === 'guazza') {
-    const n = new Date();
-    const isTodayDate = y === n.getFullYear() && m === (n.getMonth() + 1) && d === n.getDate();
-    const hourlyData = isTodayDate
-      ? (data.today_hourly || [])
-      : (data.days.find(day => day.target_date === targetDate)?.hourly || []);
+    const hourlyData = data.days.find(day => day.target_date === targetDate)?.hourly || [];
     hourlyData.forEach(h => {
       points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0),
                     temp_c: h.temp_c, humidity_pct: h.humidity_pct,
