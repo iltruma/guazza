@@ -426,6 +426,180 @@ main {
 .dot-yellow { background: #d97706; }
 .dot-red    { background: var(--rosso); }
 
+/* ── Current conditions card ─────────────────────────────────────────────────── */
+
+.current-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 0.875rem 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.current-title {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.625rem;
+}
+
+.current-ts {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 0.25rem;
+}
+
+.current-values {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.current-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  min-width: 52px;
+}
+
+.current-icon { font-size: 1.1rem; line-height: 1; }
+.current-val  { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+.current-lbl  { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* ── Chart section ───────────────────────────────────────────────────────────── */
+
+.chart-section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.chart-title {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ── Model switch ────────────────────────────────────────────────────────────── */
+
+.model-switch {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.model-switch-btn {
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  white-space: nowrap;
+}
+
+.model-switch-btn:hover  { background: var(--surface2); color: var(--text); }
+.model-switch-btn.active { background: var(--blue); color: white; border-color: var(--blue); font-weight: 500; }
+
+/* ── Combined chart ──────────────────────────────────────────────────────────── */
+
+.combined-chart-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+}
+
+.combined-chart { display: block; }
+
+.legend-hum { color: var(--precipblue); }
+
+/* ── Day cards strip ─────────────────────────────────────────────────────────── */
+
+.day-strip-cards {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 0 0.5rem;
+  margin-bottom: 1rem;
+  scrollbar-width: thin;
+}
+
+.day-card {
+  flex-shrink: 0;
+  min-width: 80px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.625rem 0.5rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  text-align: center;
+  transition: background 0.1s;
+  box-shadow: var(--shadow);
+}
+
+.day-card:hover  { background: var(--surface2); }
+.day-card.active { outline: 2px solid var(--blue); background: var(--surface2); }
+
+.day-card-label { font-size: 0.8rem; font-weight: 600; text-transform: capitalize; }
+.day-card-date  { font-size: 0.65rem; color: var(--text-muted); text-transform: capitalize; }
+
+.day-card-temps { display: flex; flex-direction: column; gap: 0; margin-top: 0.125rem; }
+.day-card-tmax  { font-size: 0.95rem; font-weight: 700; letter-spacing: -0.02em; }
+.day-card-tmin  { font-size: 0.8rem; color: var(--text-muted); }
+
+.day-card-precip {
+  font-size: 0.65rem;
+  color: var(--precipblue);
+  font-weight: 500;
+  min-height: 0.9rem;
+}
+
+.day-card-dots {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.125rem;
+}
+
+/* ── Day expanded ────────────────────────────────────────────────────────────── */
+
+.day-expanded {
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+}
+
 /* ── Loading / Error ────────────────────────────────────────────────────────── */
 
 .loading, .error {

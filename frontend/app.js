@@ -24,8 +24,9 @@ const INDICATOR_META = {
 
 const VERDICT_CLASS = { verde: 'green', giallo: 'yellow', rosso: 'red' };
 
-let currentData = null;
+let currentData  = null;
 let selectedDayIdx = 0;
+let selectedModel  = 'guazza';
 
 // ── URL routing ───────────────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ function renderTabs(activeLoc) {
 async function loadLocation(locId) {
   renderTabs(locId);
   selectedDayIdx = 0;
+  selectedModel  = 'guazza';
   const app = document.getElementById('app');
   app.innerHTML = '<div class="loading">Caricamento…</div>';
   try {
@@ -78,6 +80,11 @@ function fmtDate(isoDate) {
   });
 }
 
+function fmtDateShort(isoDate) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+}
+
 function fmtDayLabel(isoDate) {
   const [y, m, d] = isoDate.split('-').map(Number);
   const todayMid = new Date();
@@ -88,6 +95,19 @@ function fmtDayLabel(isoDate) {
   if (diff === 1) return 'Domani';
   if (diff === 2) return 'Dopodomani';
   return target.toLocaleDateString('it-IT', { weekday: 'long' });
+}
+
+function fmtDayShort(isoDate) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const todayMid = new Date();
+  todayMid.setHours(0, 0, 0, 0);
+  const target = new Date(y, m - 1, d);
+  const diff = Math.round((target - todayMid) / 86400000);
+  if (diff === 0) return 'Oggi';
+  if (diff === 1) return 'Dom.';
+  if (diff === 2) return 'Dopo.';
+  const wd = target.toLocaleDateString('it-IT', { weekday: 'short' });
+  return wd.charAt(0).toUpperCase() + wd.slice(1);
 }
 
 function fmtDateTime(iso) {
@@ -108,8 +128,7 @@ function staleWarning(generatedAt) {
 // ── Coverage badge ────────────────────────────────────────────────────────────
 
 function coverageBadge(cov) {
-  const allNull = Object.values(cov).every(v => v === null);
-  if (allNull) {
+  if (!cov || Object.values(cov).every(v => v === null)) {
     return '<div class="coverage-badge warn">⚠️ Calibrazione in corso — copertura CI non ancora disponibile (primi 30gg di operatività)</div>';
   }
   const items = [
@@ -129,7 +148,7 @@ function ciBar(fc, unit) {
   const range = ci90_hi - ci90_lo;
   if (range <= 0) return `<div class="ci-detail">—</div>`;
 
-  const pct = v => Math.max(0, Math.min(100, ((v - ci90_lo) / range) * 100)).toFixed(1);
+  const pct     = v => Math.max(0, Math.min(100, ((v - ci90_lo) / range) * 100)).toFixed(1);
   const p80lo    = pct(ci80_lo);
   const p80width = (pct(ci80_hi) - pct(ci80_lo)).toFixed(1);
   const p50pos   = pct(p50);
@@ -150,7 +169,96 @@ function ciBar(fc, unit) {
     </div>`;
 }
 
-// ── Hourly SVG chart ──────────────────────────────────────────────────────────
+// ── Current conditions card ───────────────────────────────────────────────────
+
+function renderCurrentConditions(current) {
+  if (!current || current.temp_c == null) return '';
+
+  const ts   = new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  const hum  = current.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%`          : '—';
+  const wind = current.wind_speed_ms != null ? `${(current.wind_speed_ms * 3.6).toFixed(0)} km/h` : '—';
+  const prec = current.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm`            : '—';
+
+  return `
+    <section class="current-card">
+      <div class="current-title">Stazioni SIR <span class="current-ts">${ts}</span></div>
+      <div class="current-values">
+        <div class="current-item">
+          <span class="current-icon">🌡</span>
+          <span class="current-val">${current.temp_c.toFixed(1)}°</span>
+          <span class="current-lbl">temp</span>
+        </div>
+        <div class="current-item">
+          <span class="current-icon">💧</span>
+          <span class="current-val">${hum}</span>
+          <span class="current-lbl">umidità</span>
+        </div>
+        <div class="current-item">
+          <span class="current-icon">💨</span>
+          <span class="current-val">${wind}</span>
+          <span class="current-lbl">vento</span>
+        </div>
+        <div class="current-item">
+          <span class="current-icon">🌧</span>
+          <span class="current-val">${prec}</span>
+          <span class="current-lbl">precip</span>
+        </div>
+      </div>
+    </section>`;
+}
+
+// ── Model switch ──────────────────────────────────────────────────────────────
+
+function renderModelSwitch(data) {
+  const models = [{ source: 'guazza', label: '★ Guazza ML' }];
+  (data.nwp_models_hourly || []).forEach(m => models.push({ source: m.source, label: m.label }));
+  const btns = models.map(m =>
+    `<button class="model-switch-btn${m.source === selectedModel ? ' active' : ''}" data-src="${m.source}">${m.label}</button>`
+  ).join('');
+  return `<div class="model-switch">${btns}</div>`;
+}
+
+// ── Combined chart: assemble flat time-series ─────────────────────────────────
+
+function buildChartPoints(data, model) {
+  const points = [];
+
+  if (model === 'guazza') {
+    const todayMid = new Date();
+    todayMid.setHours(0, 0, 0, 0);
+
+    (data.today_hourly || []).forEach(h => {
+      const ts = new Date(todayMid);
+      ts.setHours(h.hour, 0, 0, 0);
+      points.push({ ts, temp_c: h.temp_c, humidity_pct: h.humidity_pct,
+                    precip_mm: h.precip_mm, precip_prob: h.precip_prob });
+    });
+
+    (data.days || []).forEach(day => {
+      const [y, m, d] = day.target_date.split('-').map(Number);
+      (day.hourly || []).forEach(h => {
+        points.push({
+          ts: new Date(y, m - 1, d, h.hour, 0, 0),
+          temp_c: h.temp_c, humidity_pct: h.humidity_pct,
+          precip_mm: h.precip_mm, precip_prob: h.precip_prob,
+        });
+      });
+    });
+  } else {
+    const modelData = (data.nwp_models_hourly || []).find(m => m.source === model);
+    (modelData?.data || []).forEach(pt => {
+      points.push({
+        ts: new Date(pt.ts),
+        temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
+        precip_mm: pt.precip_mm, precip_prob: null,
+      });
+    });
+  }
+
+  return points.sort((a, b) => a.ts - b.ts);
+}
+
+// ── Combined multi-day scrollable chart ───────────────────────────────────────
 
 function niceYTicks(min, max) {
   const rawStep = (max - min) / 4;
@@ -161,83 +269,154 @@ function niceYTicks(min, max) {
   return ticks;
 }
 
-function hourlyChart(hourly) {
-  if (!hourly || hourly.length === 0) {
-    return '<div class="no-hourly">Dati orari non disponibili</div>';
+function renderCombinedChart(data, model) {
+  const points = buildChartPoints(data, model);
+
+  if (points.length < 2) {
+    return '<div class="no-hourly">Dati grafici non disponibili per il modello selezionato</div>';
   }
 
-  const W = 700, H = 150;
-  const padL = 36, padR = 52, padT = 12, padB = 28;
-  const cW = W - padL - padR;
-  const cH = H - padT - padB;
+  const PX_PER_HOUR = 10;
+  const H = 160;
+  const padL = 36, padR = 44, padT = 14, padB = 24;
+  const cH   = H - padT - padB;
 
-  const validTemps = hourly.filter(h => h.temp_c != null).map(h => h.temp_c);
-  if (validTemps.length === 0) return '<div class="no-hourly">Dati orari non disponibili</div>';
+  const t0       = points[0].ts.getTime();
+  const tEnd     = points[points.length - 1].ts.getTime();
+  const totalMs  = Math.max(1, tEnd - t0);
+  const totalHrs = totalMs / 3600000;
+  const cW = Math.max(280, totalHrs * PX_PER_HOUR);
+  const W  = cW + padL + padR;
 
+  const xPos = ts => padL + ((ts.getTime() - t0) / totalMs) * cW;
+
+  const validTemps = points.filter(p => p.temp_c != null).map(p => p.temp_c);
+  if (validTemps.length === 0) {
+    return '<div class="no-hourly">Temperatura non disponibile</div>';
+  }
   const minT = Math.floor(Math.min(...validTemps)) - 1;
   const maxT = Math.ceil(Math.max(...validTemps)) + 1;
-  const maxP = Math.max(...hourly.map(h => h.precip_mm ?? 0), 0.5);
-
-  const xPos = h => padL + (h / 23) * cW;
   const yT   = t => padT + (1 - (t - minT) / (maxT - minT)) * cH;
+  const yH   = h => padT + (1 - h / 100) * cH;
 
-  const precipMaxH = cH * 0.35;
-  const yPBase = padT + cH;
-  const barW   = Math.max(4, cW / 24 * 0.7);
+  const maxP      = Math.max(...points.map(p => p.precip_mm ?? 0), 0.5);
+  const precipMaxH = cH * 0.28;
+  const yPBase    = padT + cH;
+  const barW      = Math.max(3, PX_PER_HOUR * 0.65);
 
-  const pts = hourly
-    .filter(h => h.temp_c != null)
-    .map(h => `${xPos(h.hour).toFixed(1)},${yT(h.temp_c).toFixed(1)}`);
-  const linePath = pts.length > 1 ? `M ${pts.join(' L ')}` : '';
+  // Temperature line
+  const tPts = points.filter(p => p.temp_c != null)
+    .map(p => `${xPos(p.ts).toFixed(1)},${yT(p.temp_c).toFixed(1)}`);
+  const tempPath = tPts.length > 1
+    ? `<path d="M ${tPts.join(' L ')}" fill="none" stroke="#f97316" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+    : '';
 
-  const precipBars = hourly.map(h => {
-    const p = h.precip_mm ?? 0;
-    if (p < 0.05) return '';
-    const bH      = (p / maxP) * precipMaxH;
-    const x       = xPos(h.hour) - barW / 2;
+  // Humidity dashed line
+  const hPts = points.filter(p => p.humidity_pct != null)
+    .map(p => `${xPos(p.ts).toFixed(1)},${yH(p.humidity_pct).toFixed(1)}`);
+  const humPath = hPts.length > 1
+    ? `<path d="M ${hPts.join(' L ')}" fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>`
+    : '';
+
+  // Precipitation bars
+  const precipBars = points.map(p => {
+    const prec = p.precip_mm ?? 0;
+    if (prec < 0.05) return '';
+    const bH      = (prec / maxP) * precipMaxH;
+    const x       = xPos(p.ts) - barW / 2;
     const y       = yPBase - bH;
-    const opacity = (0.3 + (h.precip_prob ?? 0.5) * 0.7).toFixed(2);
+    const opacity = (0.3 + (p.precip_prob ?? 0.5) * 0.7).toFixed(2);
     return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bH.toFixed(1)}" fill="#3b82f6" opacity="${opacity}" rx="1"/>`;
   }).join('');
 
-  const xLabels = [0, 3, 6, 9, 12, 15, 18, 21, 23].map(h =>
-    `<text x="${xPos(h).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="chart-label">${String(h).padStart(2, '0')}</text>`
-  ).join('');
+  // Day transition ticks
+  const dayTicks = []; const dayLabels = [];
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1].ts;
+    const curr = points[i].ts;
+    const sameDay = prev.getDate() === curr.getDate() &&
+                    prev.getMonth() === curr.getMonth() &&
+                    prev.getFullYear() === curr.getFullYear();
+    if (!sameDay) {
+      const x = xPos(curr).toFixed(1);
+      const lbl = curr.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric' });
+      dayTicks.push(`<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + cH}" stroke="var(--border)" stroke-width="1" stroke-dasharray="3,3"/>`);
+      dayLabels.push(`<text x="${(parseFloat(x) + 2).toFixed(1)}" y="${H - 5}" text-anchor="start" class="chart-label" style="font-size:8px">${lbl}</text>`);
+    }
+  }
 
-  const ticks = niceYTicks(minT, maxT);
-  const yLabels = ticks.map(t =>
+  // Temperature Y-axis labels and grid
+  const tempTicks = niceYTicks(minT, maxT);
+  const tempLabels = tempTicks.map(t =>
     `<text x="${padL - 4}" y="${yT(t).toFixed(1)}" text-anchor="end" dominant-baseline="middle" class="chart-label">${t}°</text>`
   ).join('');
-
-  // Grid lines aligned to temp ticks
-  const gridLines = ticks.map(t =>
+  const gridLines = tempTicks.map(t =>
     `<line x1="${padL}" y1="${yT(t).toFixed(1)}" x2="${W - padR}" y2="${yT(t).toFixed(1)}" class="chart-grid"/>`
   ).join('');
 
-  // 0°C reference line (useful in winter)
   const zeroLine = (minT < 0 && maxT > 0)
     ? `<line x1="${padL}" y1="${yT(0).toFixed(1)}" x2="${W - padR}" y2="${yT(0).toFixed(1)}" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,2" opacity="0.6"/>`
     : '';
 
-  const precipLabel = `<text x="${W - padR + 4}" y="${(yPBase - precipMaxH * 0.5).toFixed(1)}" dominant-baseline="middle" class="chart-label" style="fill:#3b82f6">${maxP.toFixed(1)}mm</text>`;
+  // Humidity axis labels (right side)
+  const humLabels = [0, 50, 100].map(h =>
+    `<text x="${W - padR + 4}" y="${yH(h).toFixed(1)}" dominant-baseline="middle" class="chart-label" style="fill:#3b82f6">${h}%</text>`
+  ).join('');
+
+  const precipLabel = maxP > 0.5
+    ? `<text x="${padL + 4}" y="${(yPBase - precipMaxH * 0.85).toFixed(1)}" class="chart-label" style="fill:#3b82f6;font-size:8px">${maxP.toFixed(1)}mm</text>`
+    : '';
 
   return `
-    <svg viewBox="0 0 ${W} ${H}" class="hourly-chart" aria-hidden="true">
-      ${gridLines}
-      ${zeroLine}
-      ${precipBars}
-      ${linePath ? `<path d="${linePath}" fill="none" stroke="#f97316" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
-      ${xLabels}
-      ${yLabels}
-      ${precipLabel}
-    </svg>
+    <div class="combined-chart-wrap">
+      <svg width="${W}" height="${H}" class="combined-chart" aria-hidden="true">
+        ${gridLines}
+        ${zeroLine}
+        ${dayTicks.join('')}
+        ${precipBars}
+        ${humPath}
+        ${tempPath}
+        ${tempLabels}
+        ${humLabels}
+        ${precipLabel}
+        ${dayLabels.join('')}
+      </svg>
+    </div>
     <div class="chart-legend">
       <span class="legend-temp">— Temperatura</span>
-      <span class="legend-precip">▪ Precipitazioni (opacità = probabilità)</span>
+      <span class="legend-hum">‐ ‐ Umidità</span>
+      <span class="legend-precip">▪ Precipitazioni</span>
     </div>`;
 }
 
-// ── NWP model comparison ─────────────────────────────────────────────────────
+// ── Day cards strip ───────────────────────────────────────────────────────────
+
+function renderDayCards(days, activeDayIdx) {
+  const cards = days.map((day, idx) => {
+    const { target_date, forecasts: fc, indicators } = day;
+    const dots = Object.entries(indicators).map(([id, ind]) => {
+      const meta = INDICATOR_META[id] ?? { label: id };
+      const cls  = VERDICT_CLASS[ind.verdict] ?? 'unknown';
+      return `<span class="dot dot-${cls}" title="${meta.label}: ${ind.verdict}"></span>`;
+    }).join('');
+    const hasRain = fc.precip_mm.p50 != null && fc.precip_mm.p50 >= 0.1;
+
+    return `<div class="day-card${idx === activeDayIdx ? ' active' : ''}" data-idx="${idx}">
+      <div class="day-card-label">${fmtDayShort(target_date)}</div>
+      <div class="day-card-date">${fmtDateShort(target_date)}</div>
+      <div class="day-card-temps">
+        <span class="day-card-tmax">${fmtTemp(fc.tmax_c.p50)}</span>
+        <span class="day-card-tmin">${fmtTemp(fc.tmin_c.p50)}</span>
+      </div>
+      ${hasRain ? `<div class="day-card-precip">${fmtPrecip(fc.precip_mm.p50)}</div>` : '<div class="day-card-precip"></div>'}
+      <div class="day-card-dots">${dots}</div>
+    </div>`;
+  }).join('');
+
+  return `<section class="day-strip-cards">${cards}</section>`;
+}
+
+// ── NWP model comparison table ────────────────────────────────────────────────
 
 function renderNwpComparison(day) {
   const nwp = day.nwp_comparison;
@@ -272,15 +451,15 @@ function renderNwpComparison(day) {
     </div>`;
 }
 
-// ── Day hero ──────────────────────────────────────────────────────────────────
+// ── Day expanded (detail view for selected day) ───────────────────────────────
 
-function renderDayHero(day) {
+function renderDayExpanded(day) {
   const { forecasts: fc, indicators, target_date, lead_time_h } = day;
 
   const indHtml = Object.entries(indicators).map(([id, ind]) => {
     const meta = INDICATOR_META[id] ?? { label: id, icon: '?' };
     const cls  = VERDICT_CLASS[ind.verdict] ?? 'unknown';
-    return `<div class="indicator indicator-${cls}">
+    return `<div class="indicator indicator-${cls}" title="${ind.rule_matched}">
       <span class="ind-icon">${meta.icon}</span>
       <span class="ind-label">${meta.label}</span>
       <span class="ind-verdict">${ind.verdict}</span>
@@ -288,7 +467,7 @@ function renderDayHero(day) {
   }).join('');
 
   return `
-    <section class="day-hero">
+    <section class="day-expanded">
       <div class="day-title">
         <span class="day-date">${fmtDayLabel(target_date)}</span>
         <span class="day-date-sub">${fmtDate(target_date)}</span>
@@ -316,38 +495,6 @@ function renderDayHero(day) {
     </section>`;
 }
 
-// ── Day strip ─────────────────────────────────────────────────────────────────
-
-function renderDayStrip(days, activeDayIdx) {
-  const header = `<div class="strip-header">
-    <span>Data</span><span>Tmin / Tmax</span><span>Precip</span><span>Indicatori</span>
-  </div>`;
-
-  const rows = days.map((day, idx) => {
-    const { target_date, lead_time_h, forecasts: fc, indicators } = day;
-    const dots = Object.entries(indicators).map(([id, ind]) => {
-      const meta = INDICATOR_META[id] ?? { label: id };
-      const cls = VERDICT_CLASS[ind.verdict] ?? 'unknown';
-      return `<span class="dot dot-${cls}" title="${meta.label}: ${ind.verdict}"></span>`;
-    }).join('');
-
-    return `<div class="strip-row${idx === activeDayIdx ? ' active' : ''}" data-idx="${idx}">
-      <span class="strip-date">
-        ${fmtDayLabel(target_date)}
-        <span class="strip-lead">+${lead_time_h}h</span>
-      </span>
-      <span class="strip-temp">${fmtTemp(fc.tmin_c.p50)} / ${fmtTemp(fc.tmax_c.p50)}</span>
-      <span class="strip-precip">${fmtPrecip(fc.precip_mm.p50)}</span>
-      <span class="strip-inds">${dots}</span>
-    </div>`;
-  }).join('');
-
-  return `<section class="day-strip">
-    <h3>Prossimi ${days.length} giorni</h3>
-    ${header}${rows}
-  </section>`;
-}
-
 // ── Render ────────────────────────────────────────────────────────────────────
 
 function render(container, data) {
@@ -355,24 +502,35 @@ function render(container, data) {
 
   container.innerHTML = `
     <div class="meta-bar">Aggiornato: ${fmtDateTime(data.generated_at)}${staleWarning(data.generated_at)}</div>
-    ${coverageBadge(data.coverage_empirical_30d)}
-    ${renderDayHero(day)}
-    <section class="hourly-section">
-      <h3>Profilo orario — ${fmtDate(day.target_date)}</h3>
-      ${hourlyChart(day.hourly)}
+    ${renderCurrentConditions(data.current)}
+    <section class="chart-section">
+      <div class="chart-header">
+        <h3 class="chart-title">Tendenza meteo</h3>
+        ${renderModelSwitch(data)}
+      </div>
+      ${renderCombinedChart(data, selectedModel)}
     </section>
-    ${renderDayStrip(data.days, selectedDayIdx)}
+    ${renderDayCards(data.days, selectedDayIdx)}
+    ${renderDayExpanded(day)}
+    ${coverageBadge(data.coverage_empirical_30d)}
   `;
 
-  container.querySelectorAll('.strip-row').forEach(row => {
-    row.addEventListener('click', () => {
-      selectedDayIdx = parseInt(row.dataset.idx, 10);
+  container.querySelectorAll('.day-card').forEach(card => {
+    card.addEventListener('click', () => {
+      selectedDayIdx = parseInt(card.dataset.idx, 10);
       render(container, data);
-      const hero = container.querySelector('.day-hero');
-      if (hero) {
+      const expanded = container.querySelector('.day-expanded');
+      if (expanded) {
         const headerH = document.querySelector('header')?.offsetHeight ?? 0;
-        window.scrollTo({ top: hero.getBoundingClientRect().top + window.scrollY - headerH - 8, behavior: 'smooth' });
+        window.scrollTo({ top: expanded.getBoundingClientRect().top + window.scrollY - headerH - 8, behavior: 'smooth' });
       }
+    });
+  });
+
+  container.querySelectorAll('.model-switch-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedModel = btn.dataset.src;
+      render(container, data);
     });
   });
 }
