@@ -1,20 +1,26 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="it" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guazza — Previsioni meteo iper-locale Toscana</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <header>
-    <div class="header-inner">
-      <h1>🌦 Guazza</h1>
-      <nav id="tabs" aria-label="Location"></nav>
+<body class="bg-base-200 text-base-content min-h-screen">
+  <header class="bg-base-100 border-b border-base-300 sticky top-0 z-10 shadow-sm">
+    <div class="max-w-4xl mx-auto px-4 py-3">
+      <h1 class="text-xl font-bold tracking-tight">🌦 Guazza</h1>
+      <nav id="tabs" class="flex gap-1 mt-2 flex-wrap" aria-label="Location"></nav>
     </div>
   </header>
-  <main id="app">
-    <div class="loading">Caricamento…</div>
+  <main id="app" class="max-w-4xl mx-auto px-4 py-4">
+    <div class="flex items-center justify-center p-12 gap-3 text-base-content/60">
+      <span class="loading loading-spinner loading-md"></span>Caricamento…
+    </div>
   </main>
   <script src="app.js"></script>
 </body>

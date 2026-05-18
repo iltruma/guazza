@@ -239,7 +239,7 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 
 ### Sprint 6 — Frontend (completato — 2026-05-18)
 
-- HTML + JS vanilla, zero dipendenze JS; nginx statico; Cloudflare CDN/WAF
+- HTML + JS vanilla; **Tailwind CSS + DaisyUI** (CDN jsDelivr) + **Chart.js** (CDN); nginx statico; Cloudflare CDN/WAF
 - **Redesign completo** ispirato a Google Weather (sintesi) + Foreca (dettaglio):
   - Card **Condizioni ora**: temp/umidità/vento/precip da obs realtime SIR (ultimi 60 min)
   - **Grafico combinato multi-giorno scrollabile**: temperatura (arancio) + umidità (blu
@@ -249,6 +249,12 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
   - **Day strip**: card orizzontali scrollabili con indicatori (dots colorati) per tutti i giorni
   - **Day expanded**: dettaglio del giorno selezionato — 3 forecast card con CI bar + 9 indicatori + tabella NWP
   - Badge coverage in fondo; stale warning se dati > 6h
+- **Refactor stack UI** (Tailwind + DaisyUI + Chart.js):
+  - Grafico multi-giorno sostituito con Chart.js (mixed line/bar, tooltip hover, due assi Y)
+  - Switch modello aggiorna solo i dataset Chart.js senza re-render pagina
+  - Tutte le classi CSS custom sostituite con DaisyUI (`card`, `btn`, `badge`, `alert`, `table`)
+  - `style.css` ridotto a ~25 righe (solo CI bar + indicatori + chart scroll)
+  - Dark mode via `data-theme` DaisyUI, aggiornato su `prefers-color-scheme` change
 - **Nuovi campi JSON** (output.py + predict.py):
   - `current`: condizioni realtime aggregate (AVG stazioni, ultima 1h)
   - `today_hourly`: profilo orario NWP ensemble ore rimanenti di oggi (no rescaling ML)

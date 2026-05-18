@@ -55,7 +55,7 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 | ML core | LightGBM quantile | Gold standard dati tabulari, no GPU |
 | CI calibrazione | CQR (Romano 2019) | Garanzia copertura marginale |
 | Deploy | GitHub Actions → SSH al VPS | Solo CI/CD, non orchestration |
-| Frontend V1 | HTML + JS vanilla + Nginx | Zero dipendenze, statico |
+| Frontend | HTML + Tailwind CSS + DaisyUI + Chart.js + Nginx | Statico, CDN via jsDelivr/Tailwind CDN |
 | DNS/CDN/WAF | Cloudflare | Gratis |
 | Monitoring | Healthchecks.io + UptimeRobot | Free tier, dead-man switch |
 | Retry scraper | tenacity | Exponential backoff, standard |

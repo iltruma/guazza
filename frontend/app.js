@@ -22,11 +22,31 @@ const INDICATOR_META = {
   clima:    { label: 'Clima',     icon: '☀️' },
 };
 
-const VERDICT_CLASS = { verde: 'green', giallo: 'yellow', rosso: 'red' };
+const VERDICT_CLS = {
+  verde:  { ind: 'ind-verde',  dot: 'bg-success' },
+  giallo: { ind: 'ind-giallo', dot: 'bg-warning' },
+  rosso:  { ind: 'ind-rosso',  dot: 'bg-error'   },
+};
 
-let currentData  = null;
+let currentData    = null;
 let selectedDayIdx = 0;
 let selectedModel  = 'guazza';
+let meteoChart     = null;
+
+// ── Dark mode ─────────────────────────────────────────────────────────────────
+
+function initDarkMode() {
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const apply = dark => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; };
+  mq.addEventListener('change', e => {
+    apply(e.matches);
+    if (currentData) {
+      if (meteoChart) { meteoChart.destroy(); meteoChart = null; }
+      initChart(currentData, selectedModel);
+    }
+  });
+  apply(mq.matches);
+}
 
 // ── URL routing ───────────────────────────────────────────────────────────────
 
@@ -45,9 +65,9 @@ function navTo(locId) {
 function renderTabs(activeLoc) {
   const nav = document.getElementById('tabs');
   nav.innerHTML = LOCATIONS.map(l =>
-    `<button class="tab${l.id === activeLoc ? ' active' : ''}" data-loc="${l.id}">${l.label}</button>`
+    `<button class="btn btn-sm ${l.id === activeLoc ? 'btn-primary' : 'btn-ghost'}" data-loc="${l.id}">${l.label}</button>`
   ).join('');
-  nav.querySelectorAll('.tab').forEach(btn =>
+  nav.querySelectorAll('[data-loc]').forEach(btn =>
     btn.addEventListener('click', () => navTo(btn.dataset.loc))
   );
 }
@@ -58,15 +78,16 @@ async function loadLocation(locId) {
   renderTabs(locId);
   selectedDayIdx = 0;
   selectedModel  = 'guazza';
+  if (meteoChart) { meteoChart.destroy(); meteoChart = null; }
   const app = document.getElementById('app');
-  app.innerHTML = '<div class="loading">Caricamento…</div>';
+  app.innerHTML = '<div class="flex items-center justify-center p-12 gap-3 text-base-content/60"><span class="loading loading-spinner loading-md"></span>Caricamento…</div>';
   try {
     const r = await fetch(DATA_URL(locId));
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     currentData = await r.json();
     render(app, currentData);
   } catch (e) {
-    app.innerHTML = `<div class="error">Errore: ${e.message}<small>Assicurati che il server stia servendo i JSON da /data/</small></div>`;
+    app.innerHTML = `<div class="alert alert-error flex-col items-start mt-4"><span class="font-medium">Errore: ${e.message}</span><span class="text-sm opacity-70">Assicurati che il server stia servendo i JSON da /data/</span></div>`;
     currentData = null;
   }
 }
@@ -87,8 +108,7 @@ function fmtDateShort(isoDate) {
 
 function fmtDayLabel(isoDate) {
   const [y, m, d] = isoDate.split('-').map(Number);
-  const todayMid = new Date();
-  todayMid.setHours(0, 0, 0, 0);
+  const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
   const target = new Date(y, m - 1, d);
   const diff = Math.round((target - todayMid) / 86400000);
   if (diff === 0) return 'Oggi';
@@ -99,8 +119,7 @@ function fmtDayLabel(isoDate) {
 
 function fmtDayShort(isoDate) {
   const [y, m, d] = isoDate.split('-').map(Number);
-  const todayMid = new Date();
-  todayMid.setHours(0, 0, 0, 0);
+  const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
   const target = new Date(y, m - 1, d);
   const diff = Math.round((target - todayMid) / 86400000);
   if (diff === 0) return 'Oggi';
@@ -122,23 +141,23 @@ function fmtPrecip(v) { return v != null ? `${v.toFixed(1)} mm` : '—'; }
 function staleWarning(generatedAt) {
   const ageH = (Date.now() - new Date(generatedAt).getTime()) / 3600000;
   if (ageH < 6) return '';
-  return ` <span class="stale-warn" title="Dati generati ${ageH.toFixed(0)}h fa">⚠️ dati vecchi</span>`;
+  return ` <span class="ml-2 font-medium text-warning" title="Dati generati ${ageH.toFixed(0)}h fa">⚠️ dati vecchi</span>`;
 }
 
 // ── Coverage badge ────────────────────────────────────────────────────────────
 
 function coverageBadge(cov) {
   if (!cov || Object.values(cov).every(v => v === null)) {
-    return '<div class="coverage-badge warn">⚠️ Calibrazione in corso — copertura CI non ancora disponibile (primi 30gg di operatività)</div>';
+    return '<div class="alert alert-warning text-sm mb-4">⚠️ Calibrazione in corso — copertura CI non ancora disponibile (primi 30gg di operatività)</div>';
   }
   const items = [
     ['Tmin CI80', cov.tmin_ci80], ['Tmin CI90', cov.tmin_ci90],
     ['Tmax CI80', cov.tmax_ci80], ['Tmax CI90', cov.tmax_ci90],
     ['Precip CI80', cov.precip_ci80], ['Precip CI90', cov.precip_ci90],
   ].filter(([, v]) => v !== null)
-   .map(([k, v]) => `<span class="cov-item">${k}: <strong>${(v * 100).toFixed(0)}%</strong></span>`)
+   .map(([k, v]) => `<span class="ml-3">${k}: <strong>${(v * 100).toFixed(0)}%</strong></span>`)
    .join('');
-  return `<div class="coverage-badge ok">📊 Copertura empirica 30gg: ${items}</div>`;
+  return `<div class="alert alert-success text-sm mb-4">📊 Copertura empirica 30gg: ${items}</div>`;
 }
 
 // ── CI bar ────────────────────────────────────────────────────────────────────
@@ -148,13 +167,13 @@ function ciBar(fc, unit) {
   const range = ci90_hi - ci90_lo;
   if (range <= 0) return `<div class="ci-detail">—</div>`;
 
-  const pct     = v => Math.max(0, Math.min(100, ((v - ci90_lo) / range) * 100)).toFixed(1);
+  const pct      = v => Math.max(0, Math.min(100, ((v - ci90_lo) / range) * 100)).toFixed(1);
   const p80lo    = pct(ci80_lo);
   const p80width = (pct(ci80_hi) - pct(ci80_lo)).toFixed(1);
   const p50pos   = pct(p50);
 
   return `
-    <div class="ci-bar-wrap">
+    <div class="my-1">
       <div class="ci-bar-track">
         <div class="ci-range-80" style="left:${p80lo}%;width:${p80width}%"></div>
         <div class="ci-p50" style="left:${p50pos}%"></div>
@@ -173,35 +192,29 @@ function ciBar(fc, unit) {
 
 function renderCurrentConditions(current) {
   if (!current || current.temp_c == null) return '';
-
   const ts   = new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-  const hum  = current.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%`          : '—';
+  const hum  = current.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%`            : '—';
   const wind = current.wind_speed_ms != null ? `${(current.wind_speed_ms * 3.6).toFixed(0)} km/h` : '—';
-  const prec = current.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm`            : '—';
+  const prec = current.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm`             : '—';
+
+  const item = (icon, val, lbl) => `
+    <div class="flex flex-col items-center gap-0.5 min-w-14">
+      <span class="text-lg leading-none">${icon}</span>
+      <span class="text-xl font-bold tracking-tight">${val}</span>
+      <span class="text-xs text-base-content/50 uppercase tracking-wide">${lbl}</span>
+    </div>`;
 
   return `
-    <section class="current-card">
-      <div class="current-title">Stazioni SIR <span class="current-ts">${ts}</span></div>
-      <div class="current-values">
-        <div class="current-item">
-          <span class="current-icon">🌡</span>
-          <span class="current-val">${current.temp_c.toFixed(1)}°</span>
-          <span class="current-lbl">temp</span>
+    <section class="card card-bordered bg-base-100 shadow-sm mb-4">
+      <div class="card-body p-4">
+        <div class="text-xs font-semibold uppercase tracking-widest text-base-content/60 mb-2">
+          Stazioni SIR <span class="font-normal normal-case tracking-normal ml-1">${ts}</span>
         </div>
-        <div class="current-item">
-          <span class="current-icon">💧</span>
-          <span class="current-val">${hum}</span>
-          <span class="current-lbl">umidità</span>
-        </div>
-        <div class="current-item">
-          <span class="current-icon">💨</span>
-          <span class="current-val">${wind}</span>
-          <span class="current-lbl">vento</span>
-        </div>
-        <div class="current-item">
-          <span class="current-icon">🌧</span>
-          <span class="current-val">${prec}</span>
-          <span class="current-lbl">precip</span>
+        <div class="flex gap-6 flex-wrap">
+          ${item('🌡', `${current.temp_c.toFixed(1)}°`, 'temp')}
+          ${item('💧', hum, 'umidità')}
+          ${item('💨', wind, 'vento')}
+          ${item('🌧', prec, 'precip')}
         </div>
       </div>
     </section>`;
@@ -212,181 +225,168 @@ function renderCurrentConditions(current) {
 function renderModelSwitch(data) {
   const models = [{ source: 'guazza', label: '★ Guazza ML' }];
   (data.nwp_models_hourly || []).forEach(m => models.push({ source: m.source, label: m.label }));
-  const btns = models.map(m =>
-    `<button class="model-switch-btn${m.source === selectedModel ? ' active' : ''}" data-src="${m.source}">${m.label}</button>`
-  ).join('');
-  return `<div class="model-switch">${btns}</div>`;
+  return `<div class="flex gap-1 flex-wrap" id="model-switch">
+    ${models.map(m =>
+      `<button class="btn btn-xs ${m.source === selectedModel ? 'btn-primary' : 'btn-outline'}" data-src="${m.source}">${m.label}</button>`
+    ).join('')}
+  </div>`;
 }
 
-// ── Combined chart: assemble flat time-series ─────────────────────────────────
+// ── Chart ─────────────────────────────────────────────────────────────────────
 
 function buildChartPoints(data, model) {
   const points = [];
-
   if (model === 'guazza') {
-    const todayMid = new Date();
-    todayMid.setHours(0, 0, 0, 0);
-
+    const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
     (data.today_hourly || []).forEach(h => {
-      const ts = new Date(todayMid);
-      ts.setHours(h.hour, 0, 0, 0);
+      const ts = new Date(todayMid); ts.setHours(h.hour, 0, 0, 0);
       points.push({ ts, temp_c: h.temp_c, humidity_pct: h.humidity_pct,
                     precip_mm: h.precip_mm, precip_prob: h.precip_prob });
     });
-
     (data.days || []).forEach(day => {
       const [y, m, d] = day.target_date.split('-').map(Number);
       (day.hourly || []).forEach(h => {
-        points.push({
-          ts: new Date(y, m - 1, d, h.hour, 0, 0),
-          temp_c: h.temp_c, humidity_pct: h.humidity_pct,
-          precip_mm: h.precip_mm, precip_prob: h.precip_prob,
-        });
+        points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0), temp_c: h.temp_c,
+                      humidity_pct: h.humidity_pct, precip_mm: h.precip_mm, precip_prob: h.precip_prob });
       });
     });
   } else {
     const modelData = (data.nwp_models_hourly || []).find(m => m.source === model);
     (modelData?.data || []).forEach(pt => {
-      points.push({
-        ts: new Date(pt.ts),
-        temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
-        precip_mm: pt.precip_mm, precip_prob: null,
-      });
+      points.push({ ts: new Date(pt.ts), temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
+                    precip_mm: pt.precip_mm, precip_prob: null });
     });
   }
-
   return points.sort((a, b) => a.ts - b.ts);
 }
 
-// ── Combined multi-day scrollable chart ───────────────────────────────────────
-
-function niceYTicks(min, max) {
-  const rawStep = (max - min) / 4;
-  const step = rawStep <= 1 ? 1 : rawStep <= 2.5 ? 2 : rawStep <= 5 ? 5 : 10;
-  const start = Math.ceil(min / step) * step;
-  const ticks = [];
-  for (let t = start; t <= max && ticks.length < 7; t += step) ticks.push(t);
-  return ticks;
+function chartPalette() {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  return {
+    grid:   dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+    label:  dark ? '#94a3b8' : '#64748b',
+    temp:   '#f97316',
+    hum:    '#3b82f6',
+  };
 }
 
-function renderCombinedChart(data, model) {
+function precipDatasets(points) {
+  return {
+    data: points.map(pt => ({ x: pt.ts, y: (pt.precip_mm ?? 0) < 0.05 ? 0 : (pt.precip_mm ?? 0) })),
+    bg:   points.map(pt => `rgba(59,130,246,${(0.3 + (pt.precip_prob ?? 0.5) * 0.7).toFixed(2)})`),
+  };
+}
+
+function initChart(data, model) {
+  const canvas = document.getElementById('meteo-chart');
+  if (!canvas) return;
+  if (meteoChart) { meteoChart.destroy(); meteoChart = null; }
+
   const points = buildChartPoints(data, model);
-
+  const noData = document.getElementById('chart-no-data');
   if (points.length < 2) {
-    return '<div class="no-hourly">Dati grafici non disponibili per il modello selezionato</div>';
+    canvas.style.display = 'none';
+    if (noData) noData.classList.remove('hidden');
+    return;
   }
+  canvas.style.display = '';
+  if (noData) noData.classList.add('hidden');
 
-  const PX_PER_HOUR = 10;
-  const H = 160;
-  const padL = 36, padR = 44, padT = 14, padB = 24;
-  const cH   = H - padT - padB;
+  const p = chartPalette();
+  const { data: precipData, bg: precipBg } = precipDatasets(points);
 
-  const t0       = points[0].ts.getTime();
-  const tEnd     = points[points.length - 1].ts.getTime();
-  const totalMs  = Math.max(1, tEnd - t0);
-  const totalHrs = totalMs / 3600000;
-  const cW = Math.max(280, totalHrs * PX_PER_HOUR);
-  const W  = cW + padL + padR;
+  meteoChart = new Chart(canvas.getContext('2d'), {
+    data: {
+      datasets: [
+        {
+          type: 'line',
+          label: 'Temperatura (°C)',
+          data: points.filter(pt => pt.temp_c != null).map(pt => ({ x: pt.ts, y: pt.temp_c })),
+          borderColor: p.temp,
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 0,
+          yAxisID: 'yTemp',
+          tension: 0.3,
+          order: 1,
+        },
+        {
+          type: 'line',
+          label: 'Umidità (%)',
+          data: points.filter(pt => pt.humidity_pct != null).map(pt => ({ x: pt.ts, y: pt.humidity_pct })),
+          borderColor: p.hum,
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          borderDash: [4, 3],
+          pointRadius: 0,
+          yAxisID: 'yHum',
+          tension: 0.3,
+          order: 2,
+        },
+        {
+          type: 'bar',
+          label: 'Precipitazioni (mm)',
+          data: precipData,
+          backgroundColor: precipBg,
+          yAxisID: 'yTemp',
+          barPercentage: 0.6,
+          order: 3,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => new Date(items[0].raw.x).toLocaleString('it-IT', {
+              weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+            }),
+            label: item => {
+              if (item.datasetIndex === 0) return ` ${item.raw.y.toFixed(1)}°C`;
+              if (item.datasetIndex === 1) return ` Umidità: ${item.raw.y.toFixed(0)}%`;
+              if (item.datasetIndex === 2 && item.raw.y > 0.05) return ` Precip: ${item.raw.y.toFixed(1)} mm`;
+              return null;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: 'hour', displayFormats: { hour: 'HH', day: 'EEE d' } },
+          grid: { color: p.grid },
+          ticks: { color: p.label, maxTicksLimit: 14, font: { size: 9 } },
+        },
+        yTemp: {
+          position: 'left',
+          grid: { color: p.grid },
+          ticks: { color: p.temp, callback: v => `${v}°`, font: { size: 9 } },
+        },
+        yHum: {
+          position: 'right',
+          min: 0,
+          max: 100,
+          grid: { drawOnChartArea: false },
+          ticks: { color: p.hum, callback: v => `${v}%`, font: { size: 9 } },
+        },
+      },
+    },
+  });
+}
 
-  const xPos = ts => padL + ((ts.getTime() - t0) / totalMs) * cW;
-
-  const validTemps = points.filter(p => p.temp_c != null).map(p => p.temp_c);
-  if (validTemps.length === 0) {
-    return '<div class="no-hourly">Temperatura non disponibile</div>';
-  }
-  const minT = Math.floor(Math.min(...validTemps)) - 1;
-  const maxT = Math.ceil(Math.max(...validTemps)) + 1;
-  const yT   = t => padT + (1 - (t - minT) / (maxT - minT)) * cH;
-  const yH   = h => padT + (1 - h / 100) * cH;
-
-  const maxP      = Math.max(...points.map(p => p.precip_mm ?? 0), 0.5);
-  const precipMaxH = cH * 0.28;
-  const yPBase    = padT + cH;
-  const barW      = Math.max(3, PX_PER_HOUR * 0.65);
-
-  // Temperature line
-  const tPts = points.filter(p => p.temp_c != null)
-    .map(p => `${xPos(p.ts).toFixed(1)},${yT(p.temp_c).toFixed(1)}`);
-  const tempPath = tPts.length > 1
-    ? `<path d="M ${tPts.join(' L ')}" fill="none" stroke="#f97316" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
-    : '';
-
-  // Humidity dashed line
-  const hPts = points.filter(p => p.humidity_pct != null)
-    .map(p => `${xPos(p.ts).toFixed(1)},${yH(p.humidity_pct).toFixed(1)}`);
-  const humPath = hPts.length > 1
-    ? `<path d="M ${hPts.join(' L ')}" fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>`
-    : '';
-
-  // Precipitation bars
-  const precipBars = points.map(p => {
-    const prec = p.precip_mm ?? 0;
-    if (prec < 0.05) return '';
-    const bH      = (prec / maxP) * precipMaxH;
-    const x       = xPos(p.ts) - barW / 2;
-    const y       = yPBase - bH;
-    const opacity = (0.3 + (p.precip_prob ?? 0.5) * 0.7).toFixed(2);
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bH.toFixed(1)}" fill="#3b82f6" opacity="${opacity}" rx="1"/>`;
-  }).join('');
-
-  // Day transition ticks
-  const dayTicks = []; const dayLabels = [];
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1].ts;
-    const curr = points[i].ts;
-    const sameDay = prev.getDate() === curr.getDate() &&
-                    prev.getMonth() === curr.getMonth() &&
-                    prev.getFullYear() === curr.getFullYear();
-    if (!sameDay) {
-      const x = xPos(curr).toFixed(1);
-      const lbl = curr.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric' });
-      dayTicks.push(`<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + cH}" stroke="var(--border)" stroke-width="1" stroke-dasharray="3,3"/>`);
-      dayLabels.push(`<text x="${(parseFloat(x) + 2).toFixed(1)}" y="${H - 5}" text-anchor="start" class="chart-label" style="font-size:8px">${lbl}</text>`);
-    }
-  }
-
-  // Temperature Y-axis labels and grid
-  const tempTicks = niceYTicks(minT, maxT);
-  const tempLabels = tempTicks.map(t =>
-    `<text x="${padL - 4}" y="${yT(t).toFixed(1)}" text-anchor="end" dominant-baseline="middle" class="chart-label">${t}°</text>`
-  ).join('');
-  const gridLines = tempTicks.map(t =>
-    `<line x1="${padL}" y1="${yT(t).toFixed(1)}" x2="${W - padR}" y2="${yT(t).toFixed(1)}" class="chart-grid"/>`
-  ).join('');
-
-  const zeroLine = (minT < 0 && maxT > 0)
-    ? `<line x1="${padL}" y1="${yT(0).toFixed(1)}" x2="${W - padR}" y2="${yT(0).toFixed(1)}" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,2" opacity="0.6"/>`
-    : '';
-
-  // Humidity axis labels (right side)
-  const humLabels = [0, 50, 100].map(h =>
-    `<text x="${W - padR + 4}" y="${yH(h).toFixed(1)}" dominant-baseline="middle" class="chart-label" style="fill:#3b82f6">${h}%</text>`
-  ).join('');
-
-  const precipLabel = maxP > 0.5
-    ? `<text x="${padL + 4}" y="${(yPBase - precipMaxH * 0.85).toFixed(1)}" class="chart-label" style="fill:#3b82f6;font-size:8px">${maxP.toFixed(1)}mm</text>`
-    : '';
-
-  return `
-    <div class="combined-chart-wrap">
-      <svg width="${W}" height="${H}" class="combined-chart" aria-hidden="true">
-        ${gridLines}
-        ${zeroLine}
-        ${dayTicks.join('')}
-        ${precipBars}
-        ${humPath}
-        ${tempPath}
-        ${tempLabels}
-        ${humLabels}
-        ${precipLabel}
-        ${dayLabels.join('')}
-      </svg>
-    </div>
-    <div class="chart-legend">
-      <span class="legend-temp">— Temperatura</span>
-      <span class="legend-hum">‐ ‐ Umidità</span>
-      <span class="legend-precip">▪ Precipitazioni</span>
-    </div>`;
+function updateChartModel(data, model) {
+  if (!meteoChart) { initChart(data, model); return; }
+  const points = buildChartPoints(data, model);
+  const { data: precipData, bg: precipBg } = precipDatasets(points);
+  meteoChart.data.datasets[0].data = points.filter(pt => pt.temp_c != null).map(pt => ({ x: pt.ts, y: pt.temp_c }));
+  meteoChart.data.datasets[1].data = points.filter(pt => pt.humidity_pct != null).map(pt => ({ x: pt.ts, y: pt.humidity_pct }));
+  meteoChart.data.datasets[2].data = precipData;
+  meteoChart.data.datasets[2].backgroundColor = precipBg;
+  meteoChart.update();
 }
 
 // ── Day cards strip ───────────────────────────────────────────────────────────
@@ -396,24 +396,26 @@ function renderDayCards(days, activeDayIdx) {
     const { target_date, forecasts: fc, indicators } = day;
     const dots = Object.entries(indicators).map(([id, ind]) => {
       const meta = INDICATOR_META[id] ?? { label: id };
-      const cls  = VERDICT_CLASS[ind.verdict] ?? 'unknown';
-      return `<span class="dot dot-${cls}" title="${meta.label}: ${ind.verdict}"></span>`;
+      const cls  = VERDICT_CLS[ind.verdict];
+      return `<span class="inline-block w-2.5 h-2.5 rounded-full ${cls ? cls.dot : 'bg-base-300'}" title="${meta.label}: ${ind.verdict}"></span>`;
     }).join('');
     const hasRain = fc.precip_mm.p50 != null && fc.precip_mm.p50 >= 0.1;
 
-    return `<div class="day-card${idx === activeDayIdx ? ' active' : ''}" data-idx="${idx}">
-      <div class="day-card-label">${fmtDayShort(target_date)}</div>
-      <div class="day-card-date">${fmtDateShort(target_date)}</div>
-      <div class="day-card-temps">
-        <span class="day-card-tmax">${fmtTemp(fc.tmax_c.p50)}</span>
-        <span class="day-card-tmin">${fmtTemp(fc.tmin_c.p50)}</span>
+    return `<div class="card card-compact bg-base-100 border border-base-300 shadow-sm cursor-pointer shrink-0 min-w-20${idx === activeDayIdx ? ' ring-2 ring-primary' : ''}" data-idx="${idx}">
+      <div class="card-body p-2.5 items-center text-center gap-0.5">
+        <div class="text-sm font-semibold capitalize">${fmtDayShort(target_date)}</div>
+        <div class="text-xs text-base-content/50 capitalize">${fmtDateShort(target_date)}</div>
+        <div class="flex flex-col gap-0 mt-0.5">
+          <span class="text-base font-bold tracking-tight">${fmtTemp(fc.tmax_c.p50)}</span>
+          <span class="text-sm text-base-content/60">${fmtTemp(fc.tmin_c.p50)}</span>
+        </div>
+        ${hasRain ? `<div class="text-xs text-blue-500 font-medium min-h-4">${fmtPrecip(fc.precip_mm.p50)}</div>` : '<div class="min-h-4"></div>'}
+        <div class="flex gap-0.5 flex-wrap justify-center mt-0.5">${dots}</div>
       </div>
-      ${hasRain ? `<div class="day-card-precip">${fmtPrecip(fc.precip_mm.p50)}</div>` : '<div class="day-card-precip"></div>'}
-      <div class="day-card-dots">${dots}</div>
     </div>`;
   }).join('');
 
-  return `<section class="day-strip-cards">${cards}</section>`;
+  return `<section class="flex gap-2 overflow-x-auto pb-2 mb-4" style="-webkit-overflow-scrolling:touch;scrollbar-width:thin">${cards}</section>`;
 }
 
 // ── NWP model comparison table ────────────────────────────────────────────────
@@ -425,73 +427,75 @@ function renderNwpComparison(day) {
 
   const nwpRows = nwp.map(m => `
     <tr>
-      <td class="model-name">${m.label}</td>
-      <td>${m.tmin_c != null ? m.tmin_c.toFixed(1) + '°' : '—'}</td>
-      <td>${m.tmax_c != null ? m.tmax_c.toFixed(1) + '°' : '—'}</td>
-      <td>${m.precip_mm != null ? m.precip_mm.toFixed(1) + ' mm' : '—'}</td>
+      <td class="font-medium">${m.label}</td>
+      <td class="text-right tabular-nums">${m.tmin_c != null ? m.tmin_c.toFixed(1) + '°' : '—'}</td>
+      <td class="text-right tabular-nums">${m.tmax_c != null ? m.tmax_c.toFixed(1) + '°' : '—'}</td>
+      <td class="text-right tabular-nums">${m.precip_mm != null ? m.precip_mm.toFixed(1) + ' mm' : '—'}</td>
     </tr>`).join('');
 
   return `
-    <div class="nwp-comparison">
-      <h4>Confronto modelli</h4>
-      <table class="model-table">
+    <div class="mt-4 pt-4 border-t border-base-300">
+      <h4 class="text-xs text-base-content/60 font-semibold uppercase tracking-wider mb-2">Confronto modelli</h4>
+      <table class="table table-sm">
         <thead>
-          <tr><th>Modello</th><th>Tmin</th><th>Tmax</th><th>Precip</th></tr>
+          <tr><th>Modello</th><th class="text-right">Tmin</th><th class="text-right">Tmax</th><th class="text-right">Precip</th></tr>
         </thead>
         <tbody>
           ${nwpRows}
-          <tr class="model-row-guazza">
-            <td class="model-name">★ Guazza ML</td>
-            <td>${fmtTemp(fc.tmin_c.p50)}</td>
-            <td>${fmtTemp(fc.tmax_c.p50)}</td>
-            <td>${fmtPrecip(fc.precip_mm.p50)}</td>
+          <tr class="font-semibold bg-base-200">
+            <td class="text-primary">★ Guazza ML</td>
+            <td class="text-right tabular-nums">${fmtTemp(fc.tmin_c.p50)}</td>
+            <td class="text-right tabular-nums">${fmtTemp(fc.tmax_c.p50)}</td>
+            <td class="text-right tabular-nums">${fmtPrecip(fc.precip_mm.p50)}</td>
           </tr>
         </tbody>
       </table>
     </div>`;
 }
 
-// ── Day expanded (detail view for selected day) ───────────────────────────────
+// ── Day expanded ──────────────────────────────────────────────────────────────
 
 function renderDayExpanded(day) {
   const { forecasts: fc, indicators, target_date, lead_time_h } = day;
 
   const indHtml = Object.entries(indicators).map(([id, ind]) => {
     const meta = INDICATOR_META[id] ?? { label: id, icon: '?' };
-    const cls  = VERDICT_CLASS[ind.verdict] ?? 'unknown';
-    return `<div class="indicator indicator-${cls}" title="${ind.rule_matched}">
-      <span class="ind-icon">${meta.icon}</span>
-      <span class="ind-label">${meta.label}</span>
-      <span class="ind-verdict">${ind.verdict}</span>
+    const cls  = VERDICT_CLS[ind.verdict];
+    return `<div class="flex flex-col items-center gap-0.5 p-2 rounded-lg ${cls ? cls.ind : 'bg-base-200 text-base-content'}" title="${ind.rule_matched}">
+      <span class="text-xl leading-none">${meta.icon}</span>
+      <span class="font-medium text-xs leading-tight">${meta.label}</span>
+      <span class="text-xs font-bold uppercase tracking-wide mt-0.5">${ind.verdict}</span>
     </div>`;
   }).join('');
 
   return `
-    <section class="day-expanded">
-      <div class="day-title">
-        <span class="day-date">${fmtDayLabel(target_date)}</span>
-        <span class="day-date-sub">${fmtDate(target_date)}</span>
-        <span class="day-lead">+${lead_time_h}h</span>
+    <section id="day-expanded" class="card card-bordered bg-base-100 shadow-sm mb-4">
+      <div class="card-body p-5">
+        <div class="flex items-baseline gap-3 mb-4">
+          <span class="text-xl font-bold capitalize">${fmtDayLabel(target_date)}</span>
+          <span class="text-sm text-base-content/60 capitalize">${fmtDate(target_date)}</span>
+          <span class="badge badge-ghost badge-sm">+${lead_time_h}h</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mb-5">
+          <div class="bg-base-200 border border-base-300 rounded-lg p-3.5">
+            <div class="text-xs text-base-content/60 mb-1">🌡 Tmin</div>
+            <div class="text-3xl font-bold mb-2 tracking-tight">${fmtTemp(fc.tmin_c.p50)}</div>
+            ${ciBar(fc.tmin_c, '°')}
+          </div>
+          <div class="bg-base-200 border border-base-300 rounded-lg p-3.5">
+            <div class="text-xs text-base-content/60 mb-1">🌡 Tmax</div>
+            <div class="text-3xl font-bold mb-2 tracking-tight">${fmtTemp(fc.tmax_c.p50)}</div>
+            ${ciBar(fc.tmax_c, '°')}
+          </div>
+          <div class="bg-base-200 border border-base-300 rounded-lg p-3.5">
+            <div class="text-xs text-base-content/60 mb-1">🌧 Precip</div>
+            <div class="text-3xl font-bold mb-2 tracking-tight">${fmtPrecip(fc.precip_mm.p50)}</div>
+            ${ciBar(fc.precip_mm, ' mm')}
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-2 sm:grid-cols-9 mb-4">${indHtml}</div>
+        ${renderNwpComparison(day)}
       </div>
-      <div class="forecast-grid">
-        <div class="forecast-card">
-          <div class="fc-label">🌡 Tmin</div>
-          <div class="fc-val">${fmtTemp(fc.tmin_c.p50)}</div>
-          ${ciBar(fc.tmin_c, '°')}
-        </div>
-        <div class="forecast-card">
-          <div class="fc-label">🌡 Tmax</div>
-          <div class="fc-val">${fmtTemp(fc.tmax_c.p50)}</div>
-          ${ciBar(fc.tmax_c, '°')}
-        </div>
-        <div class="forecast-card">
-          <div class="fc-label">🌧 Precip</div>
-          <div class="fc-val">${fmtPrecip(fc.precip_mm.p50)}</div>
-          ${ciBar(fc.precip_mm, ' mm')}
-        </div>
-      </div>
-      <div class="indicators-grid">${indHtml}</div>
-      ${renderNwpComparison(day)}
     </section>`;
 }
 
@@ -499,27 +503,42 @@ function renderDayExpanded(day) {
 
 function render(container, data) {
   const day = data.days[selectedDayIdx];
+  if (meteoChart) { meteoChart.destroy(); meteoChart = null; }
 
   container.innerHTML = `
-    <div class="meta-bar">Aggiornato: ${fmtDateTime(data.generated_at)}${staleWarning(data.generated_at)}</div>
+    <div class="text-xs text-base-content/50 mb-3">Aggiornato: ${fmtDateTime(data.generated_at)}${staleWarning(data.generated_at)}</div>
     ${renderCurrentConditions(data.current)}
-    <section class="chart-section">
-      <div class="chart-header">
-        <h3 class="chart-title">Tendenza meteo</h3>
-        ${renderModelSwitch(data)}
+    <section class="card card-bordered bg-base-100 shadow-sm mb-4">
+      <div class="card-body p-4">
+        <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <h3 class="text-sm text-base-content/60 font-medium">Tendenza meteo</h3>
+          ${renderModelSwitch(data)}
+        </div>
+        <div class="combined-chart-wrap">
+          <div id="chart-container" class="relative" style="height:192px;min-width:700px">
+            <canvas id="meteo-chart"></canvas>
+            <div id="chart-no-data" class="hidden text-sm text-base-content/60 p-4">Dati grafici non disponibili per il modello selezionato</div>
+          </div>
+        </div>
+        <div class="flex gap-6 mt-2 text-xs text-base-content/50">
+          <span style="color:#f97316">— Temperatura</span>
+          <span style="color:#3b82f6">‐ ‐ Umidità</span>
+          <span style="color:rgba(59,130,246,0.6)">▪ Precipitazioni</span>
+        </div>
       </div>
-      ${renderCombinedChart(data, selectedModel)}
     </section>
     ${renderDayCards(data.days, selectedDayIdx)}
     ${renderDayExpanded(day)}
     ${coverageBadge(data.coverage_empirical_30d)}
   `;
 
-  container.querySelectorAll('.day-card').forEach(card => {
+  initChart(data, selectedModel);
+
+  container.querySelectorAll('[data-idx]').forEach(card => {
     card.addEventListener('click', () => {
       selectedDayIdx = parseInt(card.dataset.idx, 10);
       render(container, data);
-      const expanded = container.querySelector('.day-expanded');
+      const expanded = container.querySelector('#day-expanded');
       if (expanded) {
         const headerH = document.querySelector('header')?.offsetHeight ?? 0;
         window.scrollTo({ top: expanded.getBoundingClientRect().top + window.scrollY - headerH - 8, behavior: 'smooth' });
@@ -527,15 +546,19 @@ function render(container, data) {
     });
   });
 
-  container.querySelectorAll('.model-switch-btn').forEach(btn => {
+  document.getElementById('model-switch')?.querySelectorAll('[data-src]').forEach(btn => {
     btn.addEventListener('click', () => {
       selectedModel = btn.dataset.src;
-      render(container, data);
+      document.getElementById('model-switch')?.querySelectorAll('[data-src]').forEach(b => {
+        b.className = `btn btn-xs ${b.dataset.src === selectedModel ? 'btn-primary' : 'btn-outline'}`;
+      });
+      updateChartModel(data, selectedModel);
     });
   });
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+initDarkMode();
 window.addEventListener('popstate', () => loadLocation(getActiveLoc()));
 loadLocation(getActiveLoc());
