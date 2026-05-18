@@ -28,18 +28,18 @@ const VERDICT_CLS = {
   rosso:  { ind: 'ind-rosso',  dot: 'bg-error'   },
 };
 
-// ── Weather icon derivation ───────────────────────────────────────────────────
+// ── Weather icon ──────────────────────────────────────────────────────────────
 
 function weatherIcon(precipP50, tmaxP50, temporaleVerdict, nebbiaVerdict) {
   if (nebbiaVerdict === 'rosso' || nebbiaVerdict === 'giallo') return '🌫️';
   if (temporaleVerdict === 'rosso')  return '⛈️';
   if (temporaleVerdict === 'giallo') return '🌩️';
-  if (precipP50 >= 10) return '🌧️';
-  if (precipP50 >=  3) return '🌦️';
+  if (precipP50 >= 10)  return '🌧️';
+  if (precipP50 >=  3)  return '🌦️';
   if (precipP50 >= 0.5) return '🌥️';
-  if (tmaxP50 == null) return '⛅';
-  if (tmaxP50 >= 22)   return '☀️';
-  if (tmaxP50 >= 15)   return '🌤️';
+  if (tmaxP50 == null)  return '⛅';
+  if (tmaxP50 >= 22)    return '☀️';
+  if (tmaxP50 >= 15)    return '🌤️';
   return '⛅';
 }
 
@@ -52,11 +52,11 @@ function weatherIconForDay(day) {
   );
 }
 
-function weatherIconCurrent(current) {
-  const precip = current?.precip_mm ?? 0;
-  if (precip >= 5)   return '🌧️';
-  if (precip >= 1)   return '🌦️';
-  if (precip >= 0.1) return '🌥️';
+function weatherIconFromCurrent(current) {
+  const prec = current?.precip_mm ?? 0;
+  if (prec >= 5)   return '🌧️';
+  if (prec >= 1)   return '🌦️';
+  if (prec >= 0.1) return '🌥️';
   return '☀️';
 }
 
@@ -167,6 +167,13 @@ function fmtDateTime(iso) {
 
 function fmtTemp(v)   { return v != null ? `${v.toFixed(1)}°` : '—'; }
 function fmtPrecip(v) { return v != null ? `${v.toFixed(1)} mm` : '—'; }
+function fmtWind(v)   { return v != null ? `${(v * 3.6).toFixed(0)} km/h` : '—'; }
+
+function isToday(isoDate) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const now = new Date();
+  return y === now.getFullYear() && m === (now.getMonth() + 1) && d === now.getDate();
+}
 
 function staleWarning(generatedAt) {
   const ageH = (Date.now() - new Date(generatedAt).getTime()) / 3600000;
@@ -218,39 +225,204 @@ function ciBar(fc, unit) {
     </div>`;
 }
 
-// ── Current conditions card ───────────────────────────────────────────────────
+// ── Indicators grid ───────────────────────────────────────────────────────────
 
-function renderCurrentConditions(current) {
-  if (!current || current.temp_c == null) return '';
-  const ts   = new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-  const hum  = current.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%`            : '—';
-  const wind = current.wind_speed_ms != null ? `${(current.wind_speed_ms * 3.6).toFixed(0)} km/h` : '—';
-  const prec = current.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm`             : '—';
+function renderIndicatorsGrid(indicators) {
+  return `<div class="grid grid-cols-3 gap-2 sm:grid-cols-9">
+    ${Object.entries(indicators).map(([id, ind]) => {
+      const meta = INDICATOR_META[id] ?? { label: id, icon: '?' };
+      const cls  = VERDICT_CLS[ind.verdict];
+      return `<div class="flex flex-col items-center gap-0.5 p-2 rounded-lg ${cls ? cls.ind : 'bg-base-200 text-base-content'}" title="${ind.rule_matched}">
+        <span class="text-xl leading-none">${meta.icon}</span>
+        <span class="font-medium text-xs leading-tight">${meta.label}</span>
+        <span class="text-xs font-bold uppercase tracking-wide mt-0.5">${ind.verdict}</span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
 
-  const item = (icon, val, lbl) => `
-    <div class="flex flex-col items-center gap-0.5 min-w-14">
-      <span class="text-lg leading-none">${icon}</span>
-      <span class="text-xl font-bold tracking-tight">${val}</span>
-      <span class="text-xs text-base-content/50 uppercase tracking-wide">${lbl}</span>
+// ── Sezione A: Condizioni attuali ─────────────────────────────────────────────
+
+function renderCurrentPanel(data) {
+  const current  = data.current;
+  const todayDay = data.days.find(d => isToday(d.target_date));
+
+  // Icona meteo: da realtime se disponibile, altrimenti da previsione di oggi
+  let icon, iconLabel;
+  if (current && current.temp_c != null) {
+    icon      = weatherIconFromCurrent(current);
+    iconLabel = null;
+  } else if (todayDay) {
+    icon      = weatherIconForDay(todayDay);
+    iconLabel = `<span class="badge badge-ghost badge-xs ml-1">previsione</span>`;
+  } else {
+    icon      = '⛅';
+    iconLabel = null;
+  }
+
+  // Temperatura principale: realtime se disponibile, altrimenti tmax p50 di oggi
+  const mainTemp = current?.temp_c ?? todayDay?.forecasts?.tmax_c?.p50 ?? null;
+  const tempStr  = mainTemp != null ? `${mainTemp.toFixed(1)}°` : '—';
+
+  // Campi derivati (solo da realtime)
+  const feelsLike = current?.feels_like_c  != null ? `${current.feels_like_c.toFixed(1)}°` : null;
+  const dewpoint  = current?.dewpoint_c    != null ? `${current.dewpoint_c.toFixed(1)}°`   : null;
+  const wind      = current?.wind_speed_ms != null ? fmtWind(current.wind_speed_ms)         : null;
+  const hum       = current?.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%`  : null;
+  const prec      = current?.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm`   : null;
+  const ts        = current?.ts ? new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : null;
+
+  const metaRow = (feelsLike || dewpoint) ? `
+    <div class="flex gap-4 text-sm text-base-content/70 mt-1 flex-wrap">
+      ${feelsLike ? `<span>Percepita <strong>${feelsLike}</strong></span>` : ''}
+      ${dewpoint  ? `<span>Rugiada <strong>${dewpoint}</strong></span>`   : ''}
+    </div>` : '';
+
+  const statsRow = `
+    <div class="grid grid-cols-3 gap-3 mt-4">
+      <div class="bg-base-200 rounded-lg p-2.5 text-center">
+        <div class="text-xs text-base-content/60 mb-0.5">💨 Vento</div>
+        <div class="font-semibold text-sm">${wind ?? '—'}</div>
+      </div>
+      <div class="bg-base-200 rounded-lg p-2.5 text-center">
+        <div class="text-xs text-base-content/60 mb-0.5">💧 Umidità</div>
+        <div class="font-semibold text-sm">${hum ?? '—'}</div>
+      </div>
+      <div class="bg-base-200 rounded-lg p-2.5 text-center">
+        <div class="text-xs text-base-content/60 mb-0.5">🌧 Pioggia</div>
+        <div class="font-semibold text-sm">${prec ?? '—'}</div>
+      </div>
     </div>`;
 
-  const icon = weatherIconCurrent(current);
+  const noRealtimeNote = !current
+    ? `<p class="text-xs text-base-content/50 mt-3 italic">Dati realtime non disponibili — indicatori calcolati su previsione</p>`
+    : `<p class="text-xs text-base-content/40 mt-3">SIR/Netatmo${ts ? ` · ${ts}` : ''}</p>`;
+
+  const indSection = todayDay ? `
+    <div class="border-t border-base-300 mt-4 pt-4">
+      <div class="text-xs font-semibold uppercase tracking-widest text-base-content/50 mb-2">Indicatori oggi</div>
+      ${renderIndicatorsGrid(todayDay.indicators)}
+    </div>` : '';
 
   return `
     <section class="card card-bordered bg-base-100 shadow-sm mb-4">
-      <div class="card-body p-4">
-        <div class="text-xs font-semibold uppercase tracking-widest text-base-content/60 mb-2">
-          Stazioni SIR <span class="font-normal normal-case tracking-normal ml-1">${ts}</span>
-        </div>
-        <div class="flex items-center gap-6 flex-wrap">
-          <span class="text-5xl leading-none" title="Condizioni attuali">${icon}</span>
-          <div class="flex gap-6 flex-wrap">
-            ${item('🌡', `${current.temp_c.toFixed(1)}°`, 'temp')}
-            ${item('💧', hum, 'umidità')}
-            ${item('💨', wind, 'vento')}
-            ${item('🌧', prec, 'precip')}
+      <div class="card-body p-5">
+        <div class="flex items-start gap-4">
+          <span class="text-6xl leading-none mt-1">${icon}${iconLabel ?? ''}</span>
+          <div class="flex-1">
+            <div class="text-5xl font-bold tracking-tight leading-none">${tempStr}</div>
+            ${metaRow}
           </div>
         </div>
+        ${statsRow}
+        ${noRealtimeNote}
+        ${indSection}
+      </div>
+    </section>`;
+}
+
+// ── Day cards strip ───────────────────────────────────────────────────────────
+
+function renderDayCards(days, activeDayIdx) {
+  const cards = days.map((day, idx) => {
+    const { target_date, forecasts: fc, indicators } = day;
+    const dots = Object.entries(indicators).map(([id, ind]) => {
+      const meta = INDICATOR_META[id] ?? { label: id };
+      const cls  = VERDICT_CLS[ind.verdict];
+      return `<span class="inline-block w-2.5 h-2.5 rounded-full ${cls ? cls.dot : 'bg-base-300'}" title="${meta.label}: ${ind.verdict}"></span>`;
+    }).join('');
+    const hasRain = fc.precip_mm.p50 != null && fc.precip_mm.p50 >= 0.1;
+    const icon = weatherIconForDay(day);
+
+    return `<div class="card card-compact bg-base-100 border border-base-300 shadow-sm cursor-pointer shrink-0 min-w-20${idx === activeDayIdx ? ' ring-2 ring-primary' : ''}" data-idx="${idx}">
+      <div class="card-body p-2.5 items-center text-center gap-0.5">
+        <div class="text-sm font-semibold capitalize">${fmtDayShort(target_date)}</div>
+        <div class="text-xs text-base-content/50 capitalize">${fmtDateShort(target_date)}</div>
+        <span class="text-2xl leading-none my-0.5">${icon}</span>
+        <div class="flex flex-col gap-0">
+          <span class="text-base font-bold tracking-tight">${fmtTemp(fc.tmax_c.p50)}</span>
+          <span class="text-sm text-base-content/60">${fmtTemp(fc.tmin_c.p50)}</span>
+        </div>
+        ${hasRain ? `<div class="text-xs text-blue-500 font-medium min-h-4">${fmtPrecip(fc.precip_mm.p50)}</div>` : '<div class="min-h-4"></div>'}
+        <div class="flex gap-0.5 flex-wrap justify-center mt-0.5">${dots}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<section class="flex gap-2 overflow-x-auto pb-2 mb-4" style="-webkit-overflow-scrolling:touch;scrollbar-width:thin">${cards}</section>`;
+}
+
+// ── NWP comparison table ──────────────────────────────────────────────────────
+
+function renderNwpComparison(day) {
+  const nwp = day.nwp_comparison;
+  const fc  = day.forecasts;
+  if (!nwp || nwp.length === 0) return '';
+
+  const nwpRows = nwp.map(m => `
+    <tr>
+      <td class="font-medium">${m.label}</td>
+      <td class="text-right tabular-nums">${m.tmin_c != null ? m.tmin_c.toFixed(1) + '°' : '—'}</td>
+      <td class="text-right tabular-nums">${m.tmax_c != null ? m.tmax_c.toFixed(1) + '°' : '—'}</td>
+      <td class="text-right tabular-nums">${m.precip_mm != null ? m.precip_mm.toFixed(1) + ' mm' : '—'}</td>
+    </tr>`).join('');
+
+  return `
+    <div class="mt-4 pt-4 border-t border-base-300">
+      <h4 class="text-xs text-base-content/60 font-semibold uppercase tracking-wider mb-2">Confronto modelli</h4>
+      <table class="table table-sm">
+        <thead>
+          <tr><th>Modello</th><th class="text-right">Tmin</th><th class="text-right">Tmax</th><th class="text-right">Precip</th></tr>
+        </thead>
+        <tbody>
+          ${nwpRows}
+          <tr class="font-semibold bg-base-200">
+            <td class="text-primary">★ Guazza ML</td>
+            <td class="text-right tabular-nums">${fmtTemp(fc.tmin_c.p50)}</td>
+            <td class="text-right tabular-nums">${fmtTemp(fc.tmax_c.p50)}</td>
+            <td class="text-right tabular-nums">${fmtPrecip(fc.precip_mm.p50)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// ── Sezione B: Previsioni giornaliere (striscia + dettaglio) ──────────────────
+
+function renderDayExpanded(day) {
+  const { forecasts: fc, indicators, target_date, lead_time_h } = day;
+  const icon = weatherIconForDay(day);
+
+  return `
+    <section id="day-expanded" class="card card-bordered bg-base-100 shadow-sm mb-4">
+      <div class="card-body p-5">
+        <div class="flex items-center gap-3 mb-4 flex-wrap">
+          <span class="text-4xl leading-none">${icon}</span>
+          <div class="flex items-baseline gap-2 flex-wrap">
+            <span class="text-xl font-bold capitalize">${fmtDayLabel(target_date)}</span>
+            <span class="text-sm text-base-content/60 capitalize">${fmtDate(target_date)}</span>
+            <span class="badge badge-ghost badge-sm">+${lead_time_h}h</span>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mb-5">
+          <div class="bg-base-200 border border-base-300 rounded-lg p-3.5">
+            <div class="text-xs text-base-content/60 mb-1">🌡 Tmin</div>
+            <div class="text-3xl font-bold mb-2 tracking-tight">${fmtTemp(fc.tmin_c.p50)}</div>
+            ${ciBar(fc.tmin_c, '°')}
+          </div>
+          <div class="bg-base-200 border border-base-300 rounded-lg p-3.5">
+            <div class="text-xs text-base-content/60 mb-1">🌡 Tmax</div>
+            <div class="text-3xl font-bold mb-2 tracking-tight">${fmtTemp(fc.tmax_c.p50)}</div>
+            ${ciBar(fc.tmax_c, '°')}
+          </div>
+          <div class="bg-base-200 border border-base-300 rounded-lg p-3.5">
+            <div class="text-xs text-base-content/60 mb-1">🌧 Precip</div>
+            <div class="text-3xl font-bold mb-2 tracking-tight">${fmtPrecip(fc.precip_mm.p50)}</div>
+            ${ciBar(fc.precip_mm, ' mm')}
+          </div>
+        </div>
+        ${renderIndicatorsGrid(indicators)}
+        ${renderNwpComparison(day)}
       </div>
     </section>`;
 }
@@ -267,7 +439,7 @@ function renderModelSwitch(data) {
   </div>`;
 }
 
-// ── Chart ─────────────────────────────────────────────────────────────────────
+// ── Sezione C: Grafico unico multi-giorno ─────────────────────────────────────
 
 function buildChartPoints(data, model) {
   const points = [];
@@ -276,20 +448,24 @@ function buildChartPoints(data, model) {
     (data.today_hourly || []).forEach(h => {
       const ts = new Date(todayMid); ts.setHours(h.hour, 0, 0, 0);
       points.push({ ts, temp_c: h.temp_c, humidity_pct: h.humidity_pct,
-                    precip_mm: h.precip_mm, precip_prob: h.precip_prob });
+                    precip_mm: h.precip_mm, precip_prob: h.precip_prob,
+                    wind_speed_ms: h.wind_speed_ms });
     });
     (data.days || []).forEach(day => {
       const [y, m, d] = day.target_date.split('-').map(Number);
       (day.hourly || []).forEach(h => {
-        points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0), temp_c: h.temp_c,
-                      humidity_pct: h.humidity_pct, precip_mm: h.precip_mm, precip_prob: h.precip_prob });
+        points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0),
+                      temp_c: h.temp_c, humidity_pct: h.humidity_pct,
+                      precip_mm: h.precip_mm, precip_prob: h.precip_prob,
+                      wind_speed_ms: h.wind_speed_ms });
       });
     });
   } else {
     const modelData = (data.nwp_models_hourly || []).find(m => m.source === model);
     (modelData?.data || []).forEach(pt => {
       points.push({ ts: new Date(pt.ts), temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
-                    precip_mm: pt.precip_mm, precip_prob: null });
+                    precip_mm: pt.precip_mm, precip_prob: null,
+                    wind_speed_ms: pt.wind_speed_ms });
     });
   }
   return points.sort((a, b) => a.ts - b.ts);
@@ -298,10 +474,11 @@ function buildChartPoints(data, model) {
 function chartPalette() {
   const dark = document.documentElement.dataset.theme === 'dark';
   return {
-    grid:   dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-    label:  dark ? '#94a3b8' : '#64748b',
-    temp:   '#f97316',
-    hum:    '#3b82f6',
+    grid:  dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+    label: dark ? '#94a3b8' : '#64748b',
+    temp:  '#f97316',
+    hum:   '#3b82f6',
+    wind:  '#10b981',
   };
 }
 
@@ -367,6 +544,20 @@ function initChart(data, model) {
           barPercentage: 0.6,
           order: 3,
         },
+        {
+          type: 'line',
+          label: 'Vento (km/h)',
+          data: points.filter(pt => pt.wind_speed_ms != null)
+                      .map(pt => ({ x: pt.ts, y: pt.wind_speed_ms * 3.6 })),
+          borderColor: p.wind,
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          borderDash: [2, 2],
+          pointRadius: 0,
+          yAxisID: 'yWind',
+          tension: 0.3,
+          order: 4,
+        },
       ],
     },
     options: {
@@ -384,6 +575,7 @@ function initChart(data, model) {
               if (item.datasetIndex === 0) return ` ${item.raw.y.toFixed(1)}°C`;
               if (item.datasetIndex === 1) return ` Umidità: ${item.raw.y.toFixed(0)}%`;
               if (item.datasetIndex === 2 && item.raw.y > 0.05) return ` Precip: ${item.raw.y.toFixed(1)} mm`;
+              if (item.datasetIndex === 3) return ` Vento: ${item.raw.y.toFixed(0)} km/h`;
               return null;
             },
           },
@@ -408,6 +600,13 @@ function initChart(data, model) {
           grid: { drawOnChartArea: false },
           ticks: { color: p.hum, callback: v => `${v}%`, font: { size: 9 } },
         },
+        yWind: {
+          position: 'right',
+          min: 0,
+          grid: { drawOnChartArea: false },
+          ticks: { color: p.wind, callback: v => `${v}`, font: { size: 9 } },
+          display: true,
+        },
       },
     },
   });
@@ -421,134 +620,30 @@ function updateChartModel(data, model) {
   meteoChart.data.datasets[1].data = points.filter(pt => pt.humidity_pct != null).map(pt => ({ x: pt.ts, y: pt.humidity_pct }));
   meteoChart.data.datasets[2].data = precipData;
   meteoChart.data.datasets[2].backgroundColor = precipBg;
+  meteoChart.data.datasets[3].data = points.filter(pt => pt.wind_speed_ms != null)
+                                            .map(pt => ({ x: pt.ts, y: pt.wind_speed_ms * 3.6 }));
   meteoChart.update();
-}
-
-// ── Day cards strip ───────────────────────────────────────────────────────────
-
-function renderDayCards(days, activeDayIdx) {
-  const cards = days.map((day, idx) => {
-    const { target_date, forecasts: fc, indicators } = day;
-    const dots = Object.entries(indicators).map(([id, ind]) => {
-      const meta = INDICATOR_META[id] ?? { label: id };
-      const cls  = VERDICT_CLS[ind.verdict];
-      return `<span class="inline-block w-2.5 h-2.5 rounded-full ${cls ? cls.dot : 'bg-base-300'}" title="${meta.label}: ${ind.verdict}"></span>`;
-    }).join('');
-    const hasRain = fc.precip_mm.p50 != null && fc.precip_mm.p50 >= 0.1;
-    const icon = weatherIconForDay(day);
-
-    return `<div class="card card-compact bg-base-100 border border-base-300 shadow-sm cursor-pointer shrink-0 min-w-20${idx === activeDayIdx ? ' ring-2 ring-primary' : ''}" data-idx="${idx}">
-      <div class="card-body p-2.5 items-center text-center gap-0.5">
-        <div class="text-sm font-semibold capitalize">${fmtDayShort(target_date)}</div>
-        <div class="text-xs text-base-content/50 capitalize">${fmtDateShort(target_date)}</div>
-        <span class="text-2xl leading-none my-0.5">${icon}</span>
-        <div class="flex flex-col gap-0">
-          <span class="text-base font-bold tracking-tight">${fmtTemp(fc.tmax_c.p50)}</span>
-          <span class="text-sm text-base-content/60">${fmtTemp(fc.tmin_c.p50)}</span>
-        </div>
-        ${hasRain ? `<div class="text-xs text-blue-500 font-medium min-h-4">${fmtPrecip(fc.precip_mm.p50)}</div>` : '<div class="min-h-4"></div>'}
-        <div class="flex gap-0.5 flex-wrap justify-center mt-0.5">${dots}</div>
-      </div>
-    </div>`;
-  }).join('');
-
-  return `<section class="flex gap-2 overflow-x-auto pb-2 mb-4" style="-webkit-overflow-scrolling:touch;scrollbar-width:thin">${cards}</section>`;
-}
-
-// ── NWP model comparison table ────────────────────────────────────────────────
-
-function renderNwpComparison(day) {
-  const nwp = day.nwp_comparison;
-  const fc  = day.forecasts;
-  if (!nwp || nwp.length === 0) return '';
-
-  const nwpRows = nwp.map(m => `
-    <tr>
-      <td class="font-medium">${m.label}</td>
-      <td class="text-right tabular-nums">${m.tmin_c != null ? m.tmin_c.toFixed(1) + '°' : '—'}</td>
-      <td class="text-right tabular-nums">${m.tmax_c != null ? m.tmax_c.toFixed(1) + '°' : '—'}</td>
-      <td class="text-right tabular-nums">${m.precip_mm != null ? m.precip_mm.toFixed(1) + ' mm' : '—'}</td>
-    </tr>`).join('');
-
-  return `
-    <div class="mt-4 pt-4 border-t border-base-300">
-      <h4 class="text-xs text-base-content/60 font-semibold uppercase tracking-wider mb-2">Confronto modelli</h4>
-      <table class="table table-sm">
-        <thead>
-          <tr><th>Modello</th><th class="text-right">Tmin</th><th class="text-right">Tmax</th><th class="text-right">Precip</th></tr>
-        </thead>
-        <tbody>
-          ${nwpRows}
-          <tr class="font-semibold bg-base-200">
-            <td class="text-primary">★ Guazza ML</td>
-            <td class="text-right tabular-nums">${fmtTemp(fc.tmin_c.p50)}</td>
-            <td class="text-right tabular-nums">${fmtTemp(fc.tmax_c.p50)}</td>
-            <td class="text-right tabular-nums">${fmtPrecip(fc.precip_mm.p50)}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>`;
-}
-
-// ── Day expanded ──────────────────────────────────────────────────────────────
-
-function renderDayExpanded(day) {
-  const { forecasts: fc, indicators, target_date, lead_time_h } = day;
-  const icon = weatherIconForDay(day);
-
-  const indHtml = Object.entries(indicators).map(([id, ind]) => {
-    const meta = INDICATOR_META[id] ?? { label: id, icon: '?' };
-    const cls  = VERDICT_CLS[ind.verdict];
-    return `<div class="flex flex-col items-center gap-0.5 p-2 rounded-lg ${cls ? cls.ind : 'bg-base-200 text-base-content'}" title="${ind.rule_matched}">
-      <span class="text-xl leading-none">${meta.icon}</span>
-      <span class="font-medium text-xs leading-tight">${meta.label}</span>
-      <span class="text-xs font-bold uppercase tracking-wide mt-0.5">${ind.verdict}</span>
-    </div>`;
-  }).join('');
-
-  return `
-    <section id="day-expanded" class="card card-bordered bg-base-100 shadow-sm mb-4">
-      <div class="card-body p-5">
-        <div class="flex items-center gap-3 mb-4 flex-wrap">
-          <span class="text-4xl leading-none">${icon}</span>
-          <div class="flex items-baseline gap-2 flex-wrap">
-            <span class="text-xl font-bold capitalize">${fmtDayLabel(target_date)}</span>
-            <span class="text-sm text-base-content/60 capitalize">${fmtDate(target_date)}</span>
-            <span class="badge badge-ghost badge-sm">+${lead_time_h}h</span>
-          </div>
-        </div>
-        <div class="grid grid-cols-3 gap-3 mb-5">
-          <div class="bg-base-200 border border-base-300 rounded-lg p-3.5">
-            <div class="text-xs text-base-content/60 mb-1">🌡 Tmin</div>
-            <div class="text-3xl font-bold mb-2 tracking-tight">${fmtTemp(fc.tmin_c.p50)}</div>
-            ${ciBar(fc.tmin_c, '°')}
-          </div>
-          <div class="bg-base-200 border border-base-300 rounded-lg p-3.5">
-            <div class="text-xs text-base-content/60 mb-1">🌡 Tmax</div>
-            <div class="text-3xl font-bold mb-2 tracking-tight">${fmtTemp(fc.tmax_c.p50)}</div>
-            ${ciBar(fc.tmax_c, '°')}
-          </div>
-          <div class="bg-base-200 border border-base-300 rounded-lg p-3.5">
-            <div class="text-xs text-base-content/60 mb-1">🌧 Precip</div>
-            <div class="text-3xl font-bold mb-2 tracking-tight">${fmtPrecip(fc.precip_mm.p50)}</div>
-            ${ciBar(fc.precip_mm, ' mm')}
-          </div>
-        </div>
-        <div class="grid grid-cols-3 gap-2 sm:grid-cols-9 mb-4">${indHtml}</div>
-        ${renderNwpComparison(day)}
-      </div>
-    </section>`;
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
 function render(container, data) {
+  if (selectedDayIdx >= data.days.length) selectedDayIdx = 0;
   const day = data.days[selectedDayIdx];
+
   if (meteoChart) { meteoChart.destroy(); meteoChart = null; }
 
   container.innerHTML = `
     <div class="text-xs text-base-content/50 mb-3">Aggiornato: ${fmtDateTime(data.generated_at)}${staleWarning(data.generated_at)}</div>
-    ${renderCurrentConditions(data.current)}
+
+    ${renderCurrentPanel(data)}
+
+    ${data.days.length > 0 ? `
+    <p class="text-xs font-semibold uppercase tracking-widest text-base-content/40 mb-2 px-1">Previsioni</p>
+    ${renderDayCards(data.days, selectedDayIdx)}
+    ${day ? renderDayExpanded(day) : ''}
+    ` : ''}
+
     <section class="card card-bordered bg-base-100 shadow-sm mb-4">
       <div class="card-body p-4">
         <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
@@ -556,20 +651,20 @@ function render(container, data) {
           ${renderModelSwitch(data)}
         </div>
         <div class="combined-chart-wrap">
-          <div id="chart-container" class="relative" style="height:192px;min-width:700px">
+          <div id="chart-container" class="relative" style="height:220px;min-width:700px">
             <canvas id="meteo-chart"></canvas>
             <div id="chart-no-data" class="hidden text-sm text-base-content/60 p-4">Dati grafici non disponibili per il modello selezionato</div>
           </div>
         </div>
-        <div class="flex gap-6 mt-2 text-xs text-base-content/50">
+        <div class="flex gap-5 mt-2 text-xs text-base-content/50 flex-wrap">
           <span style="color:#f97316">— Temperatura</span>
           <span style="color:#3b82f6">‐ ‐ Umidità</span>
           <span style="color:rgba(59,130,246,0.6)">▪ Precipitazioni</span>
+          <span style="color:#10b981">‥ Vento km/h</span>
         </div>
       </div>
     </section>
-    ${renderDayCards(data.days, selectedDayIdx)}
-    ${renderDayExpanded(day)}
+
     ${coverageBadge(data.coverage_empirical_30d)}
   `;
 

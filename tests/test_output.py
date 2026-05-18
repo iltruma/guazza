@@ -12,8 +12,10 @@ import pytest
 
 from guazza.indicators import IndicatorResult
 from guazza.output import (
+    _dewpoint,
     _prob_exceeds,
     build_signals,
+    build_signals_today,
     compute_coverage_30d,
     compute_hourly_profile,
     get_current_conditions,
@@ -175,6 +177,68 @@ def test_build_signals_missing_nwp(sample_pred: dict) -> None:
     sig = build_signals(sample_pred, row)
     # Con tutti NaN → _nwp_frac restituisce 0.5 (fallback)
     assert sig["P(wind > 40kmh)"] == pytest.approx(0.5)
+
+
+# ── build_signals_today ───────────────────────────────────────────────────────
+
+def test_build_signals_today_no_current_obs_identical(
+    sample_pred: dict, sample_row: pd.Series
+) -> None:
+    """Senza current_obs, build_signals_today == build_signals."""
+    sig_base  = build_signals(sample_pred, sample_row)
+    sig_today = build_signals_today(sample_pred, sample_row, current_obs=None)
+    assert sig_base == sig_today
+
+
+def test_build_signals_today_precip_deterministic(
+    sample_pred: dict, sample_row: pd.Series
+) -> None:
+    """Con precip_mm osservata >= soglia, probabilità diventa 1.0."""
+    obs = {"temp_c": 18.0, "humidity_pct": 70.0, "precip_mm": 4.0, "wind_speed_ms": 2.0}
+    sig = build_signals_today(sample_pred, sample_row, current_obs=obs)
+    assert sig["P(precip > 0.2mm)"] == pytest.approx(1.0)
+    assert sig["P(precip > 3mm)"]   == pytest.approx(1.0)
+    assert sig["P(precip > 5mm/h)"] == pytest.approx(0.0)
+
+
+def test_build_signals_today_no_precip(
+    sample_pred: dict, sample_row: pd.Series
+) -> None:
+    """Con precip_mm = 0, tutte le soglie pioggia a 0."""
+    obs = {"temp_c": 20.0, "humidity_pct": 50.0, "precip_mm": 0.0, "wind_speed_ms": 1.0}
+    sig = build_signals_today(sample_pred, sample_row, current_obs=obs)
+    assert sig["P(precip > 0.2mm)"] == pytest.approx(0.0)
+    assert sig["P(precip > 3mm)"]   == pytest.approx(0.0)
+
+
+def test_build_signals_today_temp_overrides(
+    sample_pred: dict, sample_row: pd.Series
+) -> None:
+    """La temperatura realtime sostituisce T2m_p50."""
+    obs = {"temp_c": 7.3, "humidity_pct": 60.0, "precip_mm": 0.0, "wind_speed_ms": 1.0}
+    sig = build_signals_today(sample_pred, sample_row, current_obs=obs)
+    assert sig["T2m_p50"] == pytest.approx(7.3)
+
+
+def test_build_signals_today_tmin_from_ml(
+    sample_pred: dict, sample_row: pd.Series
+) -> None:
+    """P(Tmin < 2°C) e Tmin_p10 restano da ML, non si sovrascrivono con realtime."""
+    obs = {"temp_c": 25.0, "humidity_pct": 40.0, "precip_mm": 0.0, "wind_speed_ms": 0.5}
+    sig_base  = build_signals(sample_pred, sample_row)
+    sig_today = build_signals_today(sample_pred, sample_row, current_obs=obs)
+    assert sig_today["P(Tmin < 2.0°C)"] == pytest.approx(sig_base["P(Tmin < 2.0°C)"])
+    assert sig_today["Tmin_p10"]         == sig_base["Tmin_p10"]
+
+
+def test_build_signals_today_high_humidity_fog(
+    sample_pred: dict, sample_row: pd.Series
+) -> None:
+    """Umidità > 95% e vento < 3km/h → P(nebbia) = 1.0."""
+    obs = {"temp_c": 10.0, "humidity_pct": 97.0, "precip_mm": 0.0, "wind_speed_ms": 0.5}
+    sig = build_signals_today(sample_pred, sample_row, current_obs=obs)
+    assert sig["P(RH > 80%)"]                  == pytest.approx(1.0)
+    assert sig["P(RH > 95% AND wind < 3kmh)"]  == pytest.approx(1.0)
 
 
 # ── compute_coverage_30d ─────────────────────────────────────────────────────
@@ -549,6 +613,15 @@ def test_hourly_profile_has_humidity(seeded_db: Path) -> None:
     assert all(h >= 0 for h in hum_values)
 
 
+def test_hourly_profile_has_wind(seeded_db: Path) -> None:
+    """wind_speed_ms è presente in ogni slot del profilo."""
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(db, "casa_campi", "2026-05-19", 5.0, 20.0, 3.0)
+    assert result is not None
+    assert all("wind_speed_ms" in r for r in result)
+
+
 # ── get_current_conditions ────────────────────────────────────────────────────
 
 def test_current_conditions_no_data(seeded_db: Path) -> None:
@@ -584,12 +657,12 @@ def test_current_conditions_returns_data(seeded_db: Path) -> None:
 
 
 def test_current_conditions_old_data_ignored(seeded_db: Path) -> None:
-    """Obs più vecchie di 1h non devono contribuire al risultato."""
+    """Obs più vecchie di 3h non devono contribuire al risultato."""
     import duckdb
     from datetime import timedelta
 
     now = datetime.now()
-    ts_old = now - timedelta(hours=2)
+    ts_old = now - timedelta(hours=4)
 
     con = duckdb.connect(str(seeded_db))
     con.execute("""
@@ -602,6 +675,35 @@ def test_current_conditions_old_data_ignored(seeded_db: Path) -> None:
     with DuckDBClient(db_path=seeded_db, read_only=True) as db:
         result = get_current_conditions(db, "casa_campi")
     assert result is None
+
+
+def test_dewpoint_known_value() -> None:
+    """T=20°C, RH=50% → Td ≈ 9.3°C (valore di riferimento Magnus)."""
+    assert _dewpoint(20.0, 50.0) == pytest.approx(9.3, abs=0.2)
+
+
+def test_current_conditions_has_derived_fields(seeded_db: Path) -> None:
+    """get_current_conditions aggiunge dewpoint_c e feels_like_c."""
+    import duckdb
+    from datetime import timedelta
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, humidity_pct, precip_mm, wind_speed_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, ["sir", "ST_DEW", "casa_campi", now - timedelta(minutes=5), "realtime", 20.0, 50.0, 0.0, 2.0])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    assert "dewpoint_c" in result
+    assert "feels_like_c" in result
+    assert result["dewpoint_c"] is not None
+    assert result["dewpoint_c"] < result["temp_c"]  # rugiada sempre < temperatura
 
 
 # ── get_today_hourly ──────────────────────────────────────────────────────────
@@ -652,6 +754,7 @@ def test_today_hourly_returns_future_hours(seeded_db: Path) -> None:
         assert "humidity_pct" in item
         assert "precip_mm" in item
         assert "precip_prob" in item
+        assert "wind_speed_ms" in item
 
 
 # ── get_nwp_models_hourly ─────────────────────────────────────────────────────
@@ -700,6 +803,7 @@ def test_nwp_models_hourly_structure_and_order(seeded_db: Path) -> None:
     assert "temp_c" in first_entry
     assert "humidity_pct" in first_entry
     assert "precip_mm" in first_entry
+    assert "wind_speed_ms" in first_entry
 
 
 # ── write_location_json — with db ─────────────────────────────────────────────

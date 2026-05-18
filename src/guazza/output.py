@@ -28,6 +28,19 @@ if TYPE_CHECKING:
     from guazza.indicators import IndicatorResult
     from guazza.storage import DuckDBClient
 
+
+def _dewpoint(t: float, rh: float) -> float:
+    """Punto di rugiada (°C) via formula di Magnus."""
+    a, b = 17.625, 243.04
+    gamma = math.log(rh / 100.0) + a * t / (b + t)
+    return round(b * gamma / (a - gamma), 1)
+
+
+def _apparent_temp(t: float, rh: float, ws: float) -> float:
+    """Temperatura apparente Steadman/BoM (°C). ws in m/s."""
+    e = (rh / 100.0) * 6.105 * math.exp(17.27 * t / (237.7 + t))
+    return round(t + 0.33 * e - 0.70 * ws - 4.00, 1)
+
 SignalBag = dict[str, float | None]
 
 _NWP_WIND_COLS = [
@@ -211,6 +224,51 @@ def build_signals(
     }
 
 
+def build_signals_today(
+    pred: dict[str, dict[str, float]],
+    row: pd.Series,
+    obs_summary: dict[str, float | None] | None = None,
+    current_obs: dict[str, float | None] | None = None,
+) -> SignalBag:
+    """Come build_signals, ma sostituisce i segnali osservabili con i valori realtime.
+
+    Per oggi i segnali di precipitazione, vento e umidità diventano deterministici
+    (0.0 o 1.0) se current_obs è disponibile. Temperatura minima e gelata restano
+    dalle previsioni ML perché non sappiamo ancora il minimo della notte.
+
+    Args:
+        current_obs: output di get_current_conditions() — {temp_c, humidity_pct,
+                     precip_mm, wind_speed_ms}. Se None, si usa build_signals puro.
+    """
+    signals = build_signals(pred, row, obs_summary)
+    if not current_obs:
+        return signals
+
+    prec = current_obs.get("precip_mm") or 0.0
+    temp = current_obs.get("temp_c")
+    wind = current_obs.get("wind_speed_ms")
+    hum  = current_obs.get("humidity_pct")
+
+    signals["P(precip > 0.2mm)"] = 1.0 if prec >= 0.2  else 0.0
+    signals["P(precip > 3mm)"]   = 1.0 if prec >= 3.0  else 0.0
+    signals["P(precip > 5mm/h)"] = 1.0 if prec >= 5.0  else 0.0
+
+    if temp is not None:
+        signals["T2m_p50"] = temp
+
+    if wind is not None:
+        signals["P(wind > 40kmh)"] = 1.0 if wind > 40 / 3.6 else 0.0
+        signals["P(wind < 5kmh)"]  = 1.0 if wind < 5  / 3.6 else 0.0
+
+    if hum is not None:
+        signals["P(RH > 80%)"] = 1.0 if hum > 80 else 0.0
+        signals["P(RH > 95% AND wind < 3kmh)"] = (
+            1.0 if (hum > 95 and wind is not None and wind < 3 / 3.6) else 0.0
+        )
+
+    return signals
+
+
 def compute_coverage_30d(
     db: DuckDBClient,
     location_id: str,
@@ -266,11 +324,12 @@ def get_current_conditions(
     db: DuckDBClient,
     location_id: str,
 ) -> dict[str, Any] | None:
-    """Ultima lettura realtime aggregata per una location (media stazioni, ultimi 30min).
+    """Ultima lettura realtime aggregata per una location (media stazioni, ultimi 3h).
 
     Returns:
-        {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms} oppure None se
-        non ci sono osservazioni recenti con temperatura disponibile.
+        {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms,
+         dewpoint_c, feels_like_c} oppure None se non ci sono osservazioni
+        recenti con temperatura disponibile.
     """
     row = db.execute("""
         SELECT
@@ -290,12 +349,21 @@ def get_current_conditions(
         return None
 
     ts, temp_c, humidity_pct, precip_mm, wind_speed_ms = row
+    t    = float(temp_c)
+    rh   = float(humidity_pct) if humidity_pct is not None else None
+    ws   = float(wind_speed_ms) if wind_speed_ms is not None else None
+
+    dew      = _dewpoint(t, rh) if rh is not None else None
+    apparent = _apparent_temp(t, rh, ws if ws is not None else 0.0) if rh is not None else None
+
     return {
         "ts":            ts,
-        "temp_c":        float(temp_c),
-        "humidity_pct":  float(humidity_pct) if humidity_pct is not None else None,
+        "temp_c":        t,
+        "humidity_pct":  rh,
         "precip_mm":     float(precip_mm) if precip_mm is not None else None,
-        "wind_speed_ms": float(wind_speed_ms) if wind_speed_ms is not None else None,
+        "wind_speed_ms": ws,
+        "dewpoint_c":    dew,
+        "feels_like_c":  apparent,
     }
 
 
@@ -317,9 +385,10 @@ def get_today_hourly(
             ROUND(AVG(COALESCE(precip_mm, 0.0)), 2)                          AS precip_mm,
             ROUND(AVG(CASE WHEN precip_mm IS NULL THEN NULL
                            WHEN precip_mm > 0.1   THEN 1.0
-                           ELSE 0.0 END), 2)                                 AS precip_prob
+                           ELSE 0.0 END), 2)                                 AS precip_prob,
+            ROUND(AVG(wind_speed_ms), 1)                                     AS wind_speed_ms
         FROM (
-            SELECT source, ts_valid, temp_c, humidity_pct, precip_mm
+            SELECT source, ts_valid, temp_c, humidity_pct, precip_mm, wind_speed_ms
             FROM forecasts
             WHERE location_id = ?
               AND CAST(ts_valid AS DATE) = CURRENT_DATE
@@ -338,11 +407,12 @@ def get_today_hourly(
 
     return [
         {
-            "hour":        int(r["hour"]),
-            "temp_c":      float(r["temp_c"]) if r["temp_c"] is not None else None,
-            "humidity_pct": float(r["humidity_pct"]) if r["humidity_pct"] is not None else None,
-            "precip_mm":   float(r["precip_mm"]) if r["precip_mm"] is not None else None,
-            "precip_prob": float(r["precip_prob"]) if r["precip_prob"] is not None else None,
+            "hour":          int(r["hour"]),
+            "temp_c":        float(r["temp_c"]) if r["temp_c"] is not None else None,
+            "humidity_pct":  float(r["humidity_pct"]) if r["humidity_pct"] is not None else None,
+            "precip_mm":     float(r["precip_mm"]) if r["precip_mm"] is not None else None,
+            "precip_prob":   float(r["precip_prob"]) if r["precip_prob"] is not None else None,
+            "wind_speed_ms": float(r["wind_speed_ms"]) if r["wind_speed_ms"] is not None else None,
         }
         for _, r in df.iterrows()
     ]
@@ -364,7 +434,8 @@ def get_nwp_models_hourly(
             strftime(ts_valid, '%Y-%m-%dT%H:%M:%SZ')   AS ts,
             ROUND(temp_c, 1)                             AS temp_c,
             ROUND(humidity_pct, 0)                       AS humidity_pct,
-            ROUND(COALESCE(precip_mm, 0.0), 2)           AS precip_mm
+            ROUND(COALESCE(precip_mm, 0.0), 2)           AS precip_mm,
+            ROUND(wind_speed_ms, 1)                      AS wind_speed_ms
         FROM forecasts
         WHERE location_id = ?
           AND ts_valid > NOW()
@@ -382,10 +453,11 @@ def get_nwp_models_hourly(
     for _, r in df.iterrows():
         src = str(r["source"])
         by_source.setdefault(src, []).append({
-            "ts":           str(r["ts"]),
-            "temp_c":       float(r["temp_c"]) if r["temp_c"] is not None else None,
-            "humidity_pct": float(r["humidity_pct"]) if r["humidity_pct"] is not None else None,
-            "precip_mm":    float(r["precip_mm"]) if r["precip_mm"] is not None else None,
+            "ts":            str(r["ts"]),
+            "temp_c":        float(r["temp_c"]) if r["temp_c"] is not None else None,
+            "humidity_pct":  float(r["humidity_pct"]) if r["humidity_pct"] is not None else None,
+            "precip_mm":     float(r["precip_mm"]) if r["precip_mm"] is not None else None,
+            "wind_speed_ms": float(r["wind_speed_ms"]) if r["wind_speed_ms"] is not None else None,
         })
 
     return [
@@ -424,9 +496,10 @@ def compute_hourly_profile(
             AVG(COALESCE(precip_mm, 0.0))                                       AS precip_mean,
             AVG(CASE WHEN precip_mm IS NULL THEN NULL
                      WHEN precip_mm > 0.1   THEN 1.0
-                     ELSE 0.0 END)                                              AS precip_prob
+                     ELSE 0.0 END)                                              AS precip_prob,
+            AVG(wind_speed_ms)                                                  AS wind_mean
         FROM (
-            SELECT source, ts_valid, temp_c, humidity_pct, precip_mm
+            SELECT source, ts_valid, temp_c, humidity_pct, precip_mm, wind_speed_ms
             FROM forecasts
             WHERE location_id = ?
               AND CAST(ts_valid AS DATE) = ?
@@ -443,17 +516,18 @@ def compute_hourly_profile(
     if df.empty:
         return None
 
-    hour_data: dict[int, tuple[float, float | None, float, float | None]] = {
+    hour_data: dict[int, tuple[float, float | None, float, float | None, float | None]] = {
         int(r["hour"]): (
             float(r["temp_mean"]),
             float(r["humidity_mean"]) if r["humidity_mean"] is not None else None,
             float(r["precip_mean"]),
             float(r["precip_prob"]) if r["precip_prob"] is not None else None,
+            float(r["wind_mean"]) if r["wind_mean"] is not None else None,
         )
         for _, r in df.iterrows()
     }
 
-    raw_temps = [v for _, (v, _, _, _) in sorted(hour_data.items())]
+    raw_temps = [v for _, (v, _, _, _, _) in sorted(hour_data.items())]
     raw_min = min(raw_temps)
     raw_max = max(raw_temps)
 
@@ -465,7 +539,7 @@ def compute_hourly_profile(
             return round((tmin_p50 + tmax_p50) / 2.0, 1)
         return round(tmin_p50 + (v - raw_min) / span_raw * (tmax_p50 - tmin_p50), 1)
 
-    total_precip_raw = sum(v for _, (_, _, v, _) in hour_data.items())
+    total_precip_raw = sum(v for _, (_, _, v, _, _) in hour_data.items())
     if total_precip_raw > 0 and precip_p50 is not None and precip_p50 > 0:
         precip_scale = precip_p50 / total_precip_raw
     else:
@@ -474,18 +548,19 @@ def compute_hourly_profile(
     result: list[dict[str, float | None]] = []
     for h in range(24):
         if h in hour_data:
-            t_raw, hum, p_raw, prob = hour_data[h]
+            t_raw, hum, p_raw, prob, wind = hour_data[h]
             result.append({
-                "hour":         h,
-                "temp_c":       _rescale_temp(t_raw),
-                "humidity_pct": round(hum, 0) if hum is not None else None,
-                "precip_mm":    round(p_raw * precip_scale, 2),
-                "precip_prob":  round(prob, 2) if prob is not None else None,
+                "hour":          h,
+                "temp_c":        _rescale_temp(t_raw),
+                "humidity_pct":  round(hum, 0) if hum is not None else None,
+                "precip_mm":     round(p_raw * precip_scale, 2),
+                "precip_prob":   round(prob, 2) if prob is not None else None,
+                "wind_speed_ms": round(wind, 1) if wind is not None else None,
             })
         else:
             result.append({
                 "hour": h, "temp_c": None, "humidity_pct": None,
-                "precip_mm": None, "precip_prob": None,
+                "precip_mm": None, "precip_prob": None, "wind_speed_ms": None,
             })
 
     return result

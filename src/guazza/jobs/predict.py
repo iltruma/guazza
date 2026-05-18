@@ -19,7 +19,7 @@ Cron: ogni 6h, subito dopo il job forecasts + features build.
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,8 +33,10 @@ from guazza.indicators import evaluate_all, load_indicators, log_results
 from guazza.models import load_artifacts, predict
 from guazza.output import (
     build_signals,
+    build_signals_today,
     compute_coverage_30d,
     compute_hourly_profile,
+    get_current_conditions,
     get_nwp_model_comparison,
     write_location_json,
 )
@@ -90,7 +92,7 @@ def cmd_run(
     output_dir: Path = typer.Option(_OUTPUT_DIR, "--output-dir", help="Directory output JSON"),
     dry_run:    bool = typer.Option(False,       "--dry-run",    help="Non scrive su disco né in DB"),
 ) -> None:
-    """Genera predizioni ML + indicatori DLE per tutte le location (D+1…D+7)."""
+    """Genera predizioni ML + indicatori DLE per tutte le location (D+0…D+7)."""
     setup_logging()
     _ping_healthchecks("/start")
 
@@ -108,14 +110,16 @@ def cmd_run(
                 if n_backfilled:
                     logger.info(f"Obs backfilled: {n_backfilled} predictions aggiornate")
 
-            # Miglior lead_time_h per ogni (location_id, target_date) futuro
+            # oggi (lead_time_h ASC = più recente) + futuri (lead_time_h DESC = più lungo)
             df_all = db.execute("""
                 SELECT *
                 FROM features_daily
-                WHERE target_date > CURRENT_DATE
+                WHERE target_date >= CURRENT_DATE
                 QUALIFY ROW_NUMBER() OVER (
                     PARTITION BY location_id, target_date
-                    ORDER BY lead_time_h DESC
+                    ORDER BY
+                        CASE WHEN target_date = CURRENT_DATE
+                             THEN -lead_time_h ELSE lead_time_h END DESC
                 ) = 1
                 ORDER BY location_id, target_date
             """).df()
@@ -143,7 +147,11 @@ def cmd_run(
                     X["location_id"] = X["location_id"].astype("category")
                     pred = predict(artifacts, X, lead_h=lead_time_h)
 
-                    signals = build_signals(pred, row, obs_summary)
+                    if target_date_obj == date.today():
+                        current_obs = get_current_conditions(db, location_id)
+                        signals = build_signals_today(pred, row, obs_summary, current_obs)
+                    else:
+                        signals = build_signals(pred, row, obs_summary)
                     results = evaluate_all(indicators_cfg, signals, location_id)
 
                     logger.info(
