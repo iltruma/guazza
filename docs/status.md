@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-18 (Pre-Sprint 6 completato, tag v0.6.0)
+> Aggiornato: 2026-05-18 (Sprint 6 frontend redesign completato)
 
 ## Cosa è stato fatto
 
@@ -98,7 +98,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **201 test** (165 pre-Sprint 4 + 11 test_models + 25 test_output), tutti verdi in ~63s
+- **215 test** (38 test_output, +9 nuovi Sprint 6), tutti verdi
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -237,14 +237,27 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
   sommare `precip_p50` ML; `precip_prob` = frazione modelli > 0.1mm/h. Ogni giorno nel JSON
   include `hourly: [{hour, temp_c, precip_mm, precip_prob}]` (24 elementi, null se no dati).
 
-### Sprint 6 — Frontend
-**Dipendenza**: JSON output Sprint 5 stabile + pre-Sprint 6 completato
+### Sprint 6 — Frontend (completato — 2026-05-18)
 
-- HTML + JS vanilla, zero dipendenze JS
-- Una pagina per location: indicatori operativi prominenti + CI meteo
-- Badge `coverage_empirical_30d` visibile ("calibrazione in corso" se null)
-- Nginx statico, Cloudflare CDN/WAF
-- Nessun framework, nessun bundler
+- HTML + JS vanilla, zero dipendenze JS; nginx statico; Cloudflare CDN/WAF
+- **Redesign completo** ispirato a Google Weather (sintesi) + Foreca (dettaglio):
+  - Card **Condizioni ora**: temp/umidità/vento/precip da obs realtime SIR (ultimi 60 min)
+  - **Grafico combinato multi-giorno scrollabile**: temperatura (arancio) + umidità (blu
+    tratteggiato) + precipitazioni (barre) per oggi + D+1…D+7 in un'unica viewport
+  - **Switch modello**: Guazza ML ↔ 6 modelli NWP (ECMWF IFS, ICON-EU, ICON-D2, GFS, AROME, ICON-2I)
+    — cambia la linea di temperatura/umidità nel grafico senza ricaricare i dati
+  - **Day strip**: card orizzontali scrollabili con indicatori (dots colorati) per tutti i giorni
+  - **Day expanded**: dettaglio del giorno selezionato — 3 forecast card con CI bar + 9 indicatori + tabella NWP
+  - Badge coverage in fondo; stale warning se dati > 6h
+- **Nuovi campi JSON** (output.py + predict.py):
+  - `current`: condizioni realtime aggregate (AVG stazioni, ultima 1h)
+  - `today_hourly`: profilo orario NWP ensemble ore rimanenti di oggi (no rescaling ML)
+  - `nwp_models_hourly`: serie orarie per-modello per lo switch grafico
+  - `humidity_pct` aggiunto al profilo orario `days[].hourly`
+- 9 nuovi test (38 totali in test_output.py), mypy e ruff OK
+
+🟡 **Punto aperto**: `current` sarà `null` finché non ci sono stazioni SIR con `granularity='realtime'`
+   nelle ultime 60 min nel DB locale — si popola solo in produzione con il job realtime.
 
 ### Sprint 7 — Deploy VPS
 **Dipendenza**: tutto funzionante e testato in locale
