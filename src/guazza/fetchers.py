@@ -394,23 +394,35 @@ def fetch_sir_realtime(station_id: str) -> dict[str, Any]:
 
 def fetch_sir_stations_realtime(
     station_ids: list[str],
-    delay: float = 1.0,
+    max_workers: int = 5,
 ) -> dict[str, dict[str, Any]]:
-    """Recupera real-time per una lista di stazioni con throttling.
+    """Recupera real-time per una lista di stazioni in parallelo.
 
     Returns:
         Dict {station_id: record_wide} — le stazioni con errore vengono omesse.
     """
     results: dict[str, dict[str, Any]] = {}
     n_fail = 0
-    for i, sid in enumerate(tqdm(station_ids, desc="SIR realtime", unit="staz", disable=not sys.stderr.isatty())):
-        if i > 0:
-            time.sleep(delay)
-        try:
-            results[sid] = fetch_sir_realtime(sid)
-        except Exception as e:
-            n_fail += 1
-            logger.warning(f"SIR realtime fallito per {sid}: {e}")
+    _tty = sys.stderr.isatty()
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_sid = {
+            executor.submit(fetch_sir_realtime, sid): sid
+            for sid in station_ids
+        }
+        for future in tqdm(
+            as_completed(future_to_sid),
+            total=len(station_ids),
+            desc="SIR realtime",
+            unit="staz",
+            disable=not _tty,
+        ):
+            sid = future_to_sid[future]
+            try:
+                results[sid] = future.result()
+            except Exception as e:
+                n_fail += 1
+                logger.warning(f"SIR realtime fallito per {sid}: {e}")
 
     status = "ok" if results else "fail"
     detail = f"{n_fail} stazioni fallite" if n_fail else ""

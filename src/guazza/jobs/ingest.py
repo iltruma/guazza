@@ -521,7 +521,7 @@ def cmd_realtime(
 
             # 1. SIR realtime — tutte le stazioni attive (deduplicate)
             all_station_ids = sorted(_all_sir_station_ids(locations))
-            results = fetch_sir_stations_realtime(all_station_ids, delay=1.0)
+            results = fetch_sir_stations_realtime(all_station_ids)
 
             records_with_loc: list[dict[str, Any]] = []
             for sid, rec in results.items():
