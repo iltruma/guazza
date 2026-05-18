@@ -387,8 +387,8 @@ uv run python -m guazza.jobs.train run --db data/guazza.duckdb --model-dir data/
 uv run python -m guazza.jobs.train eval --db data/guazza.duckdb
 
 # Predizioni + DLE + JSON output
-uv run python -m guazza.jobs.predict run --db data/guazza.duckdb --model-dir data/models --output-dir data/output
-uv run python -m guazza.jobs.predict run --db data/guazza.duckdb --model-dir data/models --output-dir data/output --dry-run
+uv run python -m guazza.jobs.predict --db data/guazza.duckdb --model-dir data/models --output-dir data/output
+uv run python -m guazza.jobs.predict --db data/guazza.duckdb --model-dir data/models --output-dir data/output --dry-run
 
 # Quality control
 uv run python -m guazza.jobs.qc run

@@ -217,7 +217,19 @@ class DuckDBClient:
         if self._conn is None:
             raise RuntimeError("DuckDBClient non è nel context manager.")
         self._conn.execute(sql)
+        self._ensure_aq_columns()
         logger.info("Schema applicato")
+
+    def _ensure_aq_columns(self) -> None:
+        """Aggiunge colonne AQ a observations se mancanti (migrazione idempotente)."""
+        for col, dtype in [
+            ("co_mgm3",      "DOUBLE"),
+            ("benzene_ugm3", "DOUBLE"),
+            ("so2_ugm3",     "DOUBLE"),
+        ]:
+            self.execute(
+                f"ALTER TABLE observations ADD COLUMN IF NOT EXISTS {col} {dtype}"
+            )
 
     def verify_schema(self) -> bool:
         """Verifica che le tabelle attese esistano nel database."""
@@ -344,6 +356,7 @@ class DuckDBClient:
             "wind_speed_ms", "wind_dir_deg", "wind_gust_ms",
             "pressure_hpa", "level_m",
             "pm10_ugm3", "pm25_ugm3", "no2_ugm3", "o3_ugm3",
+            "co_mgm3", "benzene_ugm3", "so2_ugm3",
             "weight", "qc_pass",
         ]
 
@@ -379,6 +392,9 @@ class DuckDBClient:
                 rec.get("pm25_ugm3"),
                 rec.get("no2_ugm3"),
                 rec.get("o3_ugm3"),
+                rec.get("co_mgm3"),
+                rec.get("benzene_ugm3"),
+                rec.get("so2_ugm3"),
                 rec.get("weight"),
                 rec.get("qc_pass"),
             ])
@@ -407,6 +423,7 @@ class DuckDBClient:
             "wind_speed_ms", "wind_dir_deg", "wind_gust_ms",
             "pressure_hpa", "level_m",
             "pm10_ugm3", "pm25_ugm3", "no2_ugm3", "o3_ugm3",
+            "co_mgm3", "benzene_ugm3", "so2_ugm3",
             "weight", "qc_pass",
         ]
         df = pd.DataFrame(rows, columns=_OBS_STAGING_COLS)
@@ -438,6 +455,7 @@ class DuckDBClient:
                  wind_speed_ms, wind_dir_deg, wind_gust_ms,
                  pressure_hpa, level_m,
                  pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3,
+                 co_mgm3, benzene_ugm3, so2_ugm3,
                  weight, qc_pass)
             SELECT s.source, s.station_id, s.location_id, s.ts, s.granularity,
                    s.tmax_c, s.tmin_c, s.temp_c,
@@ -445,6 +463,7 @@ class DuckDBClient:
                    s.wind_speed_ms, s.wind_dir_deg, s.wind_gust_ms,
                    s.pressure_hpa, s.level_m,
                    s.pm10_ugm3, s.pm25_ugm3, s.no2_ugm3, s.o3_ugm3,
+                   s.co_mgm3, s.benzene_ugm3, s.so2_ugm3,
                    s.weight, s.qc_pass
             FROM _staging_obs s
             WHERE NOT EXISTS (
