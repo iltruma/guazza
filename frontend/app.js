@@ -354,6 +354,12 @@ function renderDayCards(days, activeDayIdx) {
 
 // ── NWP comparison table ──────────────────────────────────────────────────────
 
+function fmtLastRun(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);   // naive ISO → local time
+  return d.toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
 function renderNwpComparison(day) {
   const nwp = day.nwp_comparison;
   const fc  = day.forecasts;
@@ -365,6 +371,7 @@ function renderNwpComparison(day) {
       <td class="text-right tabular-nums">${m.tmin_c != null ? m.tmin_c.toFixed(1) + '°' : '—'}</td>
       <td class="text-right tabular-nums">${m.tmax_c != null ? m.tmax_c.toFixed(1) + '°' : '—'}</td>
       <td class="text-right tabular-nums">${m.precip_mm != null ? m.precip_mm.toFixed(1) + ' mm' : '—'}</td>
+      <td class="text-right text-xs text-base-content/50 tabular-nums">${fmtLastRun(m.last_run)}</td>
     </tr>`).join('');
 
   return `
@@ -372,7 +379,7 @@ function renderNwpComparison(day) {
       <h4 class="text-xs text-base-content/60 font-semibold uppercase tracking-wider mb-2">Confronto modelli</h4>
       <table class="table table-sm">
         <thead>
-          <tr><th>Modello</th><th class="text-right">Tmin</th><th class="text-right">Tmax</th><th class="text-right">Precip</th></tr>
+          <tr><th>Modello</th><th class="text-right">Tmin</th><th class="text-right">Tmax</th><th class="text-right">Precip</th><th class="text-right">Ultimo run</th></tr>
         </thead>
         <tbody>
           ${nwpRows}
@@ -381,6 +388,7 @@ function renderNwpComparison(day) {
             <td class="text-right tabular-nums">${fmtTemp(fc.tmin_c.p50)}</td>
             <td class="text-right tabular-nums">${fmtTemp(fc.tmax_c.p50)}</td>
             <td class="text-right tabular-nums">${fmtPrecip(fc.precip_mm.p50)}</td>
+            <td></td>
           </tr>
         </tbody>
       </table>
@@ -485,9 +493,36 @@ function chartPalette() {
 function precipDatasets(points) {
   return {
     data: points.map(pt => ({ x: pt.ts, y: (pt.precip_mm ?? 0) < 0.05 ? 0 : (pt.precip_mm ?? 0) })),
-    bg:   points.map(pt => `rgba(59,130,246,${(0.3 + (pt.precip_prob ?? 0.5) * 0.7).toFixed(2)})`),
+    bg:   points.map(pt => {
+      const y = (pt.precip_mm ?? 0);
+      if (y < 0.05) return 'rgba(59,130,246,0.08)';
+      // Opacità proporzionale all'intensità, mai sotto 0.6
+      const prob = pt.precip_prob ?? 0.8;
+      return `rgba(37,99,235,${(0.55 + prob * 0.45).toFixed(2)})`;
+    }),
   };
 }
+
+// Crosshair verticale inline
+const crosshairPlugin = {
+  id: 'crosshair',
+  afterDraw(chart) {
+    const active = chart.tooltip._active;
+    if (!active || !active.length) return;
+    const ctx = chart.ctx;
+    const x = active[0].element.x;
+    const { top, bottom } = chart.chartArea;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(148,163,184,0.55)';
+    ctx.setLineDash([3, 3]);
+    ctx.stroke();
+    ctx.restore();
+  },
+};
 
 function initChart(data, model) {
   const canvas = document.getElementById('meteo-chart');
@@ -507,7 +542,7 @@ function initChart(data, model) {
   const p = chartPalette();
   const { data: precipData, bg: precipBg } = precipDatasets(points);
 
-  meteoChart = new Chart(canvas.getContext('2d'), {
+  meteoChart = new Chart(canvas.getContext('2d'), { plugins: [crosshairPlugin],
     data: {
       datasets: [
         {
@@ -541,7 +576,8 @@ function initChart(data, model) {
           data: precipData,
           backgroundColor: precipBg,
           yAxisID: 'yTemp',
-          barPercentage: 0.6,
+          barPercentage: 0.9,
+          categoryPercentage: 1.0,
           order: 3,
         },
         {
@@ -563,6 +599,7 @@ function initChart(data, model) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      hover: { mode: 'index', intersect: false },
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },

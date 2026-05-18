@@ -110,16 +110,14 @@ def cmd_run(
                 if n_backfilled:
                     logger.info(f"Obs backfilled: {n_backfilled} predictions aggiornate")
 
-            # oggi (lead_time_h ASC = più recente) + futuri (lead_time_h DESC = più lungo)
+            # Per ogni (location, data): forecast più recente = lead_time_h più corto
             df_all = db.execute("""
                 SELECT *
                 FROM features_daily
                 WHERE target_date >= CURRENT_DATE
                 QUALIFY ROW_NUMBER() OVER (
                     PARTITION BY location_id, target_date
-                    ORDER BY
-                        CASE WHEN target_date = CURRENT_DATE
-                             THEN -lead_time_h ELSE lead_time_h END DESC
+                    ORDER BY lead_time_h ASC
                 ) = 1
                 ORDER BY location_id, target_date
             """).df()

@@ -121,22 +121,23 @@ def get_nwp_model_comparison(
     location_id: str,
     target_date: str,
 ) -> list[dict[str, Any]]:
-    """Aggregato giornaliero per modello NWP: tmin, tmax, precip.
+    """Aggregato giornaliero per modello NWP: tmin, tmax, precip, ultimo ts_run.
 
     Prende l'ultimo ts_run per ogni (source, ora) e aggrega la giornata intera.
     Modelli senza dati temp vengono omessi. Risultato ordinato per _MODEL_ORDER.
 
     Returns:
-        Lista di {source, label, tmin_c, tmax_c, precip_mm}.
+        Lista di {source, label, tmin_c, tmax_c, precip_mm, last_run}.
     """
     df = db.execute("""
         SELECT
             source,
-            ROUND(MIN(temp_c), 1)                   AS tmin_c,
-            ROUND(MAX(temp_c), 1)                   AS tmax_c,
-            ROUND(SUM(COALESCE(precip_mm, 0.0)), 1) AS precip_mm
+            ROUND(MIN(temp_c), 1)                           AS tmin_c,
+            ROUND(MAX(temp_c), 1)                           AS tmax_c,
+            ROUND(SUM(COALESCE(precip_mm, 0.0)), 1)         AS precip_mm,
+            strftime(MAX(ts_run), '%Y-%m-%dT%H:%M:%S')      AS last_run
         FROM (
-            SELECT source, ts_valid, temp_c, precip_mm
+            SELECT source, ts_valid, temp_c, precip_mm, ts_run
             FROM forecasts
             WHERE location_id = ?
               AND CAST(ts_valid AS DATE) = ?
@@ -160,6 +161,7 @@ def get_nwp_model_comparison(
             "tmin_c":    _get(by_source[src], "tmin_c"),
             "tmax_c":    _get(by_source[src], "tmax_c"),
             "precip_mm": _get(by_source[src], "precip_mm"),
+            "last_run":  str(by_source[src]["last_run"]) if by_source[src]["last_run"] is not None else None,
         }
         for src in _MODEL_ORDER
         if src in by_source
@@ -333,7 +335,7 @@ def get_current_conditions(
     """
     row = db.execute("""
         SELECT
-            strftime(MAX(ts), '%Y-%m-%dT%H:%M:%S') || '+00:00' AS ts,
+            strftime(MAX(ts), '%Y-%m-%dT%H:%M:%S') AS ts,
             ROUND(AVG(temp_c), 1)                               AS temp_c,
             ROUND(AVG(humidity_pct), 0)                         AS humidity_pct,
             ROUND(SUM(COALESCE(precip_mm, 0.0)), 2)             AS precip_mm,
