@@ -28,6 +28,38 @@ const VERDICT_CLS = {
   rosso:  { ind: 'ind-rosso',  dot: 'bg-error'   },
 };
 
+// ── Weather icon derivation ───────────────────────────────────────────────────
+
+function weatherIcon(precipP50, tmaxP50, temporaleVerdict, nebbiaVerdict) {
+  if (nebbiaVerdict === 'rosso' || nebbiaVerdict === 'giallo') return '🌫️';
+  if (temporaleVerdict === 'rosso')  return '⛈️';
+  if (temporaleVerdict === 'giallo') return '🌩️';
+  if (precipP50 >= 10) return '🌧️';
+  if (precipP50 >=  3) return '🌦️';
+  if (precipP50 >= 0.5) return '🌥️';
+  if (tmaxP50 == null) return '⛅';
+  if (tmaxP50 >= 22)   return '☀️';
+  if (tmaxP50 >= 15)   return '🌤️';
+  return '⛅';
+}
+
+function weatherIconForDay(day) {
+  const precip = day.forecasts.precip_mm?.p50 ?? 0;
+  const tmax   = day.forecasts.tmax_c?.p50   ?? null;
+  return weatherIcon(precip, tmax,
+    day.indicators.temporale?.verdict,
+    day.indicators.nebbia?.verdict,
+  );
+}
+
+function weatherIconCurrent(current) {
+  const precip = current?.precip_mm ?? 0;
+  if (precip >= 5)   return '🌧️';
+  if (precip >= 1)   return '🌦️';
+  if (precip >= 0.1) return '🌥️';
+  return '☀️';
+}
+
 let currentData    = null;
 let selectedDayIdx = 0;
 let selectedModel  = 'guazza';
@@ -204,17 +236,22 @@ function renderCurrentConditions(current) {
       <span class="text-xs text-base-content/50 uppercase tracking-wide">${lbl}</span>
     </div>`;
 
+  const icon = weatherIconCurrent(current);
+
   return `
     <section class="card card-bordered bg-base-100 shadow-sm mb-4">
       <div class="card-body p-4">
         <div class="text-xs font-semibold uppercase tracking-widest text-base-content/60 mb-2">
           Stazioni SIR <span class="font-normal normal-case tracking-normal ml-1">${ts}</span>
         </div>
-        <div class="flex gap-6 flex-wrap">
-          ${item('🌡', `${current.temp_c.toFixed(1)}°`, 'temp')}
-          ${item('💧', hum, 'umidità')}
-          ${item('💨', wind, 'vento')}
-          ${item('🌧', prec, 'precip')}
+        <div class="flex items-center gap-6 flex-wrap">
+          <span class="text-5xl leading-none" title="Condizioni attuali">${icon}</span>
+          <div class="flex gap-6 flex-wrap">
+            ${item('🌡', `${current.temp_c.toFixed(1)}°`, 'temp')}
+            ${item('💧', hum, 'umidità')}
+            ${item('💨', wind, 'vento')}
+            ${item('🌧', prec, 'precip')}
+          </div>
         </div>
       </div>
     </section>`;
@@ -400,12 +437,14 @@ function renderDayCards(days, activeDayIdx) {
       return `<span class="inline-block w-2.5 h-2.5 rounded-full ${cls ? cls.dot : 'bg-base-300'}" title="${meta.label}: ${ind.verdict}"></span>`;
     }).join('');
     const hasRain = fc.precip_mm.p50 != null && fc.precip_mm.p50 >= 0.1;
+    const icon = weatherIconForDay(day);
 
     return `<div class="card card-compact bg-base-100 border border-base-300 shadow-sm cursor-pointer shrink-0 min-w-20${idx === activeDayIdx ? ' ring-2 ring-primary' : ''}" data-idx="${idx}">
       <div class="card-body p-2.5 items-center text-center gap-0.5">
         <div class="text-sm font-semibold capitalize">${fmtDayShort(target_date)}</div>
         <div class="text-xs text-base-content/50 capitalize">${fmtDateShort(target_date)}</div>
-        <div class="flex flex-col gap-0 mt-0.5">
+        <span class="text-2xl leading-none my-0.5">${icon}</span>
+        <div class="flex flex-col gap-0">
           <span class="text-base font-bold tracking-tight">${fmtTemp(fc.tmax_c.p50)}</span>
           <span class="text-sm text-base-content/60">${fmtTemp(fc.tmin_c.p50)}</span>
         </div>
@@ -457,6 +496,7 @@ function renderNwpComparison(day) {
 
 function renderDayExpanded(day) {
   const { forecasts: fc, indicators, target_date, lead_time_h } = day;
+  const icon = weatherIconForDay(day);
 
   const indHtml = Object.entries(indicators).map(([id, ind]) => {
     const meta = INDICATOR_META[id] ?? { label: id, icon: '?' };
@@ -471,10 +511,13 @@ function renderDayExpanded(day) {
   return `
     <section id="day-expanded" class="card card-bordered bg-base-100 shadow-sm mb-4">
       <div class="card-body p-5">
-        <div class="flex items-baseline gap-3 mb-4">
-          <span class="text-xl font-bold capitalize">${fmtDayLabel(target_date)}</span>
-          <span class="text-sm text-base-content/60 capitalize">${fmtDate(target_date)}</span>
-          <span class="badge badge-ghost badge-sm">+${lead_time_h}h</span>
+        <div class="flex items-center gap-3 mb-4 flex-wrap">
+          <span class="text-4xl leading-none">${icon}</span>
+          <div class="flex items-baseline gap-2 flex-wrap">
+            <span class="text-xl font-bold capitalize">${fmtDayLabel(target_date)}</span>
+            <span class="text-sm text-base-content/60 capitalize">${fmtDate(target_date)}</span>
+            <span class="badge badge-ghost badge-sm">+${lead_time_h}h</span>
+          </div>
         </div>
         <div class="grid grid-cols-3 gap-3 mb-5">
           <div class="bg-base-200 border border-base-300 rounded-lg p-3.5">
