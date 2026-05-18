@@ -154,7 +154,7 @@ function fmtDayShort(isoDate) {
   const target = new Date(y, m - 1, d);
   const diff = Math.round((target - todayMid) / 86400000);
   if (diff === 0) return 'Oggi';
-  if (diff === 1) return 'Dom.';
+  if (diff === 1) return 'Domani';
   const wd = target.toLocaleDateString('it-IT', { weekday: 'short' });
   return wd.charAt(0).toUpperCase() + wd.slice(1);
 }
