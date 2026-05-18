@@ -2,7 +2,7 @@
 
 > *Guazza* (dal latino *aquatia*): rugiada pesante che si forma nelle conche toscane durante notti serene e umide. Il nome rimanda al fenomeno microclimatico che i modelli standard non catturano.
 
-Previsioni meteo iper-locali per 4 microclimi toscani. Sistema operativo personale + case study tecnico pubblicabile.
+Previsioni meteo iper-locali per 5 microclimi toscani. Sistema operativo personale + case study tecnico pubblicabile.
 
 **Tesi**: i modelli numerici pubblici (ECMWF, ICON-EU, app commerciali) sbagliano sistematicamente sui microclimi specifici generati da orografia, fondi valle e isole di calore. Questo progetto lo dimostra empiricamente e produce un sistema che fa misurabilmente meglio.
 
@@ -43,8 +43,8 @@ DB_PATH=/tmp/guazza_test.duckdb uv run python -m guazza.storage verify-schema
 guazza/
 ├── config/
 │   ├── locations.yaml      # 5 location con stazioni SIR e upstream_pluvio_stations
-│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio ring) + 9 ARPAT
-│   ├── indicators.yaml     # 9 indicatori DLE con soglie e costi asimmetrici
+│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio ring) + 10 ARPAT
+│   ├── indicators.yaml     # 8 indicatori DLE con soglie e costi asimmetrici
 │   ├── arpat_levels.yaml   # Scale qualità aria D.Lgs.155/2010
 │   └── sources.yaml        # Endpoint sorgenti dati e stato
 ├── src/guazza/
@@ -62,7 +62,7 @@ guazza/
 │       ├── ingest.py       # Cron: historical / daily / realtime / forecasts
 │       ├── features.py     # CLI: features build / info
 │       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
-│       ├── predict.py      # Cron: predict run → DuckDB + DLE + JSON output
+│       ├── predict.py      # Cron: predict → DuckDB + DLE + JSON output
 │       ├── qc.py           # Cron: qc run / qc report
 │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 7)
 ├── data/
@@ -159,7 +159,8 @@ uv run python -m guazza.jobs.predict --db data/guazza.duckdb \
 Output: `data/output/{location_id}.json` con CI80/CI90 per tmin/tmax/precip,
 8 indicatori semaforo (panni, motorino, gelata, ...), `coverage_empirical_30d`,
 condizioni realtime aggregate (`current` con dewpoint e temperatura percepita),
-profili orari NWP con vento, e confronto modelli con data ultimo run.
+qualità aria ARPAT (`air_quality`), profili orari NWP con vento, e confronto
+modelli con data ultimo run.
 
 > **Nota locale**: prima di `predict` eseguire `ingest realtime` per avere
 > il campo `current` popolato. In produzione il cron ogni 30 min lo mantiene fresco.
@@ -191,8 +192,8 @@ cd frontend && python3 -m http.server 8080
 
 | Sezione | Contenuto |
 |---|---|
-| **A — Condizioni attuali** | Temperatura grande, icona meteo, temperatura percepita (Steadman), punto di rugiada (Magnus), vento/umidità/precipitazione realtime SIR, indicatori DLE calcolati su obs realtime |
-| **B — Previsioni giornaliere** | Striscia card D+0…D+7 con icona/Tmax/Tmin/precip/indicator-dots; clic espande CI bar 80/90% + 9 indicatori + tabella NWP con data ultimo run |
+| **A — Condizioni attuali** | Temperatura grande, icona meteo, temperatura percepita (Steadman), punto di rugiada (Magnus), vento/umidità/precipitazione realtime SIR, indicatori DLE calcolati su obs realtime, card qualità aria ARPAT (PM10, PM2.5, NO₂, O₃, CO, benzene, SO₂ dove disponibili) |
+| **B — Previsioni giornaliere** | Striscia card D+0…D+7 con icona/Tmax/Tmin/precip/indicator-dots; clic espande CI bar 80/90% + 8 indicatori + tabella NWP con data ultimo run |
 | **C — Grafico multi-giorno** | Chart.js: temperatura, umidità, precipitazioni, vento — switch Guazza ML ↔ 6 modelli NWP, crosshair verticale |
 
 ### Struttura file frontend
@@ -210,6 +211,7 @@ frontend/
 ```
 {location_id, generated_at, coverage_empirical_30d,
  current: {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, dewpoint_c, feels_like_c},
+ air_quality: {pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3, co_mgm3, benzene_ugm3, so2_ugm3},
  today_hourly: [{hour, temp_c, humidity_pct, precip_mm, precip_prob, wind_speed_ms}],
  nwp_models_hourly: [{source, label, data: [{ts, temp_c, humidity_pct, precip_mm, wind_speed_ms}]}],
  days: [{target_date, lead_time_h,
@@ -271,7 +273,7 @@ uv run mypy src/
 | Open-Meteo Forecast + Historical | 6 modelli NWP (ECMWF, ICON-EU, ICON-D2, GFS, AROME, ICON-2I) | API pubblica, no key |
 | SIR Toscana | Ground truth osservazioni validate, 34 stazioni | Open Data |
 | Netatmo | Osservazioni iperlocali real-time | OAuth2 |
-| ARPAT Toscana | Qualità aria (NO2, O3, PM10, PM2.5) | JSON pubblico |
+| ARPAT Toscana | Qualità aria (NO2, O3, CO, SO2, PM10, PM2.5, benzene) | JSON pubblico |
 
 Per la lista completa con endpoint e stato: `config/sources.yaml`.
 

@@ -8,7 +8,7 @@
 
 **Guazza** è un sistema ML di post-processing meteo iper-locale per microclimi toscani. Duplice scopo:
 
-1. **Strumento personale** — previsioni affinate per 4 location con indicatori operativi diretti (panni, motorino, gelata, ecc.)
+1. **Strumento personale** — previsioni affinate per 5 location con indicatori operativi diretti (panni, motorino, gelata, ecc.)
 2. **Case study pubblicabile** — articolo LinkedIn/Medium con metodologia rigorosa, bibliografia scientifica, repo pubblico
 
 **Tesi**: le previsioni pubbliche (ECMWF, LAMMA, 3BMeteo, ecc.) sbagliano sistematicamente sui microclimi specifici. Dimostrarlo con dati e fare meglio, ammettendo onestamente dove si fallisce.
@@ -29,13 +29,14 @@ Cloud Architect e Solution Architect con background ML applicato. Programmatore 
 
 Leggi **`docs/status.md`** — unica fonte di verità sullo stato. Punti aperti con tag `🟡`.
 
-## Le 4 location
+## Le 5 location
 
 ```yaml
 casa_campi:      # Campi Bisenzio (FI), ~35m
 lavoro_cosimo:   # Scandicci (FI), ~50m
 lavoro_madda:    # Prato (PO), ~60m
 casa_cesto:      # Figline Valdarno (FI), ~200m
+casa_nicco:      # Firenze Novoli (FI), ~40m
 ```
 
 Coordinate complete in `config/locations.yaml`.
@@ -107,7 +108,7 @@ Se ERA5 appare come input dinamico a un modello: **è un bug**.
 
 - **Open-Meteo Forecast + Historical Forecast API** — 6 modelli NWP: ECMWF IFS, ICON-EU, ICON-D2 (2.2km), GFS 0.25°, AROME France, ICON-2I (2.2km, assimila osservazioni italiane). `ecmwf_aifs025` rimosso: restituisce null su tutte le variabili.
 - **SIR Toscana** — storici osservativi validati. 34 stazioni: 21 operative, 13 upstream pluvio (ring features)
-- **ARPAT** — qualità aria (NO2, O3, PM10, PM2.5)
+- **ARPAT** — qualità aria (NO2, O3, CO, SO2 orari NRT; PM10, PM2.5, benzene giornalieri da bollettini)
 - **RainViewer** — radar precipitazioni (solo frontend, Sprint 6)
 
 ## Struttura repo
@@ -119,9 +120,9 @@ guazza/
 ├── AGENTS.md               # istruzioni di progetto (source of truth)
 ├── CLAUDE.md               # override Claude Code (importa @AGENTS.md)
 ├── config/
-│   ├── locations.yaml      # 4 location con stazioni SIR e upstream_pluvio_stations
-│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio)
-│   ├── indicators.yaml     # 9 indicatori DLE con soglie e costi
+│   ├── locations.yaml      # 5 location con stazioni SIR e upstream_pluvio_stations
+│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio) + 10 ARPAT
+│   ├── indicators.yaml     # 8 indicatori DLE con soglie e costi
 │   ├── sources.yaml        # endpoint sorgenti dati
 │   └── arpat_levels.yaml   # livelli qualità aria D.Lgs.155/2010
 ├── src/guazza/
@@ -139,7 +140,7 @@ guazza/
 │       ├── ingest.py       # cron: historical / daily / realtime / forecasts
 │       ├── features.py     # cron: features build / info
 │       ├── train.py        # one-shot: train run / train eval
-│       ├── predict.py      # cron: predict run → JSON + DLE
+│       ├── predict.py      # cron: predict → JSON + DLE
 │       ├── qc.py           # cron: qc run / qc report
 │       └── backup.py       # cron: backup su Cloudflare R2 (Sprint 7)
 ├── data/
@@ -302,32 +303,50 @@ Ogni invocazione DLE deve produrre log in DuckDB (`indicator_log`):
 
 ### Output JSON — contract obbligatorio
 
-File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni `predict run`).
+File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni run di `predict`).
+Struttura multi-giorno: ogni file contiene la striscia `days` da D+0 a D+7.
 
 ```json
 {
   "location_id": "casa_campi",
-  "generated_at": "2026-05-17T...",
-  "target_date": "2026-05-18",
-  "lead_time_h": 24,
-  "forecasts": {
-    "tmin_c":    {"p50": float, "ci80_lo": float, "ci80_hi": float, "ci90_lo": float, "ci90_hi": float},
-    "tmax_c":    {"p50": float, ...},
-    "precip_mm": {"p50": float, ...}
-  },
-  "indicators": {
-    "panni":    {"verdict": "verde|giallo|rosso", "rule_matched": "green|yellow|red|fallback"},
-    "motorino": {"verdict": "...", "rule_matched": "..."}
-  },
+  "generated_at": "2026-05-18T...",
   "coverage_empirical_30d": {
     "tmin_ci80": float | null, "tmin_ci90": float | null,
     "tmax_ci80": float | null, "tmax_ci90": float | null,
     "precip_ci80": float | null, "precip_ci90": float | null
-  }
+  },
+  "current": {"ts": str, "temp_c": float, "humidity_pct": float, "precip_mm": float,
+              "wind_speed_ms": float | null, "dewpoint_c": float, "feels_like_c": float},
+  "air_quality": {"pm10_ugm3": float | null, "pm25_ugm3": float | null,
+                  "no2_ugm3": float | null, "o3_ugm3": float | null,
+                  "co_mgm3": float | null, "benzene_ugm3": float | null,
+                  "so2_ugm3": float | null},
+  "today_hourly": [{"hour": int, "temp_c": float, "humidity_pct": float,
+                    "precip_mm": float, "precip_prob": float, "wind_speed_ms": float}],
+  "nwp_models_hourly": [{"source": str, "label": str, "data": [{...}]}],
+  "days": [
+    {
+      "target_date": "2026-05-19",
+      "lead_time_h": 24,
+      "forecasts": {
+        "tmin_c":    {"p50": float, "ci80_lo": float, "ci80_hi": float, "ci90_lo": float, "ci90_hi": float},
+        "tmax_c":    {"p50": float, ...},
+        "precip_mm": {"p50": float, ...}
+      },
+      "indicators": {
+        "panni":    {"verdict": "verde|giallo|rosso", "rule_matched": "green|yellow|red|fallback"},
+        "motorino": {"verdict": "...", "rule_matched": "..."}
+      },
+      "hourly": [{...}],
+      "nwp_comparison": [{"source": str, "label": str, "tmin_c": float,
+                          "tmax_c": float, "precip_mm": float, "last_run": str}]
+    }
+  ]
 }
 ```
 
 `coverage_empirical_30d`: rolling 30 giorni predictions vs obs. `null` se < 10 campioni → dashboard mostra "calibrazione in corso".
+`current` e `air_quality` sono `null` se non ci sono osservazioni recenti (rispettivamente realtime meteo e ARPAT).
 
 ### Qualità del codice
 

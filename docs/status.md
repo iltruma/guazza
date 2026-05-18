@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-18 (Sprint 6 completato + fix post-deploy)
+> Aggiornato: 2026-05-18 (Sprint 6 completato + qualità aria nel pannello realtime)
 
 ## Cosa è stato fatto
 
@@ -98,7 +98,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **47 test in test_output.py**, tutti verdi (38 base + 9 Sprint 6/build_signals_today)
+- **230 test** (229 passati + 1 skip), tutti verdi
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -210,11 +210,11 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 ### Sprint 5 — Output JSON + Decision Logic Engine (completato — 2026-05-17)
 
 - `src/guazza/output.py`: `build_signals()`, `compute_coverage_30d()`, `write_location_json()`
-- `src/guazza/jobs/predict.py`: job cron `predict run` — modello → DB → DLE → JSON
+- `src/guazza/jobs/predict.py`: job cron `predict` — modello → DB → DLE → JSON
 - `src/guazza/storage.py`: `ensure_predictions_schema()`, `upsert_predictions()`, `backfill_prediction_obs()`
 - `schema.sql`: tabella `predictions` v0.5 (3 target × 9 quantili/CI + `*_obs`)
 - 18 test pytest, mypy e ruff OK
-- **Pipeline end-to-end verificata**: 4 JSON in `data/output/`, 9 indicatori per location
+- **Pipeline end-to-end verificata**: un JSON per location in `data/output/`, 8 indicatori per location
 
 **Signal bridge**: ML quantile → CDF inversa lineare per tmin/tmax/precip; NWP ensemble empirico per vento/umidità.
 **`coverage_empirical_30d`**: tutti `null` al primo run — si popola dopo il primo mese operativo (via `backfill_prediction_obs`).
@@ -252,7 +252,7 @@ Stack: HTML + JS vanilla; **Tailwind CSS + DaisyUI v4** (CDN jsDelivr) + **Chart
 
 **Sezione B — Previsioni giornaliere**
 - Striscia card orizzontale scrollabile: oggi + D+1…D+7, icona meteo + Tmax/Tmin/precip + indicator dots
-- Clic su card espande dettaglio: CI bar 80/90% per Tmin/Tmax/precip + 9 indicatori DLE + tabella confronto modelli NWP con **data ultimo run per modello** (`last_run`)
+- Clic su card espande dettaglio: CI bar 80/90% per Tmin/Tmax/precip + 8 indicatori DLE + tabella confronto modelli NWP con **data ultimo run per modello** (`last_run`)
 
 **Sezione C — Grafico unico multi-giorno**
 - Chart.js mixed (line/bar): temperatura (arancio) + umidità (blu tratteggiato) + precipitazioni (barre, opacità proporzionale a `precip_prob`) + **vento km/h** (verde tratteggiato, asse destra)
@@ -286,7 +286,7 @@ Stack: HTML + JS vanilla; **Tailwind CSS + DaisyUI v4** (CDN jsDelivr) + **Chart
 
 Per `target_date == today`, `predict.py` chiama `build_signals_today` che sovrascrive i segnali probabilistici (precip/vento/umidità) con valori deterministici 0/1 dalle ultime osservazioni realtime. Temperatura minima resta da ML (la notte non è ancora completata).
 
-🟡 **Punto aperto**: `current` è `null` finché non ci sono osservazioni SIR/Netatmo con `granularity='realtime'` nelle ultime 3h nel DB. In locale richiede `ingest realtime` manuale prima di `predict run`; in produzione il cron ogni 30min lo mantiene fresco.
+🟡 **Punto aperto**: `current` è `null` finché non ci sono osservazioni SIR/Netatmo con `granularity='realtime'` nelle ultime 3h nel DB. In locale richiede `ingest realtime` manuale prima di `predict`; in produzione il cron ogni 30min lo mantiene fresco.
 
 🟡 **Punto aperto**: wind in `current` è quasi sempre `null` — le stazioni Netatmo base non riportano il vento, e solo alcune SIR lo misurano in realtime. Da valutare in Sprint 7+.
 
@@ -303,7 +303,8 @@ Per `target_date == today`, `predict.py` chiama `build_signals_today` che sovras
 - **`config/stations.yaml`**: `used_by` aggiornato per TOS01001096, TOS03001097, TOS03001099; aggiunte 4 stazioni ARPAT Firenze
 - **`frontend/app.js`**: aggiunta tab "Casa Nicco"
 
-🟡 **Da fare post-config**: `uv run python -m guazza.weights refresh` per popolare `upstream_ring_station` con casa_nicco; poi `ingest historical --only-sir --location casa_nicco` per backfill SIR (le stazioni sono già in DB via lavoro_cosimo, ma verificare).
+Post-config completato: `weights refresh`, `ingest forecasts`, `features build` e
+`predict` eseguiti — casa_nicco genera regolarmente il proprio JSON di output.
 
 #### Analisi ring coverage (2026-05-18)
 
@@ -322,6 +323,22 @@ Ring3 scarno per le location di pianura FI (1 stazione = Bagni di Lucca ~57km). 
 #### Fix SIR historical parallelismo (2026-05-18)
 
 Il server `www.sir.toscana.it` serializza le connessioni lato server (~3s per request per IP): `ThreadPoolExecutor` non accelera il throughput. Rimosso `time.sleep(1.0)` da `_fetch_one` (era overhead puro su un processo già serializzato a livello di rete). `max_workers=3` mantenuto. Risparmio: ~28s su un backfill completo (28 combo).
+
+### Qualità aria nel pannello realtime (2026-05-18)
+
+- **Rimosso indicatore DLE `aria`**: la qualità aria non è un semaforo previsionale ma un
+  dato osservativo. `config/indicators.yaml` passa da 9 a 8 indicatori.
+- **`get_current_air_quality()`** in `output.py`: ultimi valori ARPAT per location.
+  PM10/PM2.5/benzene da bollettini (`granularity='daily'`, finestra 2 giorni);
+  NO2/O3/CO/SO2 da NRT (`granularity='hourly'`, finestra 3 ore). Campo top-level
+  `air_quality` nel JSON, indipendente da `current`.
+- **`renderAirQuality()`** in `app.js`: card per inquinante nel pannello realtime,
+  colore da soglie ARPAT (`AQ_THRESHOLDS`), unità per-inquinante (mg/m³ per CO).
+  Mostrate solo le voci effettivamente misurate dalle stazioni della location.
+- **CO, benzene, SO2 aggiunti alla pipeline ARPAT**: erano nella risposta API ma
+  scartati (`None` in VAR_MAP). 3 colonne nuove in `observations` (`co_mgm3`,
+  `benzene_ugm3`, `so2_ugm3`), migrazione idempotente `_ensure_aq_columns()`.
+- **Doc fix**: il comando è `predict` (modulo a comando singolo), non `predict run`.
 
 ### Sprint 7 — Deploy VPS
 **Dipendenza**: tutto funzionante e testato in locale
