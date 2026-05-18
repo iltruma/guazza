@@ -118,13 +118,14 @@ sources:
       lavoro_cosimo: [FI-SCANDICCI]
       lavoro_madda:  [PO-ROMA, PO-FERRUCCI]   # pesi: 0.7 / 0.3
       casa_cesto:    [FI-FIGLINE, AR-ENELSB-SANGIOVANNI]   # pesi: 0.8 / 0.2
-    variables_nrt:        [NO2, O3, CO, BENZENE]
-    variables_bollettini: [NO2, O3, PM10, PM2.5, BENZENE, CO]
+      casa_nicco:    [FI-MOSSE, FI-BOBOLI, FI-GRAMSCI, FI-LAVAGNINI]   # pesi: 0.50 / 0.30 / 0.15 / 0.05
+    variables_nrt:        [NO2, O3, CO, BENZENE, SO2]
+    variables_bollettini: [PM10, PM2.5, NO2, O3, CO, BENZENE, SO2]
     notes: >
       Endpoint bollettini: ?startdate=YYYY-MM-DD&enddate=YYYY-MM-DD&stazione=<id>&limit=1000.
       Endpoint trovati via analisi HAR (2026-05-13). Coordinate stazioni non esposte
       (metadata-catalog → 401). arpat_zone per casa_campi = agglomerato_firenze.
-      Stazioni: 6 totali mappate con pesi per location (vedi config/locations.yaml).
+      Stazioni: 10 totali mappate con pesi per location (vedi config/locations.yaml).
 
   # ── Radar precipitazioni (frontend only) ────────────────────────────────
 
