@@ -64,7 +64,7 @@ guazza/
 │       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
 │       ├── predict.py      # Cron: predict → DuckDB + DLE + JSON output
 │       ├── qc.py           # Cron: qc run / qc report
-│       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 7)
+│       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 8)
 ├── data/
 │   ├── guazza.duckdb       # Database analitico (non committato)
 │   ├── models/             # Artefatti LightGBM pickle (non committati)
@@ -90,10 +90,11 @@ guazza/
 | Sprint 4 | LightGBM quantile + CQR, skill +25% vs NWP su temperatura | ✅ Completato |
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
 | Sprint 6 | Frontend HTML+JS+Tailwind+DaisyUI+Chart.js, layout Foreca a 3 sezioni | ✅ Completato |
-| Sprint 7 | Deploy VPS, backup R2, crontab | — |
-| Sprint 8 | Model monitoring, coverage alert | — |
-| Sprint 9 | Calibrazione soglie DLE post-deploy | — |
-| Sprint 10 | Case study / pubblicazione | — |
+| Sprint 7 | Raffinamenti logiche e frontend in locale prima del deploy | 🟡 In corso |
+| Sprint 8 | Deploy VPS, backup R2, crontab | — |
+| Sprint 9 | Model monitoring, coverage alert | — |
+| Sprint 10 | Calibrazione soglie DLE post-deploy | — |
+| Sprint 11 | Case study / pubblicazione | — |
 
 ---
 

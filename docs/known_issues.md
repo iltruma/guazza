@@ -46,7 +46,7 @@ mismatch visivo tra location coperte e non coperte.
 Lo storico qualità aria non serve: `get_current_air_quality()` usa una finestra 3h,
 l'AQ non è feature di training. Le 23.218 righe ARPAT sono state cancellate.
 
-Sul VPS (Sprint 7), prima di avviare i cron, eseguire la stessa pulizia se il DB
+Sul VPS (Sprint 8), prima di avviare i cron, eseguire la stessa pulizia se il DB
 è stato copiato da locale:
 
 ```sql
@@ -264,7 +264,7 @@ dell'eval — indicatore sbloccato dal fallback giallo.
 
 **Workaround attuale**: fallback "giallo" è conservativo — non peggio di "non so".
 
-**Soluzione pianificata (Sprint 7+)**:
+**Soluzione pianificata (Sprint 7-8)**:
 - Opzione A — configurazione manuale in `config/indicators.yaml` per TOS01004791
   (S. Piero a Ponti): ricavare le soglie dai bollettini di allerta CFR/SIR.
 - Opzione B — aggiungere `threshold_1`/`threshold_2` al SignalBag in `build_signals()`

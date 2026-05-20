@@ -164,7 +164,7 @@ Il parsing è difensivo (supporta più formati), ma da verificare al primo run s
 🟡 **Punto aperto — lead_time_h range 1-11h** (atteso fino a 168h):
 il backfill Open-Meteo ha salvato solo il run più recente per valid time, non la storia dei run.
 In produzione il fetch giornaliero accumulerà run a distanze crescenti. Da verificare dopo
-il primo mese di operatività sul VPS (Sprint 7).
+il primo mese di operatività sul VPS (Sprint 8).
 
 **Fix same-day (2026-05-17)**: il SQL di `build_features_daily` gestisce correttamente
 `lead_time_days=0` (backfill storico: ts_run e ts_valid sullo stesso giorno). Questi record
@@ -287,7 +287,7 @@ Per `target_date == today`, `predict.py` chiama `build_signals_today` che sovras
 
 🟡 **Punto aperto**: `current` è `null` finché non ci sono osservazioni SIR/Netatmo con `granularity='realtime'` nelle ultime 3h nel DB. In locale richiede `ingest realtime` manuale prima di `predict`; in produzione il cron ogni 30min lo mantiene fresco.
 
-🟡 **Punto aperto**: wind in `current` è quasi sempre `null` — le stazioni Netatmo base non riportano il vento, e solo alcune SIR lo misurano in realtime. Da valutare in Sprint 7+.
+🟡 **Punto aperto**: wind in `current` è quasi sempre `null` — le stazioni Netatmo base non riportano il vento, e solo alcune SIR lo misurano in realtime. Candidato per Sprint 7 (raffinamenti).
 
 ### Configurazione e manutenzione (2026-05-18)
 
@@ -376,32 +376,41 @@ Il server `www.sir.toscana.it` serializza le connessioni lato server (~3s per re
 - **Crosshair su Edge**: `chart.tooltip._active` → optional chaining; `chart.tooltip`
   è `undefined` durante i primi `afterDraw` su Edge.
 
-### Sprint 7 — Deploy VPS
-**Dipendenza**: tutto funzionante e testato in locale
+### Sprint 7 — Raffinamenti in locale
+**Dipendenza**: nessuna — lavoro continuo prima del deploy
+
+Iterazioni di affinamento su logiche e frontend per portare il sistema a uno
+stato "production-ready" in locale prima di affrontare il deploy VPS. Scope
+aperto, definito turno per turno: bug fix, raffinamenti UX, micro-feature.
+Criterio di uscita: tutto gira pulito in locale per ≥1 settimana senza
+interventi.
+
+### Sprint 8 — Deploy VPS
+**Dipendenza**: Sprint 7 chiuso, sistema stabile in locale
 
 - Provisioning Hetzner CX22, Ubuntu 24.04 LTS
 - Backfill storico (`historical`) per caricare SIR + Open-Meteo 2022→oggi
 - Crontab con i 4 job ingestion + `qc run` + job `predict`
-- Configurazione `.env` produzione (Netatmo, Healthchecks.io), `load_dotenv` per lettura DB_PATH e HEALTHCHECKS_URL
+- Configurazione `.env` produzione (Netatmo, OpenAQ, Healthchecks.io), `load_dotenv` per lettura DB_PATH e HEALTHCHECKS_URL
 - **Backup Cloudflare R2**: job cron periodico per backup `.duckdb` + Parquet su Cloudflare R2 (10GB free tier, egress gratis) via `rclone` o `boto3`
 - GitHub Actions → deploy SSH
 
-### Sprint 8 — Model monitoring
-**Dipendenza**: Deploy VPS completato (Sprint 7)
+### Sprint 9 — Model monitoring
+**Dipendenza**: Deploy VPS completato (Sprint 8)
 
 - Job cron che calcola `coverage_empirical_30d` rolling e la confronta con target (80% per CI80, 90% per CI90)
 - Alert se coverage scende sotto soglia: log `ERROR` + ping `Healthchecks.io` fail
 - Requisito obbligatorio D-004
 
-### Sprint 9 — Calibrazione soglie DLE post-deploy
-**Dipendenza**: 30-60 giorni di operatività in produzione (Sprint 7+8)
+### Sprint 10 — Calibrazione soglie DLE post-deploy
+**Dipendenza**: 30-60 giorni di operatività in produzione (Sprint 8+9)
 
 - Analisi log `indicator_log` in DuckDB dopo 30-60 giorni di produzione
 - Validare e ritunare soglie in `config/indicators.yaml` (attualmente "BEST-GUESS iniziali")
 - Documentare soglie calibrate con motivazione in `docs/decisions.md`
 
-### Sprint 10 — Case study / pubblicazione
-**Dipendenza**: sistema stabile in produzione con dati sufficienti (Sprint 7-9)
+### Sprint 11 — Case study / pubblicazione
+**Dipendenza**: sistema stabile in produzione con dati sufficienti (Sprint 8-10)
 
 - Raccolta risultati: figure CRPS, coverage, skill score vs NWP grezzo
 - Pulizia repo per release pubblica (rimuovere credenziali, aggiungere LICENSE, README pubblico)
