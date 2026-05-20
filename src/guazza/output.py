@@ -326,53 +326,26 @@ def get_current_air_quality(
     db: DuckDBClient,
     location_id: str,
 ) -> dict[str, float | None] | None:
-    """Ultimi valori qualità aria ARPAT per una location.
-
-    PM10/PM2.5: media ultime 2 giornate bollettini (granularity='daily').
-    NO2/O3: media ultime 3h NRT orario (granularity='hourly').
+    """Ultimi valori qualità aria OpenAQ per una location (finestra 3h, solo orario).
 
     Returns:
-        {pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3} oppure None se nessun dato.
+        {pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3, co_mgm3, benzene_ugm3, so2_ugm3}
+        oppure None se nessun dato nelle ultime 3h.
     """
     row = db.execute("""
         SELECT
-            ROUND(AVG(pm10_ugm3) FILTER (
-                WHERE pm10_ugm3 IS NOT NULL
-                  AND granularity = 'daily'
-                  AND ts >= CURRENT_DATE - INTERVAL 2 DAYS
-            ), 1) AS pm10_ugm3,
-            ROUND(AVG(pm25_ugm3) FILTER (
-                WHERE pm25_ugm3 IS NOT NULL
-                  AND granularity = 'daily'
-                  AND ts >= CURRENT_DATE - INTERVAL 2 DAYS
-            ), 1) AS pm25_ugm3,
-            ROUND(AVG(no2_ugm3) FILTER (
-                WHERE no2_ugm3 IS NOT NULL
-                  AND granularity = 'hourly'
-                  AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
-            ), 1) AS no2_ugm3,
-            ROUND(AVG(o3_ugm3) FILTER (
-                WHERE o3_ugm3 IS NOT NULL
-                  AND granularity = 'hourly'
-                  AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
-            ), 1) AS o3_ugm3,
-            ROUND(AVG(co_mgm3) FILTER (
-                WHERE co_mgm3 IS NOT NULL
-                  AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
-            ), 2) AS co_mgm3,
-            ROUND(AVG(benzene_ugm3) FILTER (
-                WHERE benzene_ugm3 IS NOT NULL
-                  AND granularity = 'daily'
-                  AND ts >= CURRENT_DATE - INTERVAL 2 DAYS
-            ), 2) AS benzene_ugm3,
-            ROUND(AVG(so2_ugm3) FILTER (
-                WHERE so2_ugm3 IS NOT NULL
-                  AND granularity = 'hourly'
-                  AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
-            ), 1) AS so2_ugm3
+            ROUND(AVG(pm10_ugm3)    FILTER (WHERE pm10_ugm3    IS NOT NULL), 1) AS pm10_ugm3,
+            ROUND(AVG(pm25_ugm3)    FILTER (WHERE pm25_ugm3    IS NOT NULL), 1) AS pm25_ugm3,
+            ROUND(AVG(no2_ugm3)     FILTER (WHERE no2_ugm3     IS NOT NULL), 1) AS no2_ugm3,
+            ROUND(AVG(o3_ugm3)      FILTER (WHERE o3_ugm3      IS NOT NULL), 1) AS o3_ugm3,
+            ROUND(AVG(co_mgm3)      FILTER (WHERE co_mgm3      IS NOT NULL), 2) AS co_mgm3,
+            ROUND(AVG(benzene_ugm3) FILTER (WHERE benzene_ugm3 IS NOT NULL), 2) AS benzene_ugm3,
+            ROUND(AVG(so2_ugm3)     FILTER (WHERE so2_ugm3     IS NOT NULL), 1) AS so2_ugm3
         FROM observations
         WHERE location_id = ?
-          AND source = 'arpat'
+          AND source = 'openaq'
+          AND granularity = 'hourly'
+          AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
     """, [location_id]).fetchone()
 
     if row is None or all(v is None for v in row):
