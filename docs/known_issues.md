@@ -5,6 +5,39 @@
 
 ---
 
+## KI-017 — OpenAQ: copertura ridotta vs ARPAT diretto (AR-ENELSB-SANGIOVANNI, FI-LAVAGNINI)
+
+**Severità**: informativa
+**Stato**: by design (limitazione upstream OpenAQ)
+
+**Problema**: dopo il cutover ARPAT → OpenAQ (KI-016), due delle 10 stazioni
+ARPAT precedentemente usate non risultano aggregate da OpenAQ:
+
+| Stazione | Location | Parametri persi | Note |
+|---|---|---|---|
+| AR-ENELSB-SANGIOVANNI | casa_cesto | BENZENE, CO | Stazione industriale ENEL, ~8km |
+| FI-LAVAGNINI | casa_nicco | NO2 | Firenze centro |
+
+**Impatto**:
+- **casa_nicco**: nessuno effettivo — NO2 resta coperto da FI-MOSSE (1.1km),
+  FI-GRAMSCI (3.7km), FI-BASSI (4.2km, nuova stazione non presente in ARPAT
+  config) e FI-SCANDICCI (5.5km). Anzi, FI-BASSI aggiunge SO2 e PM2.5.
+- **casa_cesto**: l'unica stazione OpenAQ nel raggio 15km è FI-FIGLINE (3.7km,
+  solo NO2 e PM10), che aggiorna in modo intermittente. BENZENE e CO non
+  sono più disponibili. La sezione qualità aria può mostrare valori vuoti
+  quando FI-FIGLINE non aggiorna da >3h.
+
+**Decisione**: non reimplementare il fetcher ARPAT NRT diretto. Costo (due
+sorgenti AQ eterogenee, API ARPAT non documentata, logica di merge in
+`get_current_air_quality()`) sproporzionato rispetto al beneficio (una sola
+location, parametri non critici per indicatori DLE).
+
+**Workaround frontend**: `renderAirQuality()` mostra sempre tutti e 7 i
+parametri AQ — i valori non disponibili compaiono come `—`, evitando il
+mismatch visivo tra location coperte e non coperte.
+
+---
+
 ## KI-016 — Cutover ARPAT → OpenAQ: righe storiche source='arpat' nel DB
 
 **Severità**: informativa
@@ -24,6 +57,17 @@ DELETE FROM quality_flags
 
 Dopodiché il cron `realtime` (ogni 30 min) popola automaticamente i dati OpenAQ.
 Nessun backfill storico necessario.
+
+**Note sul design OpenAQ** (apprese durante l'implementazione 2026-05-20):
+- `/locations/{id}/latest` restituisce `sensorsId` (int), **non** include
+  `parameter`. Il mapping `sensor_id → (param, units)` va costruito dalla
+  discovery `/locations?coordinates=...`.
+- `station_id` nel DB è `openaq_{id}_{location_id}` (non solo `openaq_{id}`):
+  la stessa stazione fisica può cadere nel raggio di più location e la PK
+  `(source, station_id, ts, granularity)` non include location_id.
+- Timestamp OpenAQ convertiti da UTC a ora locale naive (Europe/Rome) prima
+  del salvataggio, coerente con SIR e con `CURRENT_TIMESTAMP` di DuckDB
+  (che usa il timezone della macchina).
 
 ---
 

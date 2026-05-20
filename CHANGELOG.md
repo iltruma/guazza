@@ -19,6 +19,46 @@ Versioning: major per sprint, minor per milestone interne.
 
 ---
 
+## [0.6.2] — 2026-05-20
+
+### Changed
+- **Sostituito fetcher qualità aria ARPAT con OpenAQ v3**: discovery dinamica
+  per coordinate (lat/lon + raggio 15km) — nessuna lista statica di stazioni.
+  Auth via `OPENAQ_API_KEY` (`X-API-Key` header). Source nel DB: `openaq`.
+  CO convertito da µg/m³ (OpenAQ) a mg/m³ (schema). 9/10 stazioni ARPAT
+  precedenti coperte; vedi KI-017 per le 2 mancanti.
+- **AQ realtime only**: rimosso fetch giornaliero bollettini PM10/PM2.5.
+  `get_current_air_quality()` legge solo `granularity='hourly'` con finestra 3h.
+  Nessun backfill storico (AQ non è feature di training).
+- **Frontend — qualità aria sempre visibile**: `renderAirQuality()` mostra
+  tutti e 7 i parametri (PM10, PM2.5, NO₂, O₃, CO, C₆H₆, SO₂); valori
+  mancanti come `—` con colore attenuato, griglia fissa a 7 colonne.
+
+### Fixed
+- **OpenAQ `/locations/{id}/latest` non include `parameter` nei risultati**:
+  costruito mapping `sensor_id → (param, units)` dalla discovery; usato
+  `sensorsId` (int) per lookup. Senza questo fix `fetch_openaq_latest`
+  restituiva sempre 0 righe.
+- **PK collision quando stazioni OpenAQ cadono nel raggio di più location**:
+  `station_id` ora include location_id (`openaq_{id}_{location_id}`) — la
+  PK `(source, station_id, ts, granularity)` non include location_id, e
+  senza questo fix l'ultima location processata sovrascriveva le altre.
+- **Timestamp OpenAQ disallineati con `CURRENT_TIMESTAMP` di DuckDB**:
+  timestamp UTC parsati dall'API venivano salvati naive UTC mentre
+  `CURRENT_TIMESTAMP` usa il timezone locale, escludendo righe valide
+  dalla finestra 3h su macchine non-UTC. Ora convertiti a ora locale
+  naive (Europe/Rome) prima del salvataggio, coerente con SIR.
+
+### Removed
+- Codice ARPAT: `_ARPAT_NRT_URL`, `_ARPAT_BOLLETTINI_URL`, `_ARPAT_NRT_VAR_MAP`,
+  `_ARPAT_BOLL_VAR_MAP`, `_fetch_arpat_json`, `fetch_arpat_nrt`,
+  `fetch_arpat_bollettini`, `fetch_arpat_bollettini_range`,
+  `fetch_arpat_all_locations` (~400 righe da `fetchers.py`).
+- 23.218 righe `source='arpat'` cancellate da `observations` in locale
+  (vedi KI-016 per la stessa pulizia su VPS).
+
+---
+
 ## [0.6.1] — 2026-05-18
 
 ### Added

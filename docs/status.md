@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-18 (v0.6.1 — Sprint 6 completato + qualità aria nel pannello realtime)
+> Aggiornato: 2026-05-20 (v0.6.2 — cutover ARPAT → OpenAQ completato)
 
 ## Cosa è stato fatto
 
@@ -338,6 +338,33 @@ Il server `www.sir.toscana.it` serializza le connessioni lato server (~3s per re
   scartati (`None` in VAR_MAP). 3 colonne nuove in `observations` (`co_mgm3`,
   `benzene_ugm3`, `so2_ugm3`), migrazione idempotente `_ensure_aq_columns()`.
 - **Doc fix**: il comando è `predict` (modulo a comando singolo), non `predict run`.
+
+### Cutover ARPAT → OpenAQ (2026-05-20, v0.6.2)
+
+- **Sostituito completamente il fetcher qualità aria**: da scraping endpoint ARPAT
+  (NRT orari + bollettini giornalieri) a OpenAQ v3 (aggregatore multi-provider che
+  include ARPAT Toscana tra le sue fonti upstream).
+- **Discovery dinamica per coordinate**: `_discover_openaq_stations(lat, lon, radius_m)`
+  via `/v3/locations?coordinates=...`. Nessuna lista statica di station_id in config:
+  ogni location interroga il raggio 15km e usa le stazioni trovate.
+- **Solo realtime (`granularity='hourly'`)**: rimossi i bollettini giornalieri
+  PM10/PM2.5. L'AQ non è feature di training e `get_current_air_quality()` usa
+  finestra 3h — nessun backfill storico necessario (vedi KI-016).
+- **Bug fix critici** (vedi CHANGELOG v0.6.2):
+  - `/locations/{id}/latest` non include `parameter`: usare `sensorsId` per lookup
+  - `station_id` include `location_id` per evitare PK collision tra location vicine
+  - Timestamp convertiti da UTC a Europe/Rome naive (coerente con SIR/`CURRENT_TIMESTAMP`)
+- **Frontend qualità aria sempre visibile**: tutti e 7 i parametri renderizzati
+  anche quando null (`—`), griglia fissa a 7 colonne.
+
+🟡 **Punto aperto — copertura ridotta per casa_cesto e casa_nicco** (KI-017):
+- casa_nicco: FI-LAVAGNINI mancante su OpenAQ — impatto nullo (NO2 già coperto
+  da 3 altre stazioni; FI-BASSI emerge come bonus con SO2 e PM2.5).
+- casa_cesto: AR-ENELSB-SANGIOVANNI mancante — perdita di BENZENE e CO. Unica
+  stazione OpenAQ nel raggio è FI-FIGLINE (3.7km) che aggiorna intermittentemente.
+- **Decisione**: non reimplementare ARPAT NRT diretto. Costo (2 sorgenti AQ,
+  API non documentata) sproporzionato vs beneficio (1 location, parametri non
+  critici per indicatori DLE).
 
 #### Fix grafico tendenza vuoto (2026-05-18)
 
