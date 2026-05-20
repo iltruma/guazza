@@ -15,12 +15,12 @@ import io
 import os
 import re
 import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import httpx
@@ -1473,418 +1473,314 @@ def fetch_netatmo_all_locations(
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# ARPAT — Qualità aria (NRT orario + bollettini giornalieri)
+# OpenAQ v3 — Qualità aria (discovery per coordinate)
 # ═════════════════════════════════════════════════════════════════════════════
 
-_ARPAT_NRT_URL = "https://api.arpat.toscana.it/app/air/nrt/valori_last"
-_ARPAT_BOLLETTINI_URL = "https://api.arpat.toscana.it/app/air/bollettini/dati"
+_OPENAQ_BASE = "https://api.openaq.org/v3"
 
-_arpat_nrt_first_call_logged = False
-
-# Mapping nome variabile ARPAT → colonna observations wide (None = non in schema, ignorato)
-_ARPAT_NRT_VAR_MAP: dict[str, str] = {
-    "NO2":     "no2_ugm3",
-    "O3":      "o3_ugm3",
-    "CO":      "co_mgm3",
-    "BENZENE": "benzene_ugm3",
-    "SO2":     "so2_ugm3",
+# param_name OpenAQ → (colonna observations, fattore di conversione a unità schema)
+# CO: OpenAQ pubblica in µg/m³, schema usa mg/m³ → fattore 0.001
+_OPENAQ_PARAM_MAP: dict[str, tuple[str, float]] = {
+    "pm10":    ("pm10_ugm3",    1.0),
+    "pm25":    ("pm25_ugm3",    1.0),
+    "no2":     ("no2_ugm3",     1.0),
+    "o3":      ("o3_ugm3",      1.0),
+    "co":      ("co_mgm3",      0.001),
+    "so2":     ("so2_ugm3",     1.0),
+    "benzene": ("benzene_ugm3", 1.0),
 }
 
-_ARPAT_BOLL_VAR_MAP: dict[str, str] = {
-    "PM10":    "pm10_ugm3",
-    "PM2.5":   "pm25_ugm3",
-    "NO2":     "no2_ugm3",
-    "O3":      "o3_ugm3",
-    "CO":      "co_mgm3",
-    "BENZENE": "benzene_ugm3",
-    "SO2":     "so2_ugm3",
-}
+# CO da alcune reti italiane è già in mg/m³ — riconosciamo l'unità e non scaliamo
+_CO_MG_UNITS = {"mg/m³", "mg/m3"}
 
 
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=60, max=600),
-    retry=retry_if_exception(lambda e: not isinstance(e, ValueError)),
+    retry=retry_if_exception(lambda e: not isinstance(e, (ValueError, KeyError))),
 )
-def _fetch_arpat_json(url: str, params: dict[str, str] | None = None) -> Any:
-    """Fetch JSON da endpoint ARPAT con retry (backoff 60s/300s/600s)."""
-    with httpx.Client(timeout=30, headers={"User-Agent": _UA}) as client:
-        r = client.get(url, params=params)
+def _fetch_openaq_json(path: str, params: dict[str, str] | None = None) -> Any:
+    """Fetch JSON da endpoint OpenAQ v3 con retry (backoff 60s/300s/600s)."""
+    api_key = os.environ.get("OPENAQ_API_KEY", "")
+    if not api_key:
+        raise KeyError("OPENAQ_API_KEY non impostata nell'ambiente")
+    headers = {"X-API-Key": api_key, "User-Agent": _UA}
+    with httpx.Client(timeout=30, headers=headers) as client:
+        r = client.get(f"{_OPENAQ_BASE}{path}", params=params)
         r.raise_for_status()
     return r.json()
 
 
-def fetch_arpat_nrt(
+def _openaq_convert(value: float, param: str, units: str) -> float:
+    """Converte un valore OpenAQ all'unità del campo schema observations."""
+    col, factor = _OPENAQ_PARAM_MAP[param]
+    if param == "co" and units.lower() in _CO_MG_UNITS:
+        return value  # già mg/m³
+    return value * factor
+
+
+def _discover_openaq_stations(lat: float, lon: float, radius_m: int) -> list[dict[str, Any]]:
+    """Trova stazioni OpenAQ entro radius_m metri da (lat, lon)."""
+    data = _fetch_openaq_json("/locations", {
+        "coordinates": f"{lat},{lon}",
+        "radius": str(radius_m),
+        "limit": "100",
+    })
+    results: list[dict[str, Any]] = data.get("results", [])
+    return results
+
+
+def fetch_openaq_latest(
     location_id: str,
-    arpat_stations: list[dict[str, Any]],
+    lat: float,
+    lon: float,
+    radius_m: int = 15000,
 ) -> list[dict[str, Any]]:
-    """Fetch valori NRT orari ARPAT (NO2, O3) per una location.
+    """Fetch ultime misure qualità aria OpenAQ per coordinate (lat, lon).
 
-    La risposta reale è {"items": [{"stazione": "FI-SIGNA", "inquinante": "NO2",
-    "valore": 3, "data_ora_osservazione": "2026-05-15T15:00", ...}, ...]}.
-    Una riga per (stazione, inquinante) — aggrega per stazione prima di costruire
-    il record wide.
-
-    Args:
-        location_id: ID location Guazza.
-        arpat_stations: lista di {"id": str, "weight": float} da locations.yaml.
+    Scopre le stazioni OpenAQ nelle vicinanze, poi chiama /locations/{id}/latest
+    per ciascuna. Costruisce un record wide per stazione.
 
     Returns:
-        Lista di record wide compatibili con upsert su `observations`.
-        Una riga per stazione ARPAT con granularity='hourly'.
+        Lista record wide compatibili con upsert su `observations`.
+        source='openaq', granularity='hourly'.
     """
     try:
-        data = _fetch_arpat_json(_ARPAT_NRT_URL)
+        stations = _discover_openaq_stations(lat, lon, radius_m)
     except Exception as e:
-        logger.error(f"ARPAT NRT [{location_id}] fetch fallito: {e}")
-        _log_scrape(f"arpat_nrt:{location_id}", "fail", detail=str(e))
+        logger.error(f"OpenAQ latest [{location_id}] discovery fallita: {e}")
+        _log_scrape(f"openaq_latest:{location_id}", "fail", detail=str(e))
         return []
-
-    global _arpat_nrt_first_call_logged
-    if not _arpat_nrt_first_call_logged:
-        logger.debug(f"ARPAT NRT raw response (first 200): {str(data)[:200]}")
-        _arpat_nrt_first_call_logged = True
-
-    # Risposta reale: {"items": [{"stazione": ..., "inquinante": ..., "valore": ...,
-    #   "data_ora_osservazione": ..., "unita_di_misura": ...}, ...]}
-    # Aggrega per stazione: {station_id: {inquinante: (valore, ts)}}
-    raw_items: list[Any] = []
-    if isinstance(data, list):
-        raw_items = data
-    elif isinstance(data, dict):
-        raw_items = data.get("items") or data.get("stazioni") or data.get("data") or []
-
-    # {station_id_upper: {inquinante_upper: (valore, ts_str)}}
-    by_station: dict[str, dict[str, tuple[Any, str]]] = {}
-    for item in raw_items:
-        sid = str(item.get("stazione") or item.get("codice_stazione") or item.get("id") or "").upper()
-        inq = str(item.get("inquinante") or "").upper()
-        if not sid or not inq:
-            continue
-        val = item.get("valore")
-        ts_str = str(item.get("data_ora_osservazione") or item.get("data") or item.get("timestamp") or "")
-        if sid not in by_station:
-            by_station[sid] = {}
-        by_station[sid][inq] = (val, ts_str)
 
     now_utc = datetime.now(tz=UTC).replace(minute=0, second=0, microsecond=0)
     records: list[dict[str, Any]] = []
 
-    for st in arpat_stations:
-        station_id = str(st["id"]).upper()
-        weight = float(st.get("weight", 1.0))
-        inq_map = by_station.get(station_id)
-        if inq_map is None:
-            logger.debug(f"ARPAT NRT: stazione {station_id} non trovata nella risposta")
+    for station in stations:
+        openaq_id = station["id"]
+        distance_m = float(station.get("distance") or 0)
+        distance_km = distance_m / 1000.0
+
+        try:
+            latest = _fetch_openaq_json(f"/locations/{openaq_id}/latest")
+        except Exception as e:
+            logger.debug(f"OpenAQ latest stazione {openaq_id}: {e}")
             continue
 
-        # Timestamp: usa il più recente tra gli inquinanti disponibili
-        ts: datetime = now_utc
-        for _inq, (_, ts_str) in inq_map.items():
+        results = latest.get("results", [])
+        if not results:
+            continue
+
+        rec: dict[str, Any] = {
+            "source": "openaq",
+            "station_id": f"openaq_{openaq_id}",
+            "location_id": location_id,
+            "ts": now_utc,
+            "granularity": "hourly",
+            "weight": round(1.0 / (1.0 + distance_km), 4),
+            "qc_pass": True,
+        }
+        has_data = False
+        for r in results:
+            param = (r.get("parameter") or {}).get("name", "").lower()
+            if param not in _OPENAQ_PARAM_MAP:
+                continue
+            col, _ = _OPENAQ_PARAM_MAP[param]
+            value = r.get("value")
+            units = (r.get("parameter") or {}).get("units", "")
+            if value is None:
+                continue
+            rec[col] = _openaq_convert(float(value), param, units)
+            has_data = True
+            # aggiorna ts dalla misura più recente
+            ts_str = ((r.get("datetime") or {}).get("utc") or "")
             if ts_str:
                 try:
-                    parsed = datetime.fromisoformat(ts_str.replace(" ", "T"))
-                    if parsed.tzinfo is None:
-                        parsed = parsed.replace(tzinfo=UTC)
-                    if parsed > ts or ts is now_utc:
-                        ts = parsed
+                    parsed = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    rec["ts"] = parsed.replace(minute=0, second=0, microsecond=0)
                 except ValueError:
                     pass
 
-        rec: dict[str, Any] = {
-            "source": "arpat",
-            "station_id": station_id,
-            "location_id": location_id,
-            "ts": ts,
-            "granularity": "hourly",
-            "weight": weight,
-            "qc_pass": True,
-        }
-        for arpat_var, col in _ARPAT_NRT_VAR_MAP.items():
-            entry = inq_map.get(arpat_var.upper())
-            raw = entry[0] if entry is not None else None
-            try:
-                rec[col] = float(raw) if raw is not None else None
-            except (TypeError, ValueError):
-                rec[col] = None
+        if has_data:
+            records.append(rec)
 
-        records.append(rec)
-
-    _log_scrape(f"arpat_nrt:{location_id}", "ok", rows=len(records))
+    _log_scrape(f"openaq_latest:{location_id}", "ok", rows=len(records))
     return records
 
 
-def fetch_arpat_bollettini(
-    location_id: str,
-    arpat_stations: list[dict[str, Any]],
-    date: str | None = None,
+def _fetch_openaq_sensor_measurements(
+    sensor_id: int,
+    dt_from: str,
+    dt_to: str,
 ) -> list[dict[str, Any]]:
-    """Fetch bollettino giornaliero ARPAT (PM10, PM2.5, NO2) per una location.
+    """Fetch misure di un singolo sensore OpenAQ con paginazione."""
+    all_results: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        data = _fetch_openaq_json(f"/sensors/{sensor_id}/measurements", {
+            "datetime_from": dt_from,
+            "datetime_to": dt_to,
+            "limit": "1000",
+            "page": str(page),
+        })
+        results: list[dict[str, Any]] = data.get("results", [])
+        all_results.extend(results)
+        found = (data.get("meta") or {}).get("found", 0)
+        if not results or len(all_results) >= found:
+            break
+        page += 1
+    return all_results
 
-    La risposta reale è {"items": [{"data_osservazione": "2026-05-14",
-    "stazione": "PO-ROMA", "inquinante": "PM10", "valore": "21", ...}, ...]}.
-    Una riga per (data, stazione, inquinante) — aggrega per inquinante per
-    costruire il record wide.
+
+def _fetch_openaq_station_range(
+    station: dict[str, Any],
+    location_id: str,
+    dt_from: str,
+    dt_to: str,
+) -> list[dict[str, Any]]:
+    """Fetch storico per una singola stazione OpenAQ, sensori in sequenza.
+
+    Returns: lista record wide per ts orario.
+    """
+    openaq_id = station["id"]
+    distance_m = float(station.get("distance") or 0)
+    weight = round(1.0 / (1.0 + distance_m / 1000.0), 4)
+    sensors: list[dict[str, Any]] = station.get("sensors", [])
+
+    by_ts: dict[datetime, dict[str, Any]] = {}
+
+    for sensor in sensors:
+        sensor_id = int(sensor["id"])
+        param = (sensor.get("parameter") or {}).get("name", "").lower()
+        if param not in _OPENAQ_PARAM_MAP:
+            continue
+        col, _ = _OPENAQ_PARAM_MAP[param]
+        units = (sensor.get("parameter") or {}).get("units", "")
+
+        try:
+            measurements = _fetch_openaq_sensor_measurements(sensor_id, dt_from, dt_to)
+        except Exception as e:
+            logger.debug(f"OpenAQ sensor {sensor_id} [{location_id}]: {e}")
+            continue
+
+        for m in measurements:
+            period = m.get("period") or {}
+            ts_str = (period.get("datetimeTo") or {}).get("utc", "")
+            value = m.get("value")
+            if not ts_str or value is None:
+                continue
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                ts = ts.replace(minute=0, second=0, microsecond=0)
+            except ValueError:
+                continue
+
+            if ts not in by_ts:
+                by_ts[ts] = {
+                    "source": "openaq",
+                    "station_id": f"openaq_{openaq_id}",
+                    "location_id": location_id,
+                    "ts": ts,
+                    "granularity": "hourly",
+                    "weight": weight,
+                    "qc_pass": True,
+                }
+            by_ts[ts][col] = _openaq_convert(float(value), param, units)
+
+    return list(by_ts.values())
+
+
+def fetch_openaq_measurements_range(
+    location_id: str,
+    lat: float,
+    lon: float,
+    start_date: str,
+    end_date: str,
+    radius_m: int = 15000,
+) -> list[dict[str, Any]]:
+    """Fetch storico qualità aria OpenAQ per coordinate su un range di date.
+
+    Scopre stazioni vicine, poi per ogni stazione scarica misure orarie
+    per ogni sensore con paginazione. Stazioni processate in parallelo (3 worker).
 
     Args:
         location_id: ID location Guazza.
-        arpat_stations: lista di {"id": str, "weight": float} da locations.yaml.
-        date: data target YYYY-MM-DD (default: ieri).
+        lat, lon: coordinate della location.
+        start_date, end_date: formato "YYYY-MM-DD".
+        radius_m: raggio di ricerca in metri (default 15 km).
 
     Returns:
-        Lista di record wide compatibili con upsert su `observations`.
-        Una riga per stazione ARPAT con granularity='daily'.
+        Lista record wide compatibili con upsert su `observations`.
+        source='openaq', granularity='hourly'.
     """
-    if date is None:
-        date = (datetime.now(tz=UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
-
-    # Validazione data prima del fetch — evita chiamate HTTP inutili
     try:
-        ts_day = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
-    except ValueError as e:
-        raise ValueError(f"date deve essere YYYY-MM-DD, ricevuto: {date!r}") from e
-
-    records: list[dict[str, Any]] = []
-    n_fail = 0
-
-    for st in tqdm(arpat_stations, desc="ARPAT bollettini", unit="staz", disable=not sys.stderr.isatty()):
-        station_id = str(st["id"]).upper()
-        weight = float(st.get("weight", 1.0))
-
-        try:
-            data = _fetch_arpat_json(
-                _ARPAT_BOLLETTINI_URL,
-                params={
-                    "startdate": date,
-                    "enddate": date,
-                    "stazione": station_id,
-                    "limit": "1000",
-                },
-            )
-        except Exception as e:
-            n_fail += 1
-            logger.warning(
-                f"ARPAT bollettini [{location_id}] stazione {station_id} fallito: {e}"
-            )
-            continue
-
-        # Risposta: {"items": [{"data_osservazione": ..., "inquinante": ..., "valore": ...}]}
-        # Una riga per inquinante — aggrega in dict {inquinante_upper: valore}
-        raw_items: list[Any] = []
-        if isinstance(data, list):
-            raw_items = data
-        elif isinstance(data, dict):
-            raw_items = data.get("items") or data.get("stazioni") or data.get("data") or []
-
-        inq_map: dict[str, Any] = {}
-        for item in raw_items:
-            inq = str(item.get("inquinante") or "").upper()
-            val = item.get("valore")
-            if inq:
-                inq_map[inq] = val
-
-        if not inq_map:
-            logger.debug(f"ARPAT bollettini: nessun dato per stazione {station_id} data {date}")
-            continue
-
-        rec: dict[str, Any] = {
-            "source": "arpat",
-            "station_id": station_id,
-            "location_id": location_id,
-            "ts": ts_day,
-            "granularity": "daily",
-            "weight": weight,
-            "qc_pass": True,
-        }
-        for arpat_var, col in _ARPAT_BOLL_VAR_MAP.items():
-            raw = inq_map.get(arpat_var.upper())
-            try:
-                rec[col] = float(raw) if raw is not None else None
-            except (TypeError, ValueError):
-                rec[col] = None
-
-        records.append(rec)
-
-    status = "fail" if (not records and n_fail) else "ok"
-    detail = f"{n_fail} stazioni fallite" if n_fail else ""
-    _log_scrape(f"arpat_bollettini:{location_id}", status, rows=len(records), detail=detail)
-    return records
-
-
-def _fetch_one_arpat_bollettini_station(
-    st: dict[str, Any],
-    location_id: str,
-    start_date: str,
-    end_date: str,
-) -> list[dict[str, Any]]:
-    """Fetch e parse bollettini ARPAT per una singola stazione.
-
-    Returns: lista di record wide, vuota se fallimento.
-    """
-    station_id = str(st["id"]).upper()
-    weight = float(st.get("weight", 1.0))
-
-    try:
-        data = _fetch_arpat_json(
-            _ARPAT_BOLLETTINI_URL,
-            params={
-                "startdate": start_date,
-                "enddate": end_date,
-                "stazione": station_id,
-                "limit": "100000",
-            },
-        )
+        stations = _discover_openaq_stations(lat, lon, radius_m)
     except Exception as e:
-        logger.warning(
-            f"ARPAT bollettini range [{location_id}] stazione {station_id} fallito: {e}"
-        )
-        _log_scrape(
-            f"arpat_bollettini_range:{location_id}:{station_id}",
-            "fail",
-            detail=str(e),
-        )
+        logger.error(f"OpenAQ range [{location_id}] discovery fallita: {e}")
+        _log_scrape(f"openaq_range:{location_id}", "fail", detail=str(e))
         return []
 
-    raw_items: list[Any] = []
-    if isinstance(data, list):
-        raw_items = data
-    elif isinstance(data, dict):
-        raw_items = data.get("items") or data.get("stazioni") or data.get("data") or []
-
-    by_date: dict[str, dict[str, Any]] = {}
-    for item in raw_items:
-        date_str = str(
-            item.get("data_osservazione")
-            or item.get("data")
-            or item.get("date")
-            or ""
-        ).strip()
-        inq = str(item.get("inquinante") or "").upper()
-        val = item.get("valore")
-        if not date_str or not inq:
-            continue
-        if date_str not in by_date:
-            by_date[date_str] = {}
-        by_date[date_str][inq] = val
-
+    dt_from = f"{start_date}T00:00:00Z"
+    dt_to = f"{end_date}T23:59:59Z"
     records: list[dict[str, Any]] = []
-    for date_str, inq_map in sorted(by_date.items()):
-        try:
-            ts_day = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
-        except ValueError:
-            logger.debug(f"ARPAT bollettini range: data non parsabile: {date_str!r}")
-            continue
+    lock = Lock()
 
-        rec: dict[str, Any] = {
-            "source": "arpat",
-            "station_id": station_id,
-            "location_id": location_id,
-            "ts": ts_day,
-            "granularity": "daily",
-            "weight": weight,
-            "qc_pass": True,
-        }
-        for arpat_var, col in _ARPAT_BOLL_VAR_MAP.items():
-            raw = inq_map.get(arpat_var.upper())
-            try:
-                rec[col] = float(raw) if raw is not None else None
-            except (TypeError, ValueError):
-                rec[col] = None
-
-        records.append(rec)
-
-    _log_scrape(
-        f"arpat_bollettini_range:{location_id}:{station_id}",
-        "ok",
-        rows=len(by_date),
-        detail=f"{start_date} to {end_date}",
-    )
-    return records
-
-
-def fetch_arpat_bollettini_range(
-    location_id: str,
-    arpat_stations: list[dict[str, Any]],
-    start_date: str,
-    end_date: str,
-) -> list[dict[str, Any]]:
-    """Fetch bollettini giornalieri ARPAT su un range di date (backfill storico).
-
-    Le stazioni vengono fetchate in parallelo con ThreadPoolExecutor(3).
-    Una singola chiamata HTTP per stazione con startdate/enddate estesi.
-    Restituisce tutti i record nel range — una riga wide per (stazione, giorno).
-
-    Args:
-        location_id: ID location Guazza.
-        arpat_stations: lista di {"id": str, "weight": float} da locations.yaml.
-        start_date, end_date: formato "YYYY-MM-DD".
-
-    Returns:
-        Lista di record wide compatibili con upsert su `observations`.
-        granularity='daily', una riga per (stazione, giorno).
-    """
-    try:
-        datetime.strptime(start_date, "%Y-%m-%d")
-        datetime.strptime(end_date, "%Y-%m-%d")
-    except ValueError as e:
-        raise ValueError(f"start_date/end_date devono essere YYYY-MM-DD: {e}") from e
-
-    records: list[dict[str, Any]] = []
-    lock: threading.Lock = threading.Lock()
-
-    def _fetch_and_collect(st: dict[str, Any]) -> None:
-        time.sleep(0.2)
-        station_records = _fetch_one_arpat_bollettini_station(
-            st, location_id, start_date, end_date
-        )
+    def _fetch_station(station: dict[str, Any]) -> None:
+        station_records = _fetch_openaq_station_range(station, location_id, dt_from, dt_to)
         if station_records:
             with lock:
                 records.extend(station_records)
 
     with ThreadPoolExecutor(max_workers=3) as executor:
-        list(tqdm(
-            executor.map(_fetch_and_collect, arpat_stations),
-            total=len(arpat_stations),
-            desc="ARPAT bollettini range",
-            unit="staz",
-            disable=not sys.stderr.isatty(),
-        ))
+        list(executor.map(_fetch_station, stations))
 
+    _log_scrape(
+        f"openaq_range:{location_id}",
+        "ok",
+        rows=len(records),
+        detail=f"{start_date} to {end_date}",
+    )
     return records
 
 
-def fetch_arpat_all_locations(
+def fetch_openaq_all_locations(
     locations: dict[str, Any],
-    mode: str = "nrt",
-    date: str | None = None,
+    mode: str = "latest",
+    start_date: str | None = None,
+    end_date: str | None = None,
+    radius_m: int = 15000,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Fetch ARPAT per tutte le location che hanno arpat_stations.
+    """Fetch OpenAQ per tutte le location con extras: [aria_qualita].
 
     Args:
         locations: dict locations da locations.yaml["locations"].
-        mode: 'nrt' (orario) o 'bollettini' (giornaliero).
-        date: solo per mode='bollettini', formato YYYY-MM-DD.
+        mode: 'latest' (realtime) o 'range' (storico — richiede start_date/end_date).
+        start_date, end_date: obbligatori se mode='range', formato YYYY-MM-DD.
+        radius_m: raggio di ricerca per ogni location (default 15 km).
 
     Returns:
         Dict {location_id: [record, ...]}
     """
     results: dict[str, list[dict[str, Any]]] = {}
     for loc_id, loc in locations.items():
-        arpat_stations = loc.get("arpat_stations")
-        if not arpat_stations:
+        if "aria_qualita" not in (loc.get("extras") or []):
             continue
+        lat: float = loc["lat"]
+        lon: float = loc["lon"]
         try:
-            if mode == "nrt":
-                records = fetch_arpat_nrt(loc_id, arpat_stations)
+            if mode == "latest":
+                records = fetch_openaq_latest(loc_id, lat, lon, radius_m)
             else:
-                records = fetch_arpat_bollettini(loc_id, arpat_stations, date=date)
+                if not start_date or not end_date:
+                    raise ValueError("start_date e end_date obbligatori per mode='range'")
+                records = fetch_openaq_measurements_range(loc_id, lat, lon, start_date, end_date, radius_m)
             results[loc_id] = records
         except Exception as e:
-            logger.error(f"ARPAT {mode} [{loc_id}] fallito: {e}")
-            _log_scrape(f"arpat_{mode}:{loc_id}", "fail", detail=str(e))
+            logger.error(f"OpenAQ {mode} [{loc_id}] fallito: {e}")
+            _log_scrape(f"openaq_{mode}:{loc_id}", "fail", detail=str(e))
             results[loc_id] = []
-        time.sleep(0.5)
     return results
+
+
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
