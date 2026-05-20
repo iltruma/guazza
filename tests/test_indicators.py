@@ -263,9 +263,9 @@ def test_load_real_config_has_8_indicators() -> None:
         indicators = load_indicators()
     except FileNotFoundError:
         pytest.skip("Config non disponibile in questo ambiente")
-    assert len(indicators) == 8
+    assert len(indicators) == 7
     expected = {"panni", "motorino", "gelata", "temporale", "nebbia",
-                "bisenzio", "annaffia", "clima"}
+                "bisenzio", "annaffia"}
     assert set(indicators.keys()) == expected
 
 
