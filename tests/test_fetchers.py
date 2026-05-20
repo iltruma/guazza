@@ -855,328 +855,246 @@ def test_fetch_sir_bulk_realtime_handles_offline_station(monkeypatch: Any) -> No
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# ARPAT — fetch_arpat_nrt + fetch_arpat_bollettini
+# OpenAQ v3 -- fetch_openaq_latest + fetch_openaq_measurements_range
 # ═════════════════════════════════════════════════════════════════════════════
 
-from guazza.fetchers import fetch_arpat_bollettini, fetch_arpat_nrt  # noqa: E402
+from guazza.fetchers import (  # noqa: E402
+    fetch_openaq_latest,
+    fetch_openaq_measurements_range,
+)
 
-_ARPAT_STATIONS_SINGLE = [{"id": "FI-SIGNA", "weight": 1.0}]
-_ARPAT_STATIONS_MULTI = [
-    {"id": "PO-ROMA", "weight": 0.7},
-    {"id": "PO-FERRUCCI", "weight": 0.3},
-]
-
-
-def _patch_arpat_json(payload: Any) -> Any:
-    """Mocker per _fetch_arpat_json — bypassa retry tenacity e httpx."""
-    return patch("guazza.fetchers._fetch_arpat_json", return_value=payload)
+_LAT = 43.82
+_LON = 11.13
+_LOC_ID = "casa_campi"
 
 
-def _patch_arpat_json_error(exc: Exception) -> Any:
-    """Mocker per _fetch_arpat_json che solleva eccezione."""
-    return patch("guazza.fetchers._fetch_arpat_json", side_effect=exc)
+def _patch_openaq_json(responses: list[Any]) -> Any:
+    """Mocker sequenziale per _fetch_openaq_json -- bypassa retry e httpx."""
+    if len(responses) == 1:
+        return patch("guazza.fetchers._fetch_openaq_json", return_value=responses[0])
+    return patch("guazza.fetchers._fetch_openaq_json", side_effect=responses)
 
 
-# ── NRT ──────────────────────────────────────────────────────────────────────
+def _patch_openaq_json_error(exc: Exception) -> Any:
+    return patch("guazza.fetchers._fetch_openaq_json", side_effect=exc)
 
-def test_arpat_nrt_single_station_real_format() -> None:
-    """Formato reale API: dict con chiave 'items', una riga per (stazione, inquinante)."""
-    payload = {
-        "items": [
-            {"stazione": "FI-SIGNA", "inquinante": "NO2", "valore": 25.3, "data_ora_osservazione": "2026-05-15T15:00"},
-            {"stazione": "FI-SIGNA", "inquinante": "O3",  "valore": 48.7, "data_ora_osservazione": "2026-05-15T15:00"},
-            {"stazione": "FI-SIGNA", "inquinante": "CO",  "valore": 0.4,  "data_ora_osservazione": "2026-05-15T15:00"},
+
+def _make_locations_response(station_id: int, distance_m: float, sensors: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "meta": {"found": 1},
+        "results": [
+            {
+                "id": station_id,
+                "name": f"Test-{station_id}",
+                "distance": distance_m,
+                "sensors": sensors,
+            }
+        ],
+    }
+
+
+def _make_latest_response(measurements: list[tuple[str, float, str]]) -> dict[str, Any]:
+    """measurements: lista di (param_name, value, units)."""
+    return {
+        "results": [
+            {
+                "parameter": {"name": p, "units": u},
+                "value": v,
+                "datetime": {"utc": "2026-05-15T15:00:00Z"},
+            }
+            for p, v, u in measurements
         ]
     }
-    with _patch_arpat_json(payload):
-        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
+
+
+# -- fetch_openaq_latest -------------------------------------------------------
+
+def test_openaq_latest_single_station() -> None:
+    """Una stazione con NO2 e O3 -> un record wide con source='openaq'."""
+    loc_resp = _make_locations_response(
+        station_id=225873, distance_m=5000.0,
+        sensors=[
+            {"id": 1001, "parameter": {"name": "no2", "units": "ug/m3"}},
+            {"id": 1002, "parameter": {"name": "o3",  "units": "ug/m3"}},
+        ],
+    )
+    latest_resp = _make_latest_response([("no2", 25.3, "ug/m3"), ("o3", 48.7, "ug/m3")])
+
+    with _patch_openaq_json([loc_resp, latest_resp]):
+        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
 
     assert len(records) == 1
     r = records[0]
-    assert r["source"] == "arpat"
-    assert r["station_id"] == "FI-SIGNA"
-    assert r["location_id"] == "casa_campi"
+    assert r["source"] == "openaq"
+    assert r["station_id"] == "openaq_225873"
+    assert r["location_id"] == _LOC_ID
     assert r["granularity"] == "hourly"
     assert r["no2_ugm3"] == pytest.approx(25.3)
     assert r["o3_ugm3"] == pytest.approx(48.7)
-    assert r["weight"] == pytest.approx(1.0)
     assert r["ts"] == datetime(2026, 5, 15, 15, 0, tzinfo=UTC)
 
 
-def test_arpat_nrt_list_format_fallback() -> None:
-    """Formato lista diretta (fallback) — una riga per (stazione, inquinante)."""
-    payload = [
-        {"stazione": "FI-SIGNA", "inquinante": "NO2", "valore": 10.0, "data_ora_osservazione": "2026-05-15T10:00"},
-        {"stazione": "FI-SIGNA", "inquinante": "O3",  "valore": 60.0, "data_ora_osservazione": "2026-05-15T10:00"},
+def test_openaq_latest_co_conversion_ug_to_mg() -> None:
+    """CO in ug/m3 da OpenAQ -> convertito a mg/m3 (fattore 0.001)."""
+    loc_resp = _make_locations_response(
+        station_id=1, distance_m=1000.0,
+        sensors=[{"id": 99, "parameter": {"name": "co", "units": "ug/m3"}}],
+    )
+    latest_resp = _make_latest_response([("co", 500.0, "ug/m3")])
+
+    with _patch_openaq_json([loc_resp, latest_resp]):
+        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
+
+    assert len(records) == 1
+    assert records[0]["co_mgm3"] == pytest.approx(0.5)
+
+
+def test_openaq_latest_co_already_mg() -> None:
+    """CO gia in mg/m3 -> nessuna conversione."""
+    loc_resp = _make_locations_response(
+        station_id=2, distance_m=500.0,
+        sensors=[{"id": 88, "parameter": {"name": "co", "units": "mg/m3"}}],
+    )
+    latest_resp = _make_latest_response([("co", 0.8, "mg/m3")])
+
+    with _patch_openaq_json([loc_resp, latest_resp]):
+        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
+
+    assert records[0]["co_mgm3"] == pytest.approx(0.8)
+
+
+def test_openaq_latest_weight_from_distance() -> None:
+    """Weight calcolato da distanza: 1/(1+distance_km)."""
+    loc_resp = _make_locations_response(
+        station_id=10, distance_m=9000.0,
+        sensors=[{"id": 50, "parameter": {"name": "no2", "units": "ug/m3"}}],
+    )
+    latest_resp = _make_latest_response([("no2", 15.0, "ug/m3")])
+
+    with _patch_openaq_json([loc_resp, latest_resp]):
+        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
+
+    assert records[0]["weight"] == pytest.approx(1.0 / (1.0 + 9.0), abs=1e-3)
+
+
+def test_openaq_latest_unknown_param_ignored() -> None:
+    """Parametro sconosciuto (es. 'temperature') -> ignorato, record non vuoto se ci sono altri."""
+    loc_resp = _make_locations_response(
+        station_id=20, distance_m=1000.0,
+        sensors=[
+            {"id": 60, "parameter": {"name": "temperature", "units": "C"}},
+            {"id": 61, "parameter": {"name": "pm10", "units": "ug/m3"}},
+        ],
+    )
+    latest_resp = _make_latest_response([("temperature", 22.0, "C"), ("pm10", 30.0, "ug/m3")])
+
+    with _patch_openaq_json([loc_resp, latest_resp]):
+        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
+
+    assert len(records) == 1
+    assert records[0]["pm10_ugm3"] == pytest.approx(30.0)
+    assert "temperature" not in records[0]
+
+
+def test_openaq_latest_no_stations_returns_empty() -> None:
+    """Discovery restituisce lista vuota -> []."""
+    loc_resp = {"meta": {"found": 0}, "results": []}
+
+    with _patch_openaq_json([loc_resp]):
+        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
+
+    assert records == []
+
+
+def test_openaq_latest_discovery_error_returns_empty() -> None:
+    """Errore HTTP in discovery -> lista vuota senza eccezione propagata."""
+    with _patch_openaq_json_error(Exception("connect timeout")):
+        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
+
+    assert records == []
+
+
+# -- fetch_openaq_measurements_range ------------------------------------------
+
+def _make_measurements_response(
+    param: str,
+    units: str,
+    rows: list[tuple[str, float]],
+    found: int | None = None,
+) -> dict[str, Any]:
+    """rows: lista di (ts_utc_iso, value)."""
+    results = [
+        {
+            "period": {"datetimeTo": {"utc": ts}},
+            "value": v,
+            "parameter": {"name": param, "units": units},
+        }
+        for ts, v in rows
     ]
-    with _patch_arpat_json(payload):
-        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
-
-    assert len(records) == 1
-    assert records[0]["no2_ugm3"] == pytest.approx(10.0)
-    assert records[0]["o3_ugm3"] == pytest.approx(60.0)
+    return {"meta": {"found": found or len(rows)}, "results": results}
 
 
-def test_arpat_nrt_multi_station_weights() -> None:
-    """Due stazioni con pesi diversi → due record."""
-    payload = {
-        "items": [
-            {"stazione": "PO-ROMA",     "inquinante": "NO2", "valore": 30.0, "data_ora_osservazione": "2026-05-15T15:00"},
-            {"stazione": "PO-FERRUCCI", "inquinante": "NO2", "valore": 45.0, "data_ora_osservazione": "2026-05-15T15:00"},
-        ]
-    }
-    with _patch_arpat_json(payload):
-        records = fetch_arpat_nrt("lavoro_madda", _ARPAT_STATIONS_MULTI)
+def test_openaq_range_single_sensor_single_page() -> None:
+    """Una stazione, un sensore NO2, una pagina -> record wide orari."""
+    loc_resp = _make_locations_response(
+        station_id=300, distance_m=2000.0,
+        sensors=[{"id": 200, "parameter": {"name": "no2", "units": "ug/m3"}}],
+    )
+    meas_resp = _make_measurements_response("no2", "ug/m3", [
+        ("2026-05-13T10:00:00Z", 20.0),
+        ("2026-05-13T11:00:00Z", 22.0),
+    ])
+
+    with _patch_openaq_json([loc_resp, meas_resp]):
+        records = fetch_openaq_measurements_range(_LOC_ID, _LAT, _LON, "2026-05-13", "2026-05-13")
 
     assert len(records) == 2
-    by_id = {r["station_id"]: r for r in records}
-    assert by_id["PO-ROMA"]["weight"] == pytest.approx(0.7)
-    assert by_id["PO-FERRUCCI"]["weight"] == pytest.approx(0.3)
+    assert all(r["source"] == "openaq" for r in records)
+    assert all(r["granularity"] == "hourly" for r in records)
+    assert all(r["station_id"] == "openaq_300" for r in records)
+    no2_vals = {r["ts"].hour: r["no2_ugm3"] for r in records}
+    assert no2_vals[10] == pytest.approx(20.0)
+    assert no2_vals[11] == pytest.approx(22.0)
 
 
-def test_arpat_nrt_station_not_in_response() -> None:
-    """Stazione nella config ma assente dalla risposta → record saltato."""
-    payload = {
-        "items": [
-            {"stazione": "ALTRA-STAZIONE", "inquinante": "NO2", "valore": 10.0, "data_ora_osservazione": "2026-05-15T15:00"},
-        ]
-    }
-    with _patch_arpat_json(payload):
-        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
+def test_openaq_range_co_conversion() -> None:
+    """CO storico in ug/m3 -> convertito a mg/m3."""
+    loc_resp = _make_locations_response(
+        station_id=400, distance_m=1000.0,
+        sensors=[{"id": 300, "parameter": {"name": "co", "units": "ug/m3"}}],
+    )
+    meas_resp = _make_measurements_response("co", "ug/m3", [("2026-05-13T10:00:00Z", 800.0)])
 
-    assert records == []
-
-
-def test_arpat_nrt_null_values() -> None:
-    """Inquinanti non presenti per una stazione → colonne None, non eccezione."""
-    payload = {
-        "items": [
-            {"stazione": "FI-SIGNA", "inquinante": "PM10", "valore": 12.0, "data_ora_osservazione": "2026-05-15T15:00"},
-        ]
-    }
-    with _patch_arpat_json(payload):
-        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
+    with _patch_openaq_json([loc_resp, meas_resp]):
+        records = fetch_openaq_measurements_range(_LOC_ID, _LAT, _LON, "2026-05-13", "2026-05-13")
 
     assert len(records) == 1
-    assert records[0]["no2_ugm3"] is None
-    assert records[0]["o3_ugm3"] is None
+    assert records[0]["co_mgm3"] == pytest.approx(0.8)
 
 
-def test_arpat_nrt_http_error_returns_empty() -> None:
-    """Errore generico in _fetch_arpat_json → lista vuota, nessuna eccezione propagata."""
-    with _patch_arpat_json_error(Exception("timeout")):
-        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
+def test_openaq_range_pagination() -> None:
+    """Paginazione: due pagine da 2 misure ciascuna -> 4 record totali."""
+    loc_resp = _make_locations_response(
+        station_id=500, distance_m=500.0,
+        sensors=[{"id": 400, "parameter": {"name": "pm10", "units": "ug/m3"}}],
+    )
+    page1 = {"meta": {"found": 4}, "results": [
+        {"period": {"datetimeTo": {"utc": "2026-05-13T10:00:00Z"}}, "value": 10.0, "parameter": {"name": "pm10", "units": "ug/m3"}},
+        {"period": {"datetimeTo": {"utc": "2026-05-13T11:00:00Z"}}, "value": 11.0, "parameter": {"name": "pm10", "units": "ug/m3"}},
+    ]}
+    page2 = {"meta": {"found": 4}, "results": [
+        {"period": {"datetimeTo": {"utc": "2026-05-13T12:00:00Z"}}, "value": 12.0, "parameter": {"name": "pm10", "units": "ug/m3"}},
+        {"period": {"datetimeTo": {"utc": "2026-05-13T13:00:00Z"}}, "value": 13.0, "parameter": {"name": "pm10", "units": "ug/m3"}},
+    ]}
 
+    with _patch_openaq_json([loc_resp, page1, page2]):
+        records = fetch_openaq_measurements_range(_LOC_ID, _LAT, _LON, "2026-05-13", "2026-05-13")
+
+    assert len(records) == 4
+
+
+def test_openaq_range_discovery_error_returns_empty() -> None:
+    """Errore discovery -> lista vuota senza eccezione."""
+    with _patch_openaq_json_error(RuntimeError("network")):
+        records = fetch_openaq_measurements_range(_LOC_ID, _LAT, _LON, "2026-05-13", "2026-05-13")
     assert records == []
-
-
-def test_arpat_nrt_ts_from_data_ora_osservazione() -> None:
-    """Timestamp da campo data_ora_osservazione deve essere parsato correttamente."""
-    payload = {
-        "items": [
-            {"stazione": "FI-SIGNA", "inquinante": "NO2", "valore": 20.0, "data_ora_osservazione": "2026-05-15T10:00"},
-        ]
-    }
-    with _patch_arpat_json(payload):
-        records = fetch_arpat_nrt("casa_campi", _ARPAT_STATIONS_SINGLE)
-
-    assert len(records) == 1
-    assert records[0]["ts"] == datetime(2026, 5, 15, 10, 0, tzinfo=UTC)
-
-
-# ── Bollettini ────────────────────────────────────────────────────────────────
-
-def test_arpat_bollettini_single_station() -> None:
-    """Bollettino giornaliero formato reale → record con PM10 e PM2.5, granularity='daily'."""
-    payload = {
-        "items": [
-            {"data_osservazione": "2026-05-14", "stazione": "FI-SIGNA", "inquinante": "PM10",  "valore": "35.0"},
-            {"data_osservazione": "2026-05-14", "stazione": "FI-SIGNA", "inquinante": "PM2.5", "valore": "18.0"},
-            {"data_osservazione": "2026-05-14", "stazione": "FI-SIGNA", "inquinante": "NO2",   "valore": "22.0"},
-        ]
-    }
-    with patch("guazza.fetchers._fetch_arpat_json") as mock_fetch:
-        mock_fetch.return_value = payload
-        records = fetch_arpat_bollettini("casa_campi", _ARPAT_STATIONS_SINGLE, date="2026-05-14")
-
-    assert mock_fetch.call_count == 1
-    call_kwargs = mock_fetch.call_args.kwargs
-    assert call_kwargs["params"]["stazione"] == "FI-SIGNA"
-    assert call_kwargs["params"]["startdate"] == "2026-05-14"
-    assert call_kwargs["params"]["enddate"] == "2026-05-14"
-    assert call_kwargs["params"]["limit"] == "1000"
-
-    assert len(records) == 1
-    r = records[0]
-    assert r["source"] == "arpat"
-    assert r["granularity"] == "daily"
-    assert r["pm10_ugm3"] == pytest.approx(35.0)
-    assert r["pm25_ugm3"] == pytest.approx(18.0)
-    assert r["no2_ugm3"] == pytest.approx(22.0)
-    assert r["ts"] == datetime(2026, 5, 14, tzinfo=UTC)
-
-
-def test_arpat_bollettini_invalid_date_raises() -> None:
-    """Data non valida → ValueError prima del fetch."""
-    with pytest.raises(ValueError, match="YYYY-MM-DD"):
-        fetch_arpat_bollettini("casa_campi", _ARPAT_STATIONS_SINGLE, date="14-05-2026")
-
-
-def test_arpat_bollettini_http_error_returns_empty() -> None:
-    """Errore generico in _fetch_arpat_json → lista vuota."""
-    with _patch_arpat_json_error(Exception("conn refused")):
-        records = fetch_arpat_bollettini("casa_campi", _ARPAT_STATIONS_SINGLE, date="2026-05-14")
-
-    assert records == []
-
-
-def test_arpat_bollettini_missing_pm_values_none() -> None:
-    """Nessun inquinante nella risposta → record saltato (inq_map vuoto)."""
-    payload = {"items": []}
-    with _patch_arpat_json(payload):
-        records = fetch_arpat_bollettini("casa_campi", _ARPAT_STATIONS_SINGLE, date="2026-05-14")
-
-    assert records == []
-
-
-def test_arpat_bollettini_params_per_station() -> None:
-    """_fetch_arpat_json chiamato con params corretti per ogni stazione."""
-    real_payload = {
-        "items": [
-            {"data_osservazione": "2026-05-14", "stazione": "PO-ROMA",     "inquinante": "PM10", "valore": "10.0"},
-            {"data_osservazione": "2026-05-14", "stazione": "PO-FERRUCCI", "inquinante": "PM10", "valore": "12.0"},
-        ]
-    }
-    stations = [
-        {"id": "PO-ROMA", "weight": 0.7},
-        {"id": "PO-FERRUCCI", "weight": 0.3},
-    ]
-    with patch("guazza.fetchers._fetch_arpat_json") as mock_fetch:
-        mock_fetch.return_value = real_payload
-        records = fetch_arpat_bollettini("lavoro_madda", stations, date="2026-05-14")
-
-    assert mock_fetch.call_count == 2
-    calls = mock_fetch.call_args_list
-    assert calls[0].kwargs["params"]["stazione"] == "PO-ROMA"
-    assert calls[0].kwargs["params"]["startdate"] == "2026-05-14"
-    assert calls[0].kwargs["params"]["enddate"] == "2026-05-14"
-    assert calls[0].kwargs["params"]["limit"] == "1000"
-    assert calls[1].kwargs["params"]["stazione"] == "PO-FERRUCCI"
-    assert len(records) == 2
-
-
-# ── Bollettini range (backfill storico) ───────────────────────────────────────
-
-from guazza.fetchers import fetch_arpat_bollettini_range  # noqa: E402
-
-
-def test_arpat_bollettini_range_multi_day() -> None:
-    """Range multi-giorno: una riga wide per (stazione, giorno)."""
-    payload = {
-        "items": [
-            {"data_osservazione": "2026-05-13", "inquinante": "PM10",  "valore": "30.0"},
-            {"data_osservazione": "2026-05-13", "inquinante": "PM2.5", "valore": "15.0"},
-            {"data_osservazione": "2026-05-13", "inquinante": "NO2",   "valore": "20.0"},
-            {"data_osservazione": "2026-05-14", "inquinante": "PM10",  "valore": "35.0"},
-            {"data_osservazione": "2026-05-14", "inquinante": "NO2",   "valore": "22.0"},
-        ]
-    }
-    with patch("guazza.fetchers._fetch_arpat_json") as mock_fetch:
-        mock_fetch.return_value = payload
-        records = fetch_arpat_bollettini_range(
-            "casa_campi", _ARPAT_STATIONS_SINGLE,
-            start_date="2026-05-13", end_date="2026-05-14",
-        )
-
-    assert mock_fetch.call_count == 1
-    call_params = mock_fetch.call_args.kwargs["params"]
-    assert call_params["startdate"] == "2026-05-13"
-    assert call_params["enddate"] == "2026-05-14"
-    assert call_params["stazione"] == "FI-SIGNA"
-    assert call_params["limit"] == "100000"
-
-    assert len(records) == 2
-    by_ts = {r["ts"]: r for r in records}
-    r13 = by_ts[datetime(2026, 5, 13, tzinfo=UTC)]
-    assert r13["pm10_ugm3"] == pytest.approx(30.0)
-    assert r13["pm25_ugm3"] == pytest.approx(15.0)
-    assert r13["no2_ugm3"] == pytest.approx(20.0)
-    r14 = by_ts[datetime(2026, 5, 14, tzinfo=UTC)]
-    assert r14["pm10_ugm3"] == pytest.approx(35.0)
-    assert r14["pm25_ugm3"] is None   # non presente il 14
-    assert r14["no2_ugm3"] == pytest.approx(22.0)
-
-    assert all(r["source"] == "arpat" for r in records)
-    assert all(r["granularity"] == "daily" for r in records)
-    assert all(r["station_id"] == "FI-SIGNA" for r in records)
-
-
-def test_arpat_bollettini_range_multi_station() -> None:
-    """Due stazioni → due chiamate HTTP, record separati per stazione."""
-    payload_roma = {
-        "items": [
-            {"data_osservazione": "2026-05-14", "inquinante": "PM10", "valore": "10.0"},
-        ]
-    }
-    payload_ferrucci = {
-        "items": [
-            {"data_osservazione": "2026-05-14", "inquinante": "PM10", "valore": "12.0"},
-        ]
-    }
-    with patch("guazza.fetchers._fetch_arpat_json") as mock_fetch:
-        mock_fetch.side_effect = [payload_roma, payload_ferrucci]
-        records = fetch_arpat_bollettini_range(
-            "lavoro_madda", _ARPAT_STATIONS_MULTI,
-            start_date="2026-05-14", end_date="2026-05-14",
-        )
-
-    assert mock_fetch.call_count == 2
-    assert len(records) == 2
-    by_station = {r["station_id"]: r for r in records}
-    assert by_station["PO-ROMA"]["pm10_ugm3"] == pytest.approx(10.0)
-    assert by_station["PO-ROMA"]["weight"] == pytest.approx(0.7)
-    assert by_station["PO-FERRUCCI"]["pm10_ugm3"] == pytest.approx(12.0)
-    assert by_station["PO-FERRUCCI"]["weight"] == pytest.approx(0.3)
-
-
-def test_arpat_bollettini_range_invalid_date_raises() -> None:
-    """Date in formato errato → ValueError senza fetch."""
-    with pytest.raises(ValueError):
-        fetch_arpat_bollettini_range(
-            "casa_campi", _ARPAT_STATIONS_SINGLE,
-            start_date="01-01-2018", end_date="2026-05-14",
-        )
-
-
-def test_arpat_bollettini_range_http_error_skips_station() -> None:
-    """Errore HTTP su una stazione → lista vuota, nessuna eccezione propagata."""
-    with _patch_arpat_json_error(Exception("timeout")):
-        records = fetch_arpat_bollettini_range(
-            "casa_campi", _ARPAT_STATIONS_SINGLE,
-            start_date="2026-05-13", end_date="2026-05-14",
-        )
-    assert records == []
-
-
-def test_arpat_bollettini_range_empty_response() -> None:
-    """Risposta con items vuoto → lista vuota."""
-    with _patch_arpat_json({"items": []}):
-        records = fetch_arpat_bollettini_range(
-            "casa_campi", _ARPAT_STATIONS_SINGLE,
-            start_date="2018-01-01", end_date="2018-01-31",
-        )
-    assert records == []
-
-
-def test_arpat_bollettini_range_list_format_fallback() -> None:
-    """Risposta come lista diretta invece di dict con 'items'."""
-    payload = [
-        {"data_osservazione": "2026-05-14", "inquinante": "PM10", "valore": "28.0"},
-    ]
-    with _patch_arpat_json(payload):
-        records = fetch_arpat_bollettini_range(
-            "casa_campi", _ARPAT_STATIONS_SINGLE,
-            start_date="2026-05-14", end_date="2026-05-14",
-        )
-    assert len(records) == 1
-    assert records[0]["pm10_ugm3"] == pytest.approx(28.0)
