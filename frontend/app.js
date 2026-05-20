@@ -195,29 +195,31 @@ function aqColorCls(key, value) {
 }
 
 function renderAirQuality(aq) {
-  if (!aq) return '';
   const items = [
-    { key: 'pm10',    label: 'PM10',   value: aq.pm10_ugm3,    unit: 'µg/m³', dec: 0 },
-    { key: 'pm25',    label: 'PM2.5',  value: aq.pm25_ugm3,    unit: 'µg/m³', dec: 0 },
-    { key: 'no2',     label: 'NO₂',    value: aq.no2_ugm3,     unit: 'µg/m³', dec: 0 },
-    { key: 'o3',      label: 'O₃',     value: aq.o3_ugm3,      unit: 'µg/m³', dec: 0 },
-    { key: 'co',      label: 'CO',     value: aq.co_mgm3,      unit: 'mg/m³', dec: 1 },
-    { key: 'benzene', label: 'C₆H₆',  value: aq.benzene_ugm3, unit: 'µg/m³', dec: 1 },
-    { key: 'so2',     label: 'SO₂',    value: aq.so2_ugm3,     unit: 'µg/m³', dec: 0 },
-  ].filter(it => it.value != null);
-  if (items.length === 0) return '';
+    { key: 'pm10',    label: 'PM10',   value: aq?.pm10_ugm3    ?? null, unit: 'µg/m³', dec: 0 },
+    { key: 'pm25',    label: 'PM2.5',  value: aq?.pm25_ugm3    ?? null, unit: 'µg/m³', dec: 0 },
+    { key: 'no2',     label: 'NO₂',    value: aq?.no2_ugm3     ?? null, unit: 'µg/m³', dec: 0 },
+    { key: 'o3',      label: 'O₃',     value: aq?.o3_ugm3      ?? null, unit: 'µg/m³', dec: 0 },
+    { key: 'co',      label: 'CO',     value: aq?.co_mgm3      ?? null, unit: 'mg/m³', dec: 1 },
+    { key: 'benzene', label: 'C₆H₆',  value: aq?.benzene_ugm3 ?? null, unit: 'µg/m³', dec: 1 },
+    { key: 'so2',     label: 'SO₂',    value: aq?.so2_ugm3     ?? null, unit: 'µg/m³', dec: 0 },
+  ];
 
-  const cards = items.map(it => `
+  const cards = items.map(it => {
+    const display = it.value != null ? it.value.toFixed(it.dec) : '—';
+    const colorCls = it.value != null ? aqColorCls(it.key, it.value) : 'text-base-content/30';
+    return `
     <div class="bg-base-200 rounded-lg p-2.5 text-center">
       <div class="text-xs text-base-content/60 mb-0.5">${it.label}</div>
-      <div class="font-semibold text-sm ${aqColorCls(it.key, it.value)}">${it.value.toFixed(it.dec)}</div>
+      <div class="font-semibold text-sm ${colorCls}">${display}</div>
       <div class="text-xs text-base-content/40">${it.unit}</div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   return `
     <div class="mt-3">
       <div class="text-xs text-base-content/40 mb-1">Qualità aria</div>
-      <div class="grid gap-2" style="grid-template-columns:repeat(${items.length},minmax(0,1fr))">${cards}</div>
+      <div class="grid grid-cols-7 gap-2">${cards}</div>
     </div>`;
 }
 
