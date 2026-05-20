@@ -5,6 +5,29 @@
 
 ---
 
+## KI-016 — Cutover ARPAT → OpenAQ: righe storiche source='arpat' nel DB
+
+**Severità**: operativa (da eseguire prima del primo backfill OpenAQ)
+**Stato**: pendente — da eseguire manualmente sul VPS
+
+**Procedura**: prima di eseguire il backfill storico OpenAQ, cancellare i dati ARPAT esistenti:
+
+```sql
+DELETE FROM observations WHERE source = 'arpat';
+DELETE FROM quality_flags
+  WHERE flag_type IN ('range_pm10_high','range_pm25_high','range_no2_high','range_o3_high');
+```
+
+Poi eseguire:
+```bash
+uv run python -m guazza.jobs.ingest historical --only-openaq --start-date 2022-01-01
+```
+
+**Nota**: `get_current_air_quality()` in `output.py` legge solo `source='openaq'`, quindi
+finché non si esegue il backfill la sezione qualità aria nel frontend sarà null.
+
+---
+
 ## KI-011 — ecmwf_aifs025 restituisce null su tutte le variabili via Open-Meteo
 
 **Severità**: informativa (modello rimosso dallo stack)
