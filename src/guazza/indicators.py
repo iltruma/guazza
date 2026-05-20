@@ -38,6 +38,7 @@ class IndicatorResult:
     location_id: str
     verdict: str              # 'verde' | 'giallo' | 'rosso'
     rule_matched: str         # 'green' | 'yellow' | 'red' | 'fallback'
+    rule_text: str            # condizione YAML che ha matchato (human-readable nel frontend)
     alpha: float              # cost_fp / (cost_fp + cost_fn)
     cost_fn: float
     cost_fp: float
@@ -104,6 +105,7 @@ def evaluate_indicator(
                 location_id=location_id,
                 verdict=verdict_it,
                 rule_matched=rule,
+                rule_text=logic.get(f"{rule}_desc", condition),
                 alpha=alpha,
                 cost_fn=float(costs["fn"]),
                 cost_fp=float(costs["fp"]),
@@ -117,6 +119,7 @@ def evaluate_indicator(
         location_id=location_id,
         verdict="giallo",
         rule_matched="fallback",
+        rule_text="Nessuna condizione soddisfatta",
         alpha=alpha,
         cost_fn=float(costs["fn"]),
         cost_fp=float(costs["fp"]),

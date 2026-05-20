@@ -640,7 +640,11 @@ def write_location_json(
                 "precip_mm": _fmt_precip(pred.get("precip_mm", {})),
             },
             "indicators": {
-                r.indicator_id: {"verdict": r.verdict, "rule_matched": r.rule_matched}
+                r.indicator_id: {
+                    "verdict": r.verdict,
+                    "rule_matched": r.rule_matched,
+                    "rule_text": r.rule_text,
+                }
                 for r in inds
             },
             "hourly":          day.get("hourly"),

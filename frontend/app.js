@@ -27,6 +27,10 @@ const VERDICT_CLS = {
   rosso:  { ind: 'ind-rosso',  dot: 'bg-error'   },
 };
 
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // ── Weather icon ──────────────────────────────────────────────────────────────
 
 function weatherIcon(precipP50, tmaxP50, temporaleVerdict, nebbiaVerdict) {
@@ -280,10 +284,12 @@ function renderIndicatorsGrid(indicators) {
     ${Object.entries(indicators).map(([id, ind]) => {
       const meta = INDICATOR_META[id] ?? { label: id, icon: '?' };
       const cls  = VERDICT_CLS[ind.verdict];
-      return `<div class="flex flex-col items-center gap-0.5 p-2 rounded-lg ${cls ? cls.ind : 'bg-base-200 text-base-content'}" title="${ind.rule_matched}">
-        <span class="text-xl leading-none">${meta.icon}</span>
-        <span class="font-medium text-xs leading-tight">${meta.label}</span>
-        <span class="text-xs font-bold uppercase tracking-wide mt-0.5">${ind.verdict}</span>
+      return `<div class="tooltip tooltip-bottom" data-tip="${escHtml(ind.rule_text || ind.rule_matched)}">
+        <div class="flex flex-col items-center gap-0.5 p-2 rounded-lg ${cls ? cls.ind : 'bg-base-200 text-base-content'}">
+          <span class="text-xl leading-none">${meta.icon}</span>
+          <span class="font-medium text-xs leading-tight">${meta.label}</span>
+          <span class="text-xs font-bold uppercase tracking-wide mt-0.5">${ind.verdict}</span>
+        </div>
       </div>`;
     }).join('')}
   </div>`;

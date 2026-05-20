@@ -28,8 +28,11 @@ indicators:
       # alpha = 1/6 ≈ 0.17 → soglia bassa = molto conservativo
     logic:
       green: "P(precip > 0.2mm) < 0.15 AND P(RH > 80%) < 0.20"
+      green_desc: "Poco rischio pioggia e umidità contenuta — ottimo per stendere"
       yellow: "(P(precip > 0.2mm) >= 0.15 AND P(precip > 0.2mm) <= 0.40) OR P(RH > 80%) >= 0.20"
+      yellow_desc: "Pioggia possibile o umidità elevata — meglio aspettare"
       red: "P(precip > 0.2mm) > 0.40"
+      red_desc: "Alta probabilità di pioggia — non stendere"
     notes: "Soglie conservative per non rovinare bucato. Calibrare dopo 30gg."
 
   motorino:
@@ -42,8 +45,11 @@ indicators:
       # alpha = 1/4 = 0.25
     logic:
       green: "P(precip > 0.2mm) < 0.20 AND P(wind > 40kmh) < 0.10 AND Tmin_p10 > 4.0"
+      green_desc: "Secco, vento assente e temperatura sopra soglia — vai tranquillo"
       yellow: "P(precip > 0.2mm) >= 0.20 AND P(precip > 0.2mm) <= 0.45"
+      yellow_desc: "Pioggia possibile — valuta se prendere un altro mezzo"
       red: "P(precip > 0.2mm) > 0.45 OR Tmin_p10 < 2.0"
+      red_desc: "Pioggia molto probabile o rischio ghiaccio — prendi altro mezzo"
     notes: >
       Tmin_p10 = percentile 10 della temperatura minima (worst case).
       Soglia freddo: < 2°C → pericolo ghiaccio. Da discutere con utente.
@@ -58,8 +64,11 @@ indicators:
       # alpha = 1/9 ≈ 0.11 → molto conservativo
     logic:
       green: "P(Tmin < 2.0°C) < 0.10"
+      green_desc: "Nessun rischio di gelata stanotte"
       yellow: "P(Tmin < 2.0°C) >= 0.10 AND P(Tmin < 2.0°C) < 0.30"
+      yellow_desc: "Possibile temperatura vicina allo zero — copri le piante delicate"
       red: "P(Tmin < 0.0°C) > 0.30 AND P(wind < 5kmh) > 0.50"
+      red_desc: "Alta probabilità di gelata con vento calmo — copri tutto"
     notes: >
       La gelata radiativa richiede sia temperatura < 0°C che vento calmo
       (sky view factor alto + notte serena). Per casa_cesto soglie da abbassare
@@ -76,8 +85,11 @@ indicators:
       # alpha = 1/7 ≈ 0.14 → conservativo
     logic:
       green: "P(precip > 5mm/h) < 0.15"
+      green_desc: "Bassa probabilità di temporale"
       yellow: "P(precip > 5mm/h) >= 0.15 AND P(precip > 5mm/h) <= 0.40"
+      yellow_desc: "Temporale possibile — tieniti pronto"
       red: "P(precip > 5mm/h) > 0.40"
+      red_desc: "Alta probabilità di temporale — evita uscite non necessarie"
     notes: "5mm/h come soglia convettiva. QPF è best-effort, CI larghi attesi."
 
   nebbia:
@@ -90,8 +102,11 @@ indicators:
       # alpha = 1/5 = 0.20
     logic:
       green: "P(RH > 95% AND wind < 3kmh) < 0.20"
+      green_desc: "Condizioni sfavorevoli alla nebbia"
       yellow: "P(RH > 95% AND wind < 3kmh) >= 0.20 AND P(RH > 95% AND wind < 3kmh) < 0.50"
+      yellow_desc: "Nebbia possibile — guida con prudenza"
       red: "P(RH > 95% AND wind < 3kmh) > 0.50"
+      red_desc: "Alta probabilità di nebbia densa — parti prima o scegli percorso alternativo"
     notes: >
       Rilevante soprattutto per casa_campi e lavoro_madda (conche fluviali).
       Nebbia mattutina autunno/inverno è il fenomeno microclimatico principale.
@@ -112,8 +127,11 @@ indicators:
       threshold_3: 7.0   # rischio esondazione (m) — non usato nel semaforo
     logic:
       green: "level_sir < threshold_1"
+      green_desc: "Livello Bisenzio nella norma"
       yellow: "level_sir >= threshold_1 AND level_sir < threshold_2"
+      yellow_desc: "Livello Bisenzio in aumento — monitora"
       red: "level_sir >= threshold_2"
+      red_desc: "Livello Bisenzio alto — possibile esondazione"
     notes: >
       Soglie statiche da config (stazione TOS01004791 — S. Piero a Ponti,
       Bisenzio, 1.8km da casa_campi). threshold_3=7.0m (esondazione) non usato
@@ -131,8 +149,11 @@ indicators:
       # alpha = 1/4 = 0.25 → soglia: > 25% prob pioggia = "non annaffiare"
     logic:
       green: "P(precip > 3mm) > 0.50"    # pioggia quasi certa → non serve
+      green_desc: "Pioggia in arrivo — non annaffiare"
       yellow: "P(precip > 3mm) >= 0.25 AND P(precip > 3mm) <= 0.50"
+      yellow_desc: "Pioggia incerta — annaffia solo le piante più sensibili"
       red: "P(precip > 3mm) < 0.25"      # poca pioggia attesa → annaffia
+      red_desc: "Poca pioggia prevista — annaffia oggi"
     notes: >
       Logica invertita rispetto ad altri indicatori: rosso = azione richiesta (annaffia),
       verde = nessuna azione (pioggia in arrivo). Soglia 3mm: quantità minima utile
