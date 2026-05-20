@@ -21,16 +21,6 @@ const INDICATOR_META = {
   annaffia: { label: 'Annaffia',  icon: '💧' },
 };
 
-const MODEL_COLORS = {
-  guazza:        '#f97316',
-  ecmwf_ifs025:  '#3b82f6',
-  icon_eu:       '#10b981',
-  icon_d2:       '#06b6d4',
-  gfs025:        '#8b5cf6',
-  arome_france:  '#f43f5e',
-  icon_2i:       '#eab308',
-};
-
 const VERDICT_CLS = {
   verde:  { ind: 'ind-verde',  dot: 'bg-success' },
   giallo: { ind: 'ind-giallo', dot: 'bg-warning' },
@@ -69,12 +59,12 @@ function weatherIconFromCurrent(current) {
   return '☀️';
 }
 
-let currentData         = null;
-let selectedDayIdx      = 0;
-let selectedModel       = 'guazza';
-let selectedMultiDayVar = 'tmax_c';
-let meteoChart          = null;
-let multiDayChart       = null;
+let currentData          = null;
+let selectedDayIdx       = 0;
+let selectedModel        = 'guazza';
+let selectedWeeklyModel  = 'guazza';
+let meteoChart           = null;
+let multiDayChart        = null;
 
 // ── Dark mode ─────────────────────────────────────────────────────────────────
 
@@ -721,128 +711,123 @@ function updateChartModel(data, model, targetDate) {
   meteoChart.update();
 }
 
-// ── Multi-day comparison chart ────────────────────────────────────────────────
+// ── Weekly combined chart ─────────────────────────────────────────────────────
 
-function buildMultiDayData(data) {
-  const dates = data.days.map(d => d.target_date);
-  const avg = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
-  const models = [];
-
-  const guazzaWind = data.days.map(d => {
-    const vals = (d.hourly || []).filter(h => h.wind_speed_ms != null).map(h => h.wind_speed_ms * 3.6);
-    return avg(vals);
-  });
-  const guazzaHum = data.days.map(d => {
-    const vals = (d.hourly || []).filter(h => h.humidity_pct != null).map(h => h.humidity_pct);
-    return avg(vals);
-  });
-  models.push({
-    source: 'guazza', label: '★ Guazza ML', color: MODEL_COLORS.guazza,
-    tmax_c:       data.days.map(d => d.forecasts?.tmax_c?.p50 ?? null),
-    precip_mm:    data.days.map(d => d.forecasts?.precip_mm?.p50 ?? null),
-    wind_kmh:     guazzaWind,
-    humidity_pct: guazzaHum,
-  });
-
-  (data.nwp_models_hourly || []).forEach(mdl => {
-    const wind = dates.map(date => {
-      const pts = (mdl.data || []).filter(pt => pt.ts.startsWith(date) && pt.wind_speed_ms != null);
-      return avg(pts.map(p => p.wind_speed_ms * 3.6));
+function buildWeeklyPoints(data, model) {
+  if (model === 'guazza') {
+    const points = [];
+    data.days.forEach(day => {
+      const [y, m, d] = day.target_date.split('-').map(Number);
+      (day.hourly || []).forEach(h => {
+        points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0),
+                      temp_c: h.temp_c, humidity_pct: h.humidity_pct,
+                      precip_mm: h.precip_mm, precip_prob: h.precip_prob,
+                      wind_speed_ms: h.wind_speed_ms });
+      });
     });
-    const hum = dates.map(date => {
-      const pts = (mdl.data || []).filter(pt => pt.ts.startsWith(date) && pt.humidity_pct != null);
-      return avg(pts.map(p => p.humidity_pct));
-    });
-    models.push({
-      source: mdl.source, label: mdl.label, color: MODEL_COLORS[mdl.source] ?? '#94a3b8',
-      tmax_c:       data.days.map(d => (d.nwp_comparison || []).find(c => c.source === mdl.source)?.tmax_c ?? null),
-      precip_mm:    data.days.map(d => (d.nwp_comparison || []).find(c => c.source === mdl.source)?.precip_mm ?? null),
-      wind_kmh:     wind,
-      humidity_pct: hum,
-    });
-  });
-
-  return { dates, models };
+    return points.sort((a, b) => a.ts - b.ts);
+  }
+  const modelData = (data.nwp_models_hourly || []).find(mdl => mdl.source === model);
+  return (modelData?.data || []).map(pt => ({
+    ts: new Date(pt.ts.replace('Z', '')),
+    temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
+    precip_mm: pt.precip_mm, precip_prob: null,
+    wind_speed_ms: pt.wind_speed_ms,
+  })).sort((a, b) => a.ts - b.ts);
 }
 
-function renderMultiDayVarSelector(selectedVar) {
-  const vars = [
-    { id: 'tmax_c',       label: 'Temperatura' },
-    { id: 'precip_mm',    label: 'Precipitazioni' },
-    { id: 'wind_kmh',     label: 'Vento' },
-    { id: 'humidity_pct', label: 'Umidità' },
-  ];
-  return `<div class="flex gap-1 flex-wrap" id="multiday-var-switch">
-    ${vars.map(v => `<button class="btn btn-xs ${v.id === selectedVar ? 'btn-primary' : 'btn-outline'}" data-var="${v.id}">${v.label}</button>`).join('')}
+function renderWeeklyModelSwitch(data, model) {
+  const models = [{ source: 'guazza', label: '★ Guazza ML' }];
+  (data.nwp_models_hourly || []).forEach(m => models.push({ source: m.source, label: m.label }));
+  return `<div class="flex gap-1 flex-wrap" id="weekly-model-switch">
+    ${models.map(m => `<button class="btn btn-xs ${m.source === model ? 'btn-primary' : 'btn-outline'}" data-src="${m.source}">${m.label}</button>`).join('')}
   </div>`;
 }
 
-function initMultiDayChart(data, variable) {
+function initWeeklyChart(data, model) {
   const canvas = document.getElementById('multiday-chart');
   if (!canvas) return;
   if (multiDayChart) { multiDayChart.destroy(); multiDayChart = null; }
+  if (!data.days.length) return;
 
-  const { dates, models } = buildMultiDayData(data);
+  const first = data.days[0].target_date.split('-').map(Number);
+  const last  = data.days[data.days.length - 1].target_date.split('-').map(Number);
+  const xMin  = new Date(first[0], first[1] - 1, first[2], 0, 0, 0);
+  const xMax  = new Date(last[0],  last[1] - 1,  last[2],  23, 0, 0);
+
+  const points = buildWeeklyPoints(data, model);
   const p = chartPalette();
+  const { data: precipData, bg: precipBg } = precipDatasets(points);
 
-  const labels = dates.map(d => {
-    const [, mo, dd] = d.split('-');
-    return `${parseInt(dd)}/${parseInt(mo)}`;
-  });
-
-  const varCfg = {
-    tmax_c:       { suffix: '°',    yMin: null, yMax: null, pad: 2 },
-    precip_mm:    { suffix: ' mm',  yMin: 0,    yMax: null, pad: 1 },
-    wind_kmh:     { suffix: ' km/h',yMin: 0,    yMax: null, pad: 0 },
-    humidity_pct: { suffix: '%',    yMin: 0,    yMax: 100,  pad: 0 },
-  };
-  const cfg = varCfg[variable];
-
-  const allVals = models.flatMap(m => m[variable] || []).filter(v => v != null);
-  const yMin = cfg.yMin ?? (allVals.length ? Math.floor(Math.min(...allVals) - cfg.pad) : 0);
-  const yMax = cfg.yMax ?? (allVals.length ? Math.ceil(Math.max(...allVals) + cfg.pad) : 10);
-
-  const datasets = models.map(m => ({
-    label: m.label,
-    data: (m[variable] || []).map((v, i) => ({ x: labels[i], y: v })),
-    borderColor: m.color,
-    backgroundColor: m.color + '22',
-    borderWidth: m.source === 'guazza' ? 2.5 : 1.5,
-    pointRadius: 3,
-    pointHoverRadius: 5,
-    tension: 0.3,
-    fill: false,
-  }));
-
-  multiDayChart = new Chart(canvas.getContext('2d'), {
-    type: 'line',
-    data: { labels, datasets },
+  multiDayChart = new Chart(canvas.getContext('2d'), { plugins: [crosshairPlugin],
+    data: {
+      datasets: [
+        { type: 'line', label: 'Temperatura (°C)',
+          data: points.filter(pt => pt.temp_c != null).map(pt => ({ x: pt.ts, y: pt.temp_c })),
+          borderColor: p.temp, backgroundColor: 'transparent',
+          borderWidth: 2, pointRadius: 0, yAxisID: 'yTemp', tension: 0.3, order: 1 },
+        { type: 'line', label: 'Umidità (%)',
+          data: points.filter(pt => pt.humidity_pct != null).map(pt => ({ x: pt.ts, y: pt.humidity_pct })),
+          borderColor: p.hum, backgroundColor: 'transparent',
+          borderWidth: 1.5, borderDash: [4, 3], pointRadius: 0, yAxisID: 'yHum', tension: 0.3, order: 2 },
+        { type: 'bar', label: 'Precipitazioni (mm)',
+          data: precipData, backgroundColor: precipBg,
+          yAxisID: 'yTemp', barPercentage: 0.9, categoryPercentage: 1.0, order: 3 },
+        { type: 'line', label: 'Vento (km/h)',
+          data: points.filter(pt => pt.wind_speed_ms != null)
+                      .map(pt => ({ x: pt.ts, y: pt.wind_speed_ms * 3.6 })),
+          borderColor: p.wind, backgroundColor: 'transparent',
+          borderWidth: 1.5, borderDash: [2, 2], pointRadius: 0, yAxisID: 'yWind', tension: 0.3, order: 4 },
+      ],
+    },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false,
+      hover: { mode: 'index', intersect: false },
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: true, position: 'bottom',
-          labels: { color: p.label, boxWidth: 12, font: { size: 9 } } },
+        legend: { display: false },
         tooltip: {
           callbacks: {
+            title: items => new Date(items[0].raw.x).toLocaleString('it-IT', {
+              weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+            }),
             label: item => {
-              const v = item.raw.y;
-              return ` ${item.dataset.label}: ${v != null ? v.toFixed(1) + cfg.suffix : 'n/d'}`;
+              if (item.datasetIndex === 0) return ` ${item.raw.y.toFixed(1)}°C`;
+              if (item.datasetIndex === 1) return ` Umidità: ${item.raw.y.toFixed(0)}%`;
+              if (item.datasetIndex === 2 && item.raw.y > 0.05) return ` Precip: ${item.raw.y.toFixed(1)} mm`;
+              if (item.datasetIndex === 3) return ` Vento: ${item.raw.y.toFixed(0)} km/h`;
+              return null;
             },
           },
         },
       },
       scales: {
-        x: { grid: { color: p.grid }, ticks: { color: p.label, font: { size: 9 } } },
-        y: {
-          min: yMin, max: yMax,
-          grid: { color: p.grid },
-          ticks: { color: p.label, font: { size: 9 }, callback: v => `${v}${cfg.suffix}` },
-        },
+        x: { type: 'time', min: xMin, max: xMax,
+             time: { unit: 'day', displayFormats: { day: 'dd/MM' } },
+             grid: { color: p.grid },
+             ticks: { color: p.label, font: { size: 9 } } },
+        yTemp: { position: 'left', grid: { color: p.grid },
+                 ticks: { color: p.temp, callback: v => `${v}°`, font: { size: 9 } } },
+        yHum:  { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false },
+                 ticks: { color: p.hum, callback: v => `${v}%`, font: { size: 9 } } },
+        yWind: { position: 'right', min: 0, grid: { drawOnChartArea: false },
+                 ticks: { color: p.wind, callback: v => `${v}`, font: { size: 9 } }, display: true },
       },
     },
   });
+}
+
+function updateWeeklyChart(data, model) {
+  if (!multiDayChart) { initWeeklyChart(data, model); return; }
+  const points = buildWeeklyPoints(data, model);
+  const { data: precipData, bg: precipBg } = precipDatasets(points);
+  multiDayChart.data.datasets[0].data = points.filter(pt => pt.temp_c != null).map(pt => ({ x: pt.ts, y: pt.temp_c }));
+  multiDayChart.data.datasets[1].data = points.filter(pt => pt.humidity_pct != null).map(pt => ({ x: pt.ts, y: pt.humidity_pct }));
+  multiDayChart.data.datasets[2].data = precipData;
+  multiDayChart.data.datasets[2].backgroundColor = precipBg;
+  multiDayChart.data.datasets[3].data = points.filter(pt => pt.wind_speed_ms != null)
+                                               .map(pt => ({ x: pt.ts, y: pt.wind_speed_ms * 3.6 }));
+  multiDayChart.update();
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -890,13 +875,19 @@ function render(container, data) {
     <section class="card card-bordered bg-base-100 shadow-sm mb-4">
       <div class="card-body p-4">
         <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
-          <h3 class="text-sm text-base-content/60 font-medium">Confronto settimanale modelli</h3>
-          ${renderMultiDayVarSelector(selectedMultiDayVar)}
+          <h3 class="text-sm text-base-content/60 font-medium">Tendenza settimanale</h3>
+          ${renderWeeklyModelSwitch(data, selectedWeeklyModel)}
         </div>
         <div class="combined-chart-wrap">
           <div id="multiday-chart-container" class="relative" style="height:260px;min-width:700px">
             <canvas id="multiday-chart"></canvas>
           </div>
+        </div>
+        <div class="flex gap-5 mt-2 text-xs text-base-content/50 flex-wrap">
+          <span style="color:#f97316">— Temperatura</span>
+          <span style="color:#3b82f6">‐ ‐ Umidità</span>
+          <span style="color:rgba(59,130,246,0.6)">▪ Precipitazioni</span>
+          <span style="color:#10b981">‥ Vento km/h</span>
         </div>
       </div>
     </section>
@@ -910,7 +901,7 @@ function render(container, data) {
   container.classList.add('anim-fade-in');
 
   if (targetDate) initChart(data, selectedModel, targetDate);
-  initMultiDayChart(data, selectedMultiDayVar);
+  initWeeklyChart(data, selectedWeeklyModel);
 
   container.querySelectorAll('[data-idx]').forEach(card => {
     card.addEventListener('click', () => {
@@ -934,13 +925,13 @@ function render(container, data) {
     });
   });
 
-  document.getElementById('multiday-var-switch')?.querySelectorAll('[data-var]').forEach(btn => {
+  document.getElementById('weekly-model-switch')?.querySelectorAll('[data-src]').forEach(btn => {
     btn.addEventListener('click', () => {
-      selectedMultiDayVar = btn.dataset.var;
-      document.getElementById('multiday-var-switch')?.querySelectorAll('[data-var]').forEach(b => {
-        b.className = `btn btn-xs ${b.dataset.var === selectedMultiDayVar ? 'btn-primary' : 'btn-outline'}`;
+      selectedWeeklyModel = btn.dataset.src;
+      document.getElementById('weekly-model-switch')?.querySelectorAll('[data-src]').forEach(b => {
+        b.className = `btn btn-xs ${b.dataset.src === selectedWeeklyModel ? 'btn-primary' : 'btn-outline'}`;
       });
-      initMultiDayChart(data, selectedMultiDayVar);
+      updateWeeklyChart(data, selectedWeeklyModel);
     });
   });
 }
