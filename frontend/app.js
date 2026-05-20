@@ -19,7 +19,6 @@ const INDICATOR_META = {
   nebbia:   { label: 'Nebbia',    icon: '🌫️' },
   bisenzio: { label: 'Bisenzio',  icon: '🌊' },
   annaffia: { label: 'Annaffia',  icon: '💧' },
-  clima:    { label: 'Clima',     icon: '☀️' },
 };
 
 const VERDICT_CLS = {

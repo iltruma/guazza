@@ -138,24 +138,6 @@ indicators:
       verde = nessuna azione (pioggia in arrivo). Soglia 3mm: quantità minima utile
       per irrigazione naturale. Rilevante in estate (giugno-settembre).
 
-  clima:
-    label: "Com'è il tempo oggi?"
-    icon: "sun"
-    horizon_h: 12
-    costs:
-      fn: 2   # sottostimo il disagio → mi vesto male / esco impreparato
-      fp: 2   # sovrastimo il disagio → mi vesto pesante / resto in casa inutilmente
-      # alpha = 2/4 = 0.50 → soglia simmetrica, nessuna preferenza
-    logic:
-      green: "P(precip > 0.2mm) < 0.15 AND T2m_p50 > 12 AND T2m_p50 < 30 AND P(wind > 40kmh) < 0.10"
-      yellow: "P(precip > 0.2mm) >= 0.15 AND P(precip > 0.2mm) <= 0.50 OR T2m_p50 <= 12 OR T2m_p50 >= 30"
-      red: "P(precip > 0.2mm) > 0.50 OR T2m_p50 < 5 OR T2m_p50 > 35"
-    notes: >
-      Indicatore di comfort generale: sintetizza temperatura, precipitazione e vento.
-      T2m_p50 = mediana temperatura 2m. Soglie comfort: [12-30°C] = verde.
-      Costi simmetrici: nessun bias verso conservativo/ottimista.
-      DA CALIBRARE sulle preferenze personali (soglie freddo/caldo).
-
 # ── Configurazione globale DLE ───────────────────────────────────────────────
 dle_config:
   # Produce un log entry in indicator_log per ogni invocazione
