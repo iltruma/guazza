@@ -893,16 +893,20 @@ def _make_locations_response(station_id: int, distance_m: float, sensors: list[d
     }
 
 
-def _make_latest_response(measurements: list[tuple[str, float, str]]) -> dict[str, Any]:
-    """measurements: lista di (param_name, value, units)."""
+def _make_latest_response(measurements: list[tuple[int, float]]) -> dict[str, Any]:
+    """measurements: lista di (sensor_id, value).
+
+    /locations/{id}/latest restituisce 'sensorsId' (int), non 'parameter'.
+    Il mapping sensor_id -> param viene dalla discovery.
+    """
     return {
         "results": [
             {
-                "parameter": {"name": p, "units": u},
+                "sensorsId": sid,
                 "value": v,
                 "datetime": {"utc": "2026-05-15T15:00:00Z"},
             }
-            for p, v, u in measurements
+            for sid, v in measurements
         ]
     }
 
@@ -918,7 +922,7 @@ def test_openaq_latest_single_station() -> None:
             {"id": 1002, "parameter": {"name": "o3",  "units": "ug/m3"}},
         ],
     )
-    latest_resp = _make_latest_response([("no2", 25.3, "ug/m3"), ("o3", 48.7, "ug/m3")])
+    latest_resp = _make_latest_response([(1001, 25.3), (1002, 48.7)])
 
     with _patch_openaq_json([loc_resp, latest_resp]):
         records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
@@ -926,12 +930,16 @@ def test_openaq_latest_single_station() -> None:
     assert len(records) == 1
     r = records[0]
     assert r["source"] == "openaq"
-    assert r["station_id"] == "openaq_225873"
+    assert r["station_id"] == f"openaq_225873_{_LOC_ID}"
     assert r["location_id"] == _LOC_ID
     assert r["granularity"] == "hourly"
     assert r["no2_ugm3"] == pytest.approx(25.3)
     assert r["o3_ugm3"] == pytest.approx(48.7)
-    assert r["ts"] == datetime(2026, 5, 15, 15, 0, tzinfo=UTC)
+    # ts è convertito da UTC a ora locale naive (Europe/Rome)
+    import zoneinfo
+    _ROME = zoneinfo.ZoneInfo("Europe/Rome")
+    expected_ts = datetime(2026, 5, 15, 15, 0, tzinfo=UTC).astimezone(_ROME).replace(tzinfo=None)
+    assert r["ts"] == expected_ts
 
 
 def test_openaq_latest_co_conversion_ug_to_mg() -> None:
@@ -940,7 +948,7 @@ def test_openaq_latest_co_conversion_ug_to_mg() -> None:
         station_id=1, distance_m=1000.0,
         sensors=[{"id": 99, "parameter": {"name": "co", "units": "ug/m3"}}],
     )
-    latest_resp = _make_latest_response([("co", 500.0, "ug/m3")])
+    latest_resp = _make_latest_response([(99, 500.0)])
 
     with _patch_openaq_json([loc_resp, latest_resp]):
         records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
@@ -955,7 +963,7 @@ def test_openaq_latest_co_already_mg() -> None:
         station_id=2, distance_m=500.0,
         sensors=[{"id": 88, "parameter": {"name": "co", "units": "mg/m3"}}],
     )
-    latest_resp = _make_latest_response([("co", 0.8, "mg/m3")])
+    latest_resp = _make_latest_response([(88, 0.8)])
 
     with _patch_openaq_json([loc_resp, latest_resp]):
         records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
@@ -969,7 +977,7 @@ def test_openaq_latest_weight_from_distance() -> None:
         station_id=10, distance_m=9000.0,
         sensors=[{"id": 50, "parameter": {"name": "no2", "units": "ug/m3"}}],
     )
-    latest_resp = _make_latest_response([("no2", 15.0, "ug/m3")])
+    latest_resp = _make_latest_response([(50, 15.0)])
 
     with _patch_openaq_json([loc_resp, latest_resp]):
         records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
@@ -986,7 +994,7 @@ def test_openaq_latest_unknown_param_ignored() -> None:
             {"id": 61, "parameter": {"name": "pm10", "units": "ug/m3"}},
         ],
     )
-    latest_resp = _make_latest_response([("temperature", 22.0, "C"), ("pm10", 30.0, "ug/m3")])
+    latest_resp = _make_latest_response([(60, 22.0), (61, 30.0)])
 
     with _patch_openaq_json([loc_resp, latest_resp]):
         records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
@@ -1051,10 +1059,15 @@ def test_openaq_range_single_sensor_single_page() -> None:
     assert len(records) == 2
     assert all(r["source"] == "openaq" for r in records)
     assert all(r["granularity"] == "hourly" for r in records)
-    assert all(r["station_id"] == "openaq_300" for r in records)
+    assert all(r["station_id"] == f"openaq_300_{_LOC_ID}" for r in records)
+    # ts convertito da UTC a ora locale naive (Europe/Rome): 10Z→12CEST, 11Z→13CEST
+    import zoneinfo
+    _ROME = zoneinfo.ZoneInfo("Europe/Rome")
+    def _local_hour(utc_hour: int) -> int:
+        return datetime(2026, 5, 13, utc_hour, 0, tzinfo=UTC).astimezone(_ROME).hour
     no2_vals = {r["ts"].hour: r["no2_ugm3"] for r in records}
-    assert no2_vals[10] == pytest.approx(20.0)
-    assert no2_vals[11] == pytest.approx(22.0)
+    assert no2_vals[_local_hour(10)] == pytest.approx(20.0)
+    assert no2_vals[_local_hour(11)] == pytest.approx(22.0)
 
 
 def test_openaq_range_co_conversion() -> None:

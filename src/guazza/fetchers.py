@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import time
+import zoneinfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -1492,6 +1493,17 @@ _OPENAQ_PARAM_MAP: dict[str, tuple[str, float]] = {
 
 # CO da alcune reti italiane è già in mg/m³ — riconosciamo l'unità e non scaliamo
 _CO_MG_UNITS = {"mg/m³", "mg/m3"}
+_ITALY_TZ = zoneinfo.ZoneInfo("Europe/Rome")
+
+
+def _utc_to_local_naive(dt: datetime) -> datetime:
+    """Converte datetime UTC-aware in naive ora locale (Europe/Rome).
+
+    Coerente con i timestamp SIR, che vengono salvati come naive CEST/CET.
+    Questo evita disallineamenti nei confronti con CURRENT_TIMESTAMP di DuckDB,
+    che usa il timezone locale della macchina.
+    """
+    return dt.astimezone(_ITALY_TZ).replace(tzinfo=None)
 
 
 @retry(
@@ -1552,7 +1564,19 @@ def fetch_openaq_latest(
         _log_scrape(f"openaq_latest:{location_id}", "fail", detail=str(e))
         return []
 
-    now_utc = datetime.now(tz=UTC).replace(minute=0, second=0, microsecond=0)
+    # /locations/{id}/latest non include il campo 'parameter' nei risultati —
+    # solo 'sensorsId'. Costruiamo il mapping sensor_id → (param, units) dalla
+    # discovery, che include l'array 'sensors' con metadati completi.
+    sensor_meta: dict[int, tuple[str, str]] = {}
+    for station in stations:
+        for sensor in station.get("sensors", []):
+            sid = int(sensor["id"])
+            param = (sensor.get("parameter") or {}).get("name", "").lower()
+            units = (sensor.get("parameter") or {}).get("units", "")
+            if param in _OPENAQ_PARAM_MAP:
+                sensor_meta[sid] = (param, units)
+
+    now_local = _utc_to_local_naive(datetime.now(tz=UTC)).replace(minute=0, second=0, microsecond=0)
     records: list[dict[str, Any]] = []
 
     for station in stations:
@@ -1572,31 +1596,31 @@ def fetch_openaq_latest(
 
         rec: dict[str, Any] = {
             "source": "openaq",
-            "station_id": f"openaq_{openaq_id}",
+            "station_id": f"openaq_{openaq_id}_{location_id}",
             "location_id": location_id,
-            "ts": now_utc,
+            "ts": now_local,
             "granularity": "hourly",
             "weight": round(1.0 / (1.0 + distance_km), 4),
             "qc_pass": True,
         }
         has_data = False
         for r in results:
-            param = (r.get("parameter") or {}).get("name", "").lower()
-            if param not in _OPENAQ_PARAM_MAP:
+            sensor_id = int(r.get("sensorsId") or 0)
+            if sensor_id not in sensor_meta:
                 continue
+            param, units = sensor_meta[sensor_id]
             col, _ = _OPENAQ_PARAM_MAP[param]
             value = r.get("value")
-            units = (r.get("parameter") or {}).get("units", "")
             if value is None:
                 continue
             rec[col] = _openaq_convert(float(value), param, units)
             has_data = True
-            # aggiorna ts dalla misura più recente
+            # aggiorna ts dalla misura più recente, convertito in ora locale naive
             ts_str = ((r.get("datetime") or {}).get("utc") or "")
             if ts_str:
                 try:
                     parsed = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                    rec["ts"] = parsed.replace(minute=0, second=0, microsecond=0)
+                    rec["ts"] = _utc_to_local_naive(parsed).replace(minute=0, second=0, microsecond=0)
                 except ValueError:
                     pass
 
@@ -1669,15 +1693,15 @@ def _fetch_openaq_station_range(
             if not ts_str or value is None:
                 continue
             try:
-                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                ts = ts.replace(minute=0, second=0, microsecond=0)
+                parsed = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                ts = _utc_to_local_naive(parsed).replace(minute=0, second=0, microsecond=0)
             except ValueError:
                 continue
 
             if ts not in by_ts:
                 by_ts[ts] = {
                     "source": "openaq",
-                    "station_id": f"openaq_{openaq_id}",
+                    "station_id": f"openaq_{openaq_id}_{location_id}",
                     "location_id": location_id,
                     "ts": ts,
                     "granularity": "hourly",
