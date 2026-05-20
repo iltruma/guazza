@@ -102,30 +102,27 @@ sources:
 
   # ── Qualità aria ─────────────────────────────────────────────────────────
 
-  arpat:
-    label: "ARPAT Toscana — qualità aria"
+  openaq:
+    label: "OpenAQ v3 — qualità aria (aggregatore multi-provider)"
+    base_url: "https://api.openaq.org/v3"
     endpoints:
-      nrt:        "https://api.arpat.toscana.it/app/air/nrt/valori_last"
-      bollettini: "https://api.arpat.toscana.it/app/air/bollettini/dati"
+      locations:    "/locations?coordinates={lat},{lon}&radius={radius_m}"
+      latest:       "/locations/{id}/latest"
+      measurements: "/sensors/{sensor_id}/measurements"
     status: OK
-    auth: none
+    auth: "X-API-Key header (env OPENAQ_API_KEY)"
     format: JSON
-    update_freq:
-      nrt:        "oraria"
-      bollettini: "giornaliera"
-    stations_mapped:
-      casa_campi:    [FI-SIGNA]
-      lavoro_cosimo: [FI-SCANDICCI]
-      lavoro_madda:  [PO-ROMA, PO-FERRUCCI]   # pesi: 0.7 / 0.3
-      casa_cesto:    [FI-FIGLINE, AR-ENELSB-SANGIOVANNI]   # pesi: 0.8 / 0.2
-      casa_nicco:    [FI-MOSSE, FI-BOBOLI, FI-GRAMSCI, FI-LAVAGNINI]   # pesi: 0.50 / 0.30 / 0.15 / 0.05
-    variables_nrt:        [NO2, O3, CO, BENZENE, SO2]
-    variables_bollettini: [PM10, PM2.5, NO2, O3, CO, BENZENE, SO2]
+    update_freq: "oraria (discovery dinamica per coordinate)"
+    provider_upstream: "ARPAT Toscana (tra gli altri)"
+    variables: [pm10, pm25, no2, o3, co, so2, benzene]
     notes: >
-      Endpoint bollettini: ?startdate=YYYY-MM-DD&enddate=YYYY-MM-DD&stazione=<id>&limit=1000.
-      Endpoint trovati via analisi HAR (2026-05-13). Coordinate stazioni non esposte
-      (metadata-catalog → 401). arpat_zone per casa_campi = agglomerato_firenze.
-      Stazioni: 10 totali mappate con pesi per location (vedi config/locations.yaml).
+      Sostituisce endpoint ARPAT diretti dal 2026-05-20.
+      Discovery stazioni per lat/lon di ogni location (radius default 15km) —
+      nessuna lista statica di station_id necessaria.
+      station_id nel DB: "openaq_{id}" (intero OpenAQ).
+      CO: convertito da µg/m³ (OpenAQ) a mg/m³ (schema observations).
+      Granularità: solo 'hourly' — niente bollettini giornalieri.
+      Backfill storico: /sensors/{id}/measurements con paginazione.
 
   # ── Radar precipitazioni (frontend only) ────────────────────────────────
 
