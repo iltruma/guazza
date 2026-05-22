@@ -44,9 +44,8 @@ from guazza._logging import setup_logging  # noqa: E402
 from guazza.fetchers import (  # noqa: E402
     _OM_MODELS,
     _log_scrape,
+    fetch_arpat_all_locations,
     fetch_netatmo_all_locations,
-    fetch_openaq_all_locations,
-    fetch_openaq_measurements_range,
     fetch_openmeteo_all_locations,
     fetch_openmeteo_historical_batch,
     fetch_sir_bulk_realtime,
@@ -273,17 +272,17 @@ def cmd_historical(
     config_dir: str = _CFG_OPT,
     start_date: str = typer.Option("2022-01-01", "--start-date", help="Inizio intervallo YYYY-MM-DD"),
     end_date: str = typer.Option("", "--end-date", help="Fine intervallo YYYY-MM-DD (default: oggi)"),
-    only_sir: bool = typer.Option(False, "--only-sir", help="Scarica solo SIR CSV, salta Open-Meteo e OpenAQ"),
-    only_openmeteo: bool = typer.Option(False, "--only-openmeteo", help="Scarica solo Open-Meteo, salta SIR e OpenAQ"),
-    only_openaq: bool = typer.Option(False, "--only-openaq", help="Scarica solo OpenAQ storico, salta SIR e Open-Meteo"),
+    only_sir: bool = typer.Option(False, "--only-sir", help="Scarica solo SIR CSV, salta Open-Meteo"),
+    only_openmeteo: bool = typer.Option(False, "--only-openmeteo", help="Scarica solo Open-Meteo, salta SIR"),
     location: list[str] | None = typer.Option(None, "--location", help="Limita a questa location (ripetibile)"),
     om_model: list[str] | None = typer.Option(None, "--om-model", help="Limita Open-Meteo a questo modello (ripetibile). Es: --om-model italia_meteo_arpae_icon_2i"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Stampa cosa farebbe senza scrivere"),
 ) -> None:
-    """Backfill completo: SIR CSV + Open-Meteo historical + OpenAQ storico (one-shot, lento).
+    """Backfill completo: SIR CSV + Open-Meteo historical (one-shot, lento).
 
     Da eseguire una volta sola per caricare lo storico di training.
     Non schedulare come cron — usa 'daily' per il delta incrementale.
+    La qualità aria (ARPAT NRT) non ha storico scaricabile — usa 'realtime'.
 
     Esempi:
         # Solo Open-Meteo per una location
@@ -292,16 +291,13 @@ def cmd_historical(
         # Solo SIR, intervallo ridotto
         historical --only-sir --start-date 2024-01-01
 
-        # Solo OpenAQ qualità aria storica
-        historical --only-openaq --start-date 2022-01-01
-
         # Tutte le sorgenti, tutte le location
         historical --start-date 2022-01-01
     """
     _setup_logging()
-    exclusive = sum([only_sir, only_openmeteo, only_openaq])
+    exclusive = sum([only_sir, only_openmeteo])
     if exclusive > 1:
-        typer.echo("Errore: --only-sir, --only-openmeteo, --only-openaq sono mutualmente esclusivi.")
+        typer.echo("Errore: --only-sir e --only-openmeteo sono mutualmente esclusivi.")
         raise typer.Exit(1)
     if om_model:
         unknown_models = set(om_model) - set(_OM_MODELS)
@@ -326,16 +322,14 @@ def cmd_historical(
     else:
         locations = locations_all
 
-    run_sir = not only_openmeteo and not only_openaq
-    run_om = not only_sir and not only_openaq
-    run_openaq = not only_sir and not only_openmeteo
+    run_sir = not only_openmeteo
+    run_om = not only_sir
 
     typer.echo(f"Historical backfill: {start_date} → {end_date}")
     typer.echo(f"Location: {list(locations.keys())}")
     sorgenti = " ".join(filter(None, [
         "SIR" if run_sir else "",
         "Open-Meteo" if run_om else "",
-        "OpenAQ" if run_openaq else "",
     ]))
     typer.echo(f"Sorgenti: {sorgenti}")
     if run_sir:
@@ -350,7 +344,6 @@ def cmd_historical(
     ok = True
     sir_total = 0
     om_total = 0
-    aq_total = 0
 
     try:
         with DuckDBClient(db_path=db_path) as db:
@@ -384,22 +377,6 @@ def cmd_historical(
                             om_total += db.upsert_forecasts(records)
                 typer.echo(f"Open-Meteo historical: {om_total} record inseriti")
 
-            if run_openaq:
-                typer.echo("\n--- OpenAQ storico ---")
-                for loc_id, loc in locations.items():
-                    if "aria_qualita" not in (loc.get("extras") or []):
-                        continue
-                    loc_records = fetch_openaq_measurements_range(
-                        location_id=loc_id,
-                        lat=loc["lat"],
-                        lon=loc["lon"],
-                        start_date=start_date,
-                        end_date=end_date,
-                    )
-                    if loc_records:
-                        aq_total += db.upsert_sir_observations(loc_records)
-                typer.echo(f"OpenAQ storico: {aq_total} record inseriti")
-
     except Exception as e:
         logger.error(f"historical fallito: {e}")
         _ping_healthchecks("/fail")
@@ -408,9 +385,9 @@ def cmd_historical(
 
     elapsed = time.monotonic() - t0
     _log_scrape("job_historical", "ok" if ok else "fail",
-                rows=sir_total + om_total + aq_total if ok else None)
+                rows=sir_total + om_total if ok else None)
     _ping_healthchecks()
-    typer.echo(f"\nCompletato in {elapsed:.0f}s — SIR:{sir_total} OM:{om_total} OpenAQ:{aq_total}")
+    typer.echo(f"\nCompletato in {elapsed:.0f}s — SIR:{sir_total} OM:{om_total}")
 
 
 @app.command("daily")
@@ -559,12 +536,12 @@ def cmd_realtime(
             netatmo_total = sum(len(v) for v in netatmo_results.values())
             logger.info(f"realtime Netatmo: {netatmo_total} stazioni totali")
 
-            # 3. OpenAQ latest — qualità aria oraria per tutte le location
-            aq_results = fetch_openaq_all_locations(locations, mode="latest")
+            # 3. ARPAT NRT — qualità aria oraria per tutte le location
+            aq_results = fetch_arpat_all_locations(locations)
             for _loc_id, records in aq_results.items():
                 if records:
                     aq_total += db.upsert_sir_observations(records)
-            logger.info(f"realtime OpenAQ: {aq_total} record")
+            logger.info(f"realtime ARPAT: {aq_total} record")
 
     except Exception as e:
         logger.error(f"realtime fallito: {e}")
@@ -578,7 +555,7 @@ def cmd_realtime(
     _ping_healthchecks()
     typer.echo(
         f"realtime completato in {elapsed:.0f}s — "
-        f"SIR:{sir_total} Netatmo:{netatmo_total} OpenAQ:{aq_total}"
+        f"SIR:{sir_total} Netatmo:{netatmo_total} ARPAT:{aq_total}"
     )
 
 

@@ -120,7 +120,7 @@ def _insert_range_precip_flags(db: DuckDBClient) -> None:
 
 
 def _insert_range_arpat_flags(db: DuckDBClient, col: str, flag_type: str, threshold: float) -> None:
-    """Flag range per inquinante qualità aria (OpenAQ): valore > threshold."""
+    """Flag range per inquinante qualità aria (ARPAT NRT): valore > threshold."""
     db.execute(f"""
         INSERT INTO quality_flags
             (source, station_id, ts, granularity, flag_type, column_name, value, detail)
@@ -130,6 +130,6 @@ def _insert_range_arpat_flags(db: DuckDBClient, col: str, flag_type: str, thresh
             {col},
             '{col}=' || ROUND({col}, 1)::VARCHAR || ' ug/m3'
         FROM observations
-        WHERE source = 'openaq'
+        WHERE source = 'arpat'
           AND {col} > {threshold}
     """)

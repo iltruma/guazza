@@ -326,7 +326,7 @@ def get_current_air_quality(
     db: DuckDBClient,
     location_id: str,
 ) -> dict[str, float | None] | None:
-    """Ultimi valori qualità aria OpenAQ per una location (finestra 3h, solo orario).
+    """Ultimi valori qualità aria ARPAT NRT per una location (finestra 3h, solo orario).
 
     Returns:
         {pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3, co_mgm3, benzene_ugm3, so2_ugm3}
@@ -343,7 +343,7 @@ def get_current_air_quality(
             ROUND(AVG(so2_ugm3)     FILTER (WHERE so2_ugm3     IS NOT NULL), 1) AS so2_ugm3
         FROM observations
         WHERE location_id = ?
-          AND source = 'openaq'
+          AND source = 'arpat'
           AND granularity = 'hourly'
           AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
     """, [location_id]).fetchone()
