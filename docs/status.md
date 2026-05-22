@@ -382,6 +382,23 @@ aperto, definito turno per turno: bug fix, raffinamenti UX, micro-feature.
 Criterio di uscita: tutto gira pulito in locale per ≥1 settimana senza
 interventi.
 
+#### Radar RainViewer (2026-05-22)
+
+- **Sezione radar** inserita tra condizioni attuali e previsioni giornaliere
+- **Leaflet 1.9.4** (CDN jsDelivr): mappa slippy con overlay tile RainViewer
+- **RainViewer public API**: `radar.past` (ultimi 7 frame, ~60min osservati) + `radar.nowcast`
+  (fino a 6 frame, +60min, solo se precipitazione attiva). Cache in-memory 5min.
+- **Animazione**: opacity-swap su N tile layer a 2fps; pausa di default; `document.hidden` check
+- **Basemap**: CARTO DarkMatter fisso (contrasto ottimale per colori radar)
+- **Marcatore location**: `L.circleMarker` colore DaisyUI primary `oklch(0.6569 0.196 275.75)`
+- **Timeline**: slider DaisyUI `range-primary`, posizione default = ultimo frame passato (ora corrente);
+  etichette dinamiche proporzionali al numero di frame disponibili
+- **Controlli**: zoom nativo Leaflet sostituito da `join-vertical` DaisyUI; play/pausa con SVG
+  inline (niente Unicode/emoji); barra controlli orizzontale play + slider + ora
+- **z-index**: pane/controlli Leaflet a `z-5` per non coprire header sticky (`z-10`)
+- **Stile dark**: override CSS per Leaflet attribution e zoom bar
+- **max zoom 7**: limite RainViewer (non Leaflet) — tile non disponibili a zoom 8+
+
 #### Raffinamenti frontend (2026-05-20 → 2026-05-22)
 
 - **Twemoji** (`twemoji@14.0.2`, jsDelivr): emoji Unicode renderizzate come SVG per

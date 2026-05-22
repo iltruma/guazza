@@ -30,6 +30,29 @@
 }
 .anim-fade-in { animation: guazza-fade-in 0.2s ease-out both; }
 
+/* Leaflet — z-index controls/panes default to 1000+ which covers the sticky header (z-10).
+   Force them below so the header stays on top when scrolling. */
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom { z-index: 5 !important; }
+
+/* Dark theme adjustments for Leaflet controls */
+[data-theme="dark"] .leaflet-control-attribution {
+  background: rgba(30, 41, 59, 0.85);
+  color: #94a3b8;
+}
+[data-theme="dark"] .leaflet-control-attribution a { color: #60a5fa; }
+[data-theme="dark"] .leaflet-bar a {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-color: #334155;
+}
+[data-theme="dark"] .leaflet-bar a:hover { background: #334155; }
+
+/* Placeholder background while tiles load */
+#radar-map { background: #e2e8f0; }
+[data-theme="dark"] #radar-map { background: #1e293b; }
+
 /* Twemoji — <img class="emoji"> injected by twemoji.parse().
    Without this, SVGs render at intrinsic size (~36px) ignoring Tailwind text-* classes.
    height/width in em → inherits font-size from parent; vertical-align matches native emoji baseline. */

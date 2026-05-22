@@ -71,6 +71,23 @@ let selectedWeeklyModel  = 'guazza';
 let meteoChart           = null;
 let multiDayChart        = null;
 
+// ── Radar state ───────────────────────────────────────────────────────────────
+let radarMap     = null;
+let radarLayers  = [];
+let radarFrames  = [];
+let radarIdx     = 0;
+let radarTimer   = null;
+let radarPlaying = false;
+let radarCache   = null;   // {host, frames, fetchedAt}
+
+const RV_API              = 'https://api.rainviewer.com/public/weather-maps.json';
+const RV_TTL_MS           = 5 * 60 * 1000;
+const RADAR_PAST_FRAMES   = 7;
+const RADAR_NOWCAST_FRAMES = 6;
+const RADAR_ZOOM          = 7;
+const PLAY_SVG  = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+const PAUSE_SVG = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+
 // ── Dark mode ─────────────────────────────────────────────────────────────────
 
 function initDarkMode() {
@@ -82,6 +99,8 @@ function initDarkMode() {
       if (meteoChart) { meteoChart.destroy(); meteoChart = null; }
       if (multiDayChart) { multiDayChart.destroy(); multiDayChart = null; }
       initChart(currentData, selectedModel);
+      destroyRadar();
+      initRadar(currentData.location_id);
     }
   });
   apply(mq.matches);
@@ -874,6 +893,196 @@ function updateWeeklyChart(data, model) {
   multiDayChart.update();
 }
 
+// ── Radar RainViewer ──────────────────────────────────────────────────────────
+
+function renderRadarSection() {
+  return `
+  <section class="card card-bordered bg-base-100 shadow-sm mb-4">
+    <div class="card-body p-4">
+      <h3 class="text-sm text-base-content/60 font-medium mb-2">🛰 Radar precipitazioni</h3>
+      <div class="relative">
+        <div id="radar-map" class="rounded-lg overflow-hidden" style="height:300px"></div>
+        <div class="absolute top-2 right-2 join join-vertical z-[6]" id="radar-zoom-btns">
+          <button class="join-item btn btn-xs btn-neutral opacity-90 hover:opacity-100 font-bold" id="radar-zoom-in" aria-label="Zoom in">+</button>
+          <button class="join-item btn btn-xs btn-neutral opacity-90 hover:opacity-100 font-bold" id="radar-zoom-out" aria-label="Zoom out">−</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 mt-3" id="radar-controls">
+        <button class="btn btn-sm btn-primary btn-circle flex-none" id="radar-play" aria-label="Play/Pausa">${PLAY_SVG}</button>
+        <input type="range" id="radar-slider" class="range range-xs range-primary flex-1" min="0" max="0" value="0" step="1">
+        <span class="text-xs tabular-nums text-base-content/60 w-[4.5rem] text-right shrink-0" id="radar-time">—</span>
+      </div>
+      <div class="relative text-[10px] text-base-content/40 mt-0.5 h-4" id="radar-range-labels" style="margin-left:calc(2rem + 0.75rem);margin-right:calc(4.5rem + 0.75rem)">
+        <span class="absolute left-0">−1h</span><span class="absolute left-1/2 -translate-x-1/2">ora</span><span class="absolute right-0">+1h</span>
+      </div>
+      <div id="radar-error" class="hidden alert alert-warning text-xs mt-2 py-2"></div>
+    </div>
+  </section>`;
+}
+
+function destroyRadar() {
+  if (radarTimer) { clearInterval(radarTimer); radarTimer = null; }
+  if (radarMap)   { radarMap.remove(); radarMap = null; }
+  radarLayers = [];
+  radarFrames = [];
+  radarIdx = 0;
+  radarPlaying = false;
+}
+
+async function fetchRadarFrames() {
+  const now = Date.now();
+  if (radarCache && (now - radarCache.fetchedAt) < RV_TTL_MS) return radarCache;
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 8000);
+  let r;
+  try {
+    r = await fetch(RV_API, { cache: 'no-store', signal: ctrl.signal });
+  } finally {
+    clearTimeout(to);
+  }
+  if (!r.ok) throw new Error(`RainViewer HTTP ${r.status}`);
+  const j = await r.json();
+  const past    = (j.radar?.past    ?? []).slice(-RADAR_PAST_FRAMES);
+  const nowcast = (j.radar?.nowcast ?? []).slice(0, RADAR_NOWCAST_FRAMES);
+  const frames  = [
+    ...past.map(f => ({ time: f.time, path: f.path, kind: 'past' })),
+    ...nowcast.map(f => ({ time: f.time, path: f.path, kind: 'nowcast' })),
+  ];
+  if (!frames.length) throw new Error('nessun frame disponibile');
+  radarCache = { host: j.host, frames, fetchedAt: now };
+  return radarCache;
+}
+
+function buildRadarLayers(host, frames) {
+  radarLayers = frames.map(f => {
+    const url = `${host}${f.path}/256/{z}/{x}/{y}/4/1_1.png`;
+    return L.tileLayer(url, { opacity: 0, tileSize: 256, zIndex: 5, minZoom: 0, maxZoom: 7, attribution: 'RainViewer' });
+  });
+  radarLayers.forEach(l => l.addTo(radarMap));
+}
+
+function showRadarFrame(i) {
+  const opacity = (f) => f.kind === 'nowcast' ? 0.55 : 0.7;
+  radarLayers.forEach((l, k) => l.setOpacity(k === i ? opacity(radarFrames[k]) : 0));
+  radarIdx = i;
+  updateRadarUi(i);
+}
+
+function updateRadarUi(i) {
+  const f = radarFrames[i];
+  if (!f) return;
+  const t = new Date(f.time * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  const lbl = f.kind === 'nowcast' ? `${t} (prev.)` : t;
+  const timeEl = document.getElementById('radar-time');
+  if (timeEl) timeEl.textContent = lbl;
+  const slider = document.getElementById('radar-slider');
+  if (slider) slider.value = String(i);
+}
+
+function startRadarAnimation() {
+  if (radarTimer) clearInterval(radarTimer);
+  radarTimer = setInterval(() => {
+    if (!radarPlaying || document.hidden) return;
+    showRadarFrame((radarIdx + 1) % radarFrames.length);
+  }, 500);
+}
+
+function wireRadarControls() {
+  const slider = document.getElementById('radar-slider');
+  const playBtn = document.getElementById('radar-play');
+  if (slider) {
+    slider.max = String(radarFrames.length - 1);
+    slider.addEventListener('input', () => {
+      radarPlaying = false;
+      if (playBtn) playBtn.innerHTML = PLAY_SVG;
+      showRadarFrame(parseInt(slider.value, 10));
+    });
+  }
+  if (playBtn) {
+    playBtn.addEventListener('click', () => {
+      radarPlaying = !radarPlaying;
+      playBtn.innerHTML = radarPlaying ? PAUSE_SVG : PLAY_SVG;
+    });
+  }
+
+  const zoomIn  = document.getElementById('radar-zoom-in');
+  const zoomOut = document.getElementById('radar-zoom-out');
+  if (zoomIn)  zoomIn.addEventListener('click',  () => radarMap?.zoomIn());
+  if (zoomOut) zoomOut.addEventListener('click', () => radarMap?.zoomOut());
+
+  const labelsEl = document.getElementById('radar-range-labels');
+  if (labelsEl && radarFrames.length > 0) {
+    const pastCount    = radarFrames.filter(f => f.kind === 'past').length;
+    const nowcastCount = radarFrames.filter(f => f.kind === 'nowcast').length;
+    const total        = radarFrames.length;
+    const nowPct       = total > 1 ? ((pastCount - 1) / (total - 1) * 100).toFixed(1) : 50;
+    const leftLbl      = `−${Math.round((pastCount - 1) * 10)}m`;
+    const rightLbl     = nowcastCount > 0 ? `+${nowcastCount * 10}m` : '';
+    labelsEl.innerHTML = `
+      <span class="absolute left-0">${leftLbl}</span>
+      <span class="absolute -translate-x-1/2" style="left:${nowPct}%">ora</span>
+      ${rightLbl ? `<span class="absolute right-0">${rightLbl}</span>` : ''}
+    `;
+  }
+}
+
+function showRadarError(msg) {
+  const box = document.getElementById('radar-error');
+  if (box) { box.textContent = `Radar non disponibile (${msg})`; box.classList.remove('hidden'); }
+  document.getElementById('radar-map')?.style.setProperty('display', 'none');
+  document.getElementById('radar-controls')?.style.setProperty('display', 'none');
+  document.getElementById('radar-zoom-btns')?.style.setProperty('display', 'none');
+}
+
+function buildRadarMap(locationId, host, frames) {
+  if (typeof L === 'undefined') { showRadarError('libreria mappa non caricata'); return; }
+  const loc = LOCATIONS.find(l => l.id === locationId);
+  if (!loc) { showRadarError('location sconosciuta'); return; }
+  radarFrames = frames;
+
+  radarMap = L.map('radar-map', {
+    center: [loc.lat, loc.lon],
+    zoom: RADAR_ZOOM,
+    minZoom: 3,
+    maxZoom: 7,
+    zoomControl: false,
+    attributionControl: true,
+    scrollWheelZoom: false,
+  });
+
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const baseUrl = dark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  L.tileLayer(baseUrl, {
+    minZoom: 3, maxZoom: 12, zIndex: 1,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com">CARTO</a>',
+  }).addTo(radarMap);
+
+  L.circleMarker([loc.lat, loc.lon], { radius: 5, color: 'oklch(0.6569 0.196 275.75)', fillColor: 'oklch(0.6569 0.196 275.75)', fillOpacity: 1, weight: 1 })
+    .addTo(radarMap);
+
+  buildRadarLayers(host, frames);
+
+  const startIdx = Math.min(RADAR_PAST_FRAMES - 1, frames.length - 1);
+  wireRadarControls();
+  showRadarFrame(startIdx);
+
+  startRadarAnimation();
+
+  setTimeout(() => radarMap?.invalidateSize(), 0);
+}
+
+function initRadar(locationId) {
+  const errBox = document.getElementById('radar-error');
+  if (errBox) errBox.classList.add('hidden');
+  ['radar-map', 'radar-controls', 'radar-zoom-btns'].forEach(id =>
+    document.getElementById(id)?.style.removeProperty('display'));
+  fetchRadarFrames()
+    .then(({ host, frames }) => buildRadarMap(locationId, host, frames))
+    .catch(err => showRadarError(err.message));
+}
+
 // ── Render ────────────────────────────────────────────────────────────────────
 
 function render(container, data) {
@@ -883,11 +1092,14 @@ function render(container, data) {
 
   if (meteoChart) { meteoChart.destroy(); meteoChart = null; }
   if (multiDayChart) { multiDayChart.destroy(); multiDayChart = null; }
+  destroyRadar();
 
   container.innerHTML = `
     <div class="text-xs text-base-content/50 mb-3">Aggiornato: ${fmtDateTime(data.generated_at)}${staleWarning(data.generated_at)}</div>
 
     ${renderCurrentPanel(data)}
+
+    ${renderRadarSection()}
 
     ${data.days.length > 0 ? `
     <p class="text-xs font-semibold uppercase tracking-widest text-base-content/40 mb-2 px-1">Previsioni</p>
@@ -948,6 +1160,7 @@ function render(container, data) {
 
   if (targetDate) initChart(data, selectedModel, targetDate);
   initWeeklyChart(data, selectedWeeklyModel);
+  initRadar(data.location_id);
 
   container.querySelectorAll('[data-idx]').forEach(card => {
     card.addEventListener('click', () => {
