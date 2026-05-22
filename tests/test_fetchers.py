@@ -858,8 +858,6 @@ def test_fetch_sir_bulk_realtime_handles_offline_station(monkeypatch: Any) -> No
 # ARPAT OpenData NRT -- _parse_arpat_nrt + fetch_arpat_nrt_station + fetch_arpat_all_locations
 # ═════════════════════════════════════════════════════════════════════════════
 
-from datetime import date  # noqa: E402
-
 from guazza.fetchers import (  # noqa: E402
     _parse_arpat_nrt,
     fetch_arpat_all_locations,
@@ -994,7 +992,7 @@ def test_fetch_arpat_nrt_station_ok() -> None:
     """HTTP ok -> lista record; _log_scrape emesso con 'ok'."""
     payload = [{"ORA": "14", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 30.0}]
     with patch("guazza.fetchers._fetch_arpat_nrt_json", return_value=payload):
-        records = fetch_arpat_nrt_station("FI-FIGLINE", _LOC_ID, 0.8, date(2026, 5, 22))
+        records = fetch_arpat_nrt_station("FI-FIGLINE", _LOC_ID, 0.8)
     assert len(records) == 1
     assert records[0]["no2_ugm3"] == pytest.approx(30.0)
 
@@ -1002,7 +1000,7 @@ def test_fetch_arpat_nrt_station_ok() -> None:
 def test_fetch_arpat_nrt_station_http_error_returns_empty() -> None:
     """Errore HTTP -> lista vuota, nessuna eccezione propagata."""
     with patch("guazza.fetchers._fetch_arpat_nrt_json", side_effect=Exception("404")):
-        records = fetch_arpat_nrt_station("FI-FIGLINE", _LOC_ID, 0.8, date(2026, 5, 22))
+        records = fetch_arpat_nrt_station("FI-FIGLINE", _LOC_ID, 0.8)
     assert records == []
 
 
@@ -1016,7 +1014,7 @@ def test_fetch_arpat_all_locations_gate() -> None:
     }
     payload = [{"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 20.0}]
     with patch("guazza.fetchers._fetch_arpat_nrt_json", return_value=payload):
-        results = fetch_arpat_all_locations(locations, date(2026, 5, 22))
+        results = fetch_arpat_all_locations(locations)
 
     assert "casa_campi" in results
     assert "no_aria" not in results
@@ -1030,5 +1028,5 @@ def test_fetch_arpat_all_locations_dedup_station() -> None:
     }
     payload = [{"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 20.0}]
     with patch("guazza.fetchers._fetch_arpat_nrt_json", return_value=payload) as mock_fetch:
-        fetch_arpat_all_locations(locations, date(2026, 5, 22))
+        fetch_arpat_all_locations(locations)
     assert mock_fetch.call_count == 1

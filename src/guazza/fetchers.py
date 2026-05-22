@@ -19,7 +19,7 @@ import time
 import zoneinfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -1502,9 +1502,9 @@ _ITALY_TZ = zoneinfo.ZoneInfo("Europe/Rome")
     wait=wait_exponential(multiplier=1, min=60, max=600),
     retry=retry_if_exception(_is_retryable_http),
 )
-def _fetch_arpat_nrt_json(station_id: str, day: date) -> Any:
-    """Fetch JSON NRT ARPAT per stazione e giorno con retry (backoff 60s/300s/600s)."""
-    url = f"{_ARPAT_NRT_BASE}/{station_id}/{day:%d-%m-%Y}"
+def _fetch_arpat_nrt_json(station_id: str) -> Any:
+    """Fetch JSON NRT ARPAT per stazione (ultimi valori disponibili) con retry."""
+    url = f"{_ARPAT_NRT_BASE}/{station_id}/last"
     with httpx.Client(timeout=30, headers={"User-Agent": _UA}) as client:
         r = client.get(url)
         r.raise_for_status()
@@ -1574,17 +1574,14 @@ def fetch_arpat_nrt_station(
     station_id: str,
     location_id: str,
     weight: float,
-    day: date | None = None,
 ) -> list[dict[str, Any]]:
-    """Fetch dati qualità aria NRT per una stazione ARPAT.
+    """Fetch dati qualità aria NRT per una stazione ARPAT (endpoint /last).
 
     Returns: lista record wide per upsert su observations.
              Lista vuota su fallimento — il prossimo cron riprova.
     """
-    if day is None:
-        day = datetime.now().date()
     try:
-        payload = _fetch_arpat_nrt_json(station_id, day)
+        payload = _fetch_arpat_nrt_json(station_id)
         records = _parse_arpat_nrt(payload, station_id, location_id, weight)
         _log_scrape(f"arpat_nrt:{station_id}", "ok", rows=len(records))
         return records
@@ -1595,20 +1592,17 @@ def fetch_arpat_nrt_station(
 
 def fetch_arpat_all_locations(
     locations: dict[str, Any],
-    day: date | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Fetch ARPAT NRT per tutte le location con extras: [aria_qualita].
 
+    Usa l'endpoint /last — restituisce gli ultimi valori disponibili per ogni stazione.
+
     Args:
         locations: dict locations da locations.yaml["locations"].
-        day: data da fetchare (default: oggi).
 
     Returns:
         Dict {location_id: [record, ...]}
     """
-    if day is None:
-        day = datetime.now().date()
-
     results: dict[str, list[dict[str, Any]]] = {}
     seen_stations: set[str] = set()
 
@@ -1625,7 +1619,7 @@ def fetch_arpat_all_locations(
             if sid in seen_stations:
                 continue
             seen_stations.add(sid)
-            loc_records.extend(fetch_arpat_nrt_station(sid, loc_id, w, day))
+            loc_records.extend(fetch_arpat_nrt_station(sid, loc_id, w))
             time.sleep(0.5)
 
         results[loc_id] = loc_records
