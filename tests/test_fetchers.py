@@ -1044,7 +1044,7 @@ _BOLL_MAP: dict[str, tuple[str, float]] = {
     "FI-SCANDICCI": ("lavoro_cosimo", 0.8),
 }
 
-_BOLL_ENTRY = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2.5": 9}
+_BOLL_ENTRY = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2dot5": 9}
 
 
 def test_parse_arpat_bollettino_happy_path() -> None:
@@ -1062,14 +1062,14 @@ def test_parse_arpat_bollettino_happy_path() -> None:
 
 def test_parse_arpat_bollettino_station_not_in_map() -> None:
     """Stazione non configurata -> scartata."""
-    entry = {"NOME_STAZIONE": "LU-CAPANNORI", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 20, "PM2.5": 10}
+    entry = {"NOME_STAZIONE": "LU-CAPANNORI", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 20, "PM2dot5": 10}
     records = _parse_arpat_bollettino([entry], _BOLL_MAP)
     assert records == []
 
 
 def test_parse_arpat_bollettino_dash_values() -> None:
     """'-' e 'n.d.' -> None; se entrambi None record scartato."""
-    entry = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": "-", "PM2.5": "n.d."}
+    entry = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": "-", "PM2dot5": "n.d."}
     records = _parse_arpat_bollettino([entry], _BOLL_MAP)
     assert records == []
 
@@ -1099,8 +1099,8 @@ def test_parse_arpat_bollettino_non_list_payload() -> None:
 def test_parse_arpat_bollettino_multi_stations() -> None:
     """Più stazioni configurate -> un record per stazione presente."""
     payload = [
-        {"NOME_STAZIONE": "FI-SIGNA",     "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2.5": 9},
-        {"NOME_STAZIONE": "FI-SCANDICCI", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 25, "PM2.5": 12},
+        {"NOME_STAZIONE": "FI-SIGNA",     "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2dot5": 9},
+        {"NOME_STAZIONE": "FI-SCANDICCI", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 25, "PM2dot5": 12},
         {"NOME_STAZIONE": "LU-CAPANNORI", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 30},
     ]
     records = _parse_arpat_bollettino(payload, _BOLL_MAP)
@@ -1114,7 +1114,7 @@ def test_fetch_arpat_bollettino_all_locations_ok() -> None:
     locations = {
         "casa_campi": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]},
     }
-    payload = [{"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2.5": 9}]
+    payload = [{"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2dot5": 9}]
     with patch("guazza.fetchers._fetch_arpat_bollettino_json", return_value=payload):
         records = fetch_arpat_bollettino_all_locations(locations)
     assert len(records) == 1

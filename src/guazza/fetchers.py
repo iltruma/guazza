@@ -1698,7 +1698,7 @@ def _parse_arpat_bollettino(
                 return None
 
         pm10 = _boll_val(entry.get("PM10"))
-        pm25 = _boll_val(entry.get("PM2.5"))
+        pm25 = _boll_val(entry.get("PM2dot5"))
         if pm10 is None and pm25 is None:
             continue
 
