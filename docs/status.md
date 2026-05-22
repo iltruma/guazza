@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-20 (v0.6.2 — cutover ARPAT → OpenAQ completato)
+> Aggiornato: 2026-05-22 (v0.6.3 — cutover OpenAQ → ARPAT NRT OpenData)
 
 ## Cosa è stato fatto
 
@@ -74,9 +74,9 @@ Quattro comandi in `src/guazza/jobs/ingest.py`:
 
 | Comando | Schedulazione | Cosa fa |
 |---|---|---|
-| `historical` | one-shot manuale | Backfill SIR CSV + Open-Meteo + ARPAT bollettini |
+| `historical` | one-shot manuale | Backfill SIR CSV + Open-Meteo |
 | `daily` | cron 06:00 UTC | Delta di ieri: SIR CSV + Open-Meteo historical |
-| `realtime` | cron ogni 15-30 min | SIR actions.php + Netatmo tutte le location |
+| `realtime` | cron ogni 15-30 min | SIR actions.php + Netatmo + ARPAT NRT tutte le location |
 | `forecasts` | cron ogni 6h | Open-Meteo forecast multi-modello, 7 giorni |
 
 Ogni job: `--dry-run`, Healthchecks.io ping (start/ok/fail), log JSON strutturato stdout, exit 1 su eccezione.
@@ -98,25 +98,22 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **230 test** (229 passati + 1 skip), tutti verdi
+- **224 test**, tutti verdi
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
 
-### Sprint 1b — ARPAT qualità aria (completato — 2026-05-15)
-- `fetch_arpat_nrt()`: valori orari NO2/O3 da endpoint NRT ARPAT, `granularity='hourly'`
-- `fetch_arpat_bollettini()`: PM10/PM2.5 giornalieri da endpoint bollettini, `granularity='daily'`
+### Sprint 1b — ARPAT qualità aria (completato — 2026-05-15, aggiornato 2026-05-22)
 - `fetch_arpat_all_locations()`: wrapper per tutte le location con `arpat_stations` in config
-- Integrato in job `realtime` (NRT) e `daily` (bollettini)
-- Parsing difensivo: supporta formato lista e dict `{"stazioni": [...]}`
-- `config/arpat_levels.yaml`: scale qualità aria ARPAT (PM10, PM2.5, NO2, O3, CO, benzene, SO2)
-  con livelli normativi D.Lgs.155/2010 — usato dal DLE per calcolare il livello qualità aria
-- 11 test pytest, tutti verdi
-- CFR Toscana rimosso da `sources.yaml` (coperto da SIR idrometria)
-- RainViewer marcato `scope: frontend_only` (nessun fetcher, usato solo in Sprint 6)
-
-🟡 **Punto aperto**: struttura JSON reale degli endpoint ARPAT non verificata su rete reale.
-Il parsing è difensivo (supporta più formati), ma da verificare al primo run su VPS.
+- Integrato in job `realtime` (NRT orario, ogni 30 min)
+- Parsing: lista di dict orari con `ORA`/`DATA_OSSERVAZIONE` e valori numerici/null
+- `config/arpat_levels.yaml`: scale qualità aria (PM10, PM2.5, NO2, O3, CO, benzene, SO2),
+  livelli normativi D.Lgs.155/2010 — usato dal frontend per colori qualità aria
+- 14 test pytest, tutti verdi
+- **2026-05-22**: rimosso fetcher OpenAQ (valori inaffidabili); sostituito con ARPAT OpenData NRT
+  (`https://opendata.arpat.toscana.it/.../json_orari_nrt/{STATION}/{DD-MM-YYYY}`). Recuperate
+  stazioni AR-ENELSB-SANGIOVANNI e FI-LAVAGNINI mancanti da OpenAQ (KI-017 chiuso).
+  `source='openaq'` → `source='arpat'` in `observations`, `qc.py`, `output.py`.
 
 ### Sprint 2b — Backfill SIR pre-2022 (completato — 2026-05-16)
 

@@ -8,66 +8,51 @@
 ## KI-017 — OpenAQ: copertura ridotta vs ARPAT diretto (AR-ENELSB-SANGIOVANNI, FI-LAVAGNINI)
 
 **Severità**: informativa
-**Stato**: by design (limitazione upstream OpenAQ)
+**Stato**: risolto — cutover OpenAQ → ARPAT NRT OpenData completato 2026-05-22
 
-**Problema**: dopo il cutover ARPAT → OpenAQ (KI-016), due delle 10 stazioni
-ARPAT precedentemente usate non risultano aggregate da OpenAQ:
-
-| Stazione | Location | Parametri persi | Note |
-|---|---|---|---|
-| AR-ENELSB-SANGIOVANNI | casa_cesto | BENZENE, CO | Stazione industriale ENEL, ~8km |
-| FI-LAVAGNINI | casa_nicco | NO2 | Firenze centro |
-
-**Impatto**:
-- **casa_nicco**: nessuno effettivo — NO2 resta coperto da FI-MOSSE (1.1km),
-  FI-GRAMSCI (3.7km), FI-BASSI (4.2km, nuova stazione non presente in ARPAT
-  config) e FI-SCANDICCI (5.5km). Anzi, FI-BASSI aggiunge SO2 e PM2.5.
-- **casa_cesto**: l'unica stazione OpenAQ nel raggio 15km è FI-FIGLINE (3.7km,
-  solo NO2 e PM10), che aggiorna in modo intermittente. BENZENE e CO non
-  sono più disponibili. La sezione qualità aria può mostrare valori vuoti
-  quando FI-FIGLINE non aggiorna da >3h.
-
-**Decisione**: non reimplementare il fetcher ARPAT NRT diretto. Costo (due
-sorgenti AQ eterogenee, API ARPAT non documentata, logica di merge in
-`get_current_air_quality()`) sproporzionato rispetto al beneficio (una sola
-location, parametri non critici per indicatori DLE).
-
-**Workaround frontend**: `renderAirQuality()` mostra sempre tutti e 7 i
-parametri AQ — i valori non disponibili compaiono come `—`, evitando il
-mismatch visivo tra location coperte e non coperte.
+Il ritorno al fetch diretto ARPAT OpenData NRT recupera entrambe le stazioni
+mancanti: AR-ENELSB-SANGIOVANNI (BENZENE, CO per casa_cesto) e FI-LAVAGNINI
+(NO2 per casa_nicco). Vedi KI-018 per le note sul nuovo endpoint.
 
 ---
+
+## KI-018 — Cutover OpenAQ → ARPAT NRT OpenData: righe storiche source='openaq' nel DB
+
+**Severità**: informativa
+**Stato**: da eseguire sul DB locale e sul VPS
+
+Il fetcher OpenAQ è stato rimosso (2026-05-22). Le righe `source='openaq'` in
+`observations` sono ormai orfane. Lo storico AQ non serve (`get_current_air_quality()`
+usa finestra 3h, AQ non è feature di training).
+
+Prima di avviare il prossimo `realtime`, eseguire la pulizia:
+
+```sql
+SELECT COUNT(*) AS openaq_rows FROM observations WHERE source = 'openaq';
+DELETE FROM observations WHERE source = 'openaq';
+```
+
+Dopodiché il cron `realtime` (ogni 30 min) popola automaticamente i dati ARPAT NRT.
+Nessun backfill storico necessario.
+
+**Note sul design ARPAT NRT OpenData** (apprese durante l'implementazione 2026-05-22):
+- Endpoint: `https://opendata.arpat.toscana.it/.../json_orari_nrt/{STATION_ID}/{DD-MM-YYYY}`
+- Formato risposta: lista di dict orari con `ORA` ("00"-"23"), `DATA_OSSERVAZIONE` ("22-MAY-26")
+  e parametri come valori numerici o null. Mesi in inglese (`MAY`, non `MAG`).
+- Parametri mappati: PM10, PM2.5, NO2, O3, CO (mg/m³, D.Lgs.155/2010), SO2, BENZENE/C6H6.
+- Parametri non mappati ignorati: H2S, BC, BB.
+- Timestamp già in ora locale italiana (naive, coerente con SIR e DuckDB).
+- `station_id` nel DB = ID ARPAT puro (`FI-FIGLINE`) — nessun suffisso location.
 
 ## KI-016 — Cutover ARPAT → OpenAQ: righe storiche source='arpat' nel DB
 
 **Severità**: informativa
-**Stato**: risolto — DELETE eseguito in locale il 2026-05-20
+**Stato**: risolto — DELETE eseguito in locale il 2026-05-20; cutover completamente
+revertito il 2026-05-22 con KI-018.
 
 Lo storico qualità aria non serve: `get_current_air_quality()` usa una finestra 3h,
-l'AQ non è feature di training. Le 23.218 righe ARPAT sono state cancellate.
-
-Sul VPS (Sprint 8), prima di avviare i cron, eseguire la stessa pulizia se il DB
-è stato copiato da locale:
-
-```sql
-DELETE FROM observations WHERE source = 'arpat';
-DELETE FROM quality_flags
-  WHERE flag_type IN ('range_pm10_high','range_pm25_high','range_no2_high','range_o3_high');
-```
-
-Dopodiché il cron `realtime` (ogni 30 min) popola automaticamente i dati OpenAQ.
-Nessun backfill storico necessario.
-
-**Note sul design OpenAQ** (apprese durante l'implementazione 2026-05-20):
-- `/locations/{id}/latest` restituisce `sensorsId` (int), **non** include
-  `parameter`. Il mapping `sensor_id → (param, units)` va costruito dalla
-  discovery `/locations?coordinates=...`.
-- `station_id` nel DB è `openaq_{id}_{location_id}` (non solo `openaq_{id}`):
-  la stessa stazione fisica può cadere nel raggio di più location e la PK
-  `(source, station_id, ts, granularity)` non include location_id.
-- Timestamp OpenAQ convertiti da UTC a ora locale naive (Europe/Rome) prima
-  del salvataggio, coerente con SIR e con `CURRENT_TIMESTAMP` di DuckDB
-  (che usa il timezone della macchina).
+l'AQ non è feature di training. Le 23.218 righe ARPAT (vecchio fetcher) erano già
+state cancellate. Vedi KI-018 per la pulizia delle righe OpenAQ.
 
 ---
 
