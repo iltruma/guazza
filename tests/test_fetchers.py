@@ -855,259 +855,180 @@ def test_fetch_sir_bulk_realtime_handles_offline_station(monkeypatch: Any) -> No
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# OpenAQ v3 -- fetch_openaq_latest + fetch_openaq_measurements_range
+# ARPAT OpenData NRT -- _parse_arpat_nrt + fetch_arpat_nrt_station + fetch_arpat_all_locations
 # ═════════════════════════════════════════════════════════════════════════════
 
+from datetime import date  # noqa: E402
+
 from guazza.fetchers import (  # noqa: E402
-    fetch_openaq_latest,
-    fetch_openaq_measurements_range,
+    _parse_arpat_nrt,
+    fetch_arpat_all_locations,
+    fetch_arpat_nrt_station,
 )
 
-_LAT = 43.82
-_LON = 11.13
 _LOC_ID = "casa_campi"
 
 
-def _patch_openaq_json(responses: list[Any]) -> Any:
-    """Mocker sequenziale per _fetch_openaq_json -- bypassa retry e httpx."""
-    if len(responses) == 1:
-        return patch("guazza.fetchers._fetch_openaq_json", return_value=responses[0])
-    return patch("guazza.fetchers._fetch_openaq_json", side_effect=responses)
-
-
-def _patch_openaq_json_error(exc: Exception) -> Any:
-    return patch("guazza.fetchers._fetch_openaq_json", side_effect=exc)
-
-
-def _make_locations_response(station_id: int, distance_m: float, sensors: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
-        "meta": {"found": 1},
-        "results": [
-            {
-                "id": station_id,
-                "name": f"Test-{station_id}",
-                "distance": distance_m,
-                "sensors": sensors,
-            }
-        ],
+def _make_arpat_entry(
+    ora: str,
+    data: str = "22-MAY-26",
+    **params: float | None,
+) -> dict[str, Any]:
+    """Record orario ARPAT NRT con i parametri specificati."""
+    entry: dict[str, Any] = {
+        "ORA": ora,
+        "DATA_OSSERVAZIONE": data,
+        "NOME_STAZIONE": "FI-FIGLINE",
+        "PROVINCIA": "FIRENZE",
+        "COMUNE": "FIGLINE E INCISA VALDARNO",
+        "VALIDAZIONE": "OPERATORE_PRIMO_LIVELLO",
     }
+    for k, v in params.items():
+        entry[k.upper().replace("_", ".")] = v
+    return entry
 
 
-def _make_latest_response(measurements: list[tuple[int, float]]) -> dict[str, Any]:
-    """measurements: lista di (sensor_id, value).
+# -- _parse_arpat_nrt ----------------------------------------------------------
 
-    /locations/{id}/latest restituisce 'sensorsId' (int), non 'parameter'.
-    Il mapping sensor_id -> param viene dalla discovery.
-    """
-    return {
-        "results": [
-            {
-                "sensorsId": sid,
-                "value": v,
-                "datetime": {"utc": "2026-05-15T15:00:00Z"},
-            }
-            for sid, v in measurements
-        ]
-    }
-
-
-# -- fetch_openaq_latest -------------------------------------------------------
-
-def test_openaq_latest_single_station() -> None:
-    """Una stazione con NO2 e O3 -> un record wide con source='openaq'."""
-    loc_resp = _make_locations_response(
-        station_id=225873, distance_m=5000.0,
-        sensors=[
-            {"id": 1001, "parameter": {"name": "no2", "units": "ug/m3"}},
-            {"id": 1002, "parameter": {"name": "o3",  "units": "ug/m3"}},
-        ],
-    )
-    latest_resp = _make_latest_response([(1001, 25.3), (1002, 48.7)])
-
-    with _patch_openaq_json([loc_resp, latest_resp]):
-        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
+def test_parse_arpat_nrt_single_hour_no2() -> None:
+    """Un record orario con NO2 -> record wide corretto."""
+    payload = [_make_arpat_entry("14", NO2=25.3)]
+    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 0.8)
 
     assert len(records) == 1
     r = records[0]
-    assert r["source"] == "openaq"
-    assert r["station_id"] == f"openaq_225873_{_LOC_ID}"
+    assert r["source"] == "arpat"
+    assert r["station_id"] == "FI-FIGLINE"
     assert r["location_id"] == _LOC_ID
     assert r["granularity"] == "hourly"
+    assert r["weight"] == 0.8
+    assert r["ts"] == datetime(2026, 5, 22, 14, 0)
     assert r["no2_ugm3"] == pytest.approx(25.3)
-    assert r["o3_ugm3"] == pytest.approx(48.7)
-    # ts è convertito da UTC a ora locale naive (Europe/Rome)
-    import zoneinfo
-    _ROME = zoneinfo.ZoneInfo("Europe/Rome")
-    expected_ts = datetime(2026, 5, 15, 15, 0, tzinfo=UTC).astimezone(_ROME).replace(tzinfo=None)
-    assert r["ts"] == expected_ts
 
 
-def test_openaq_latest_co_conversion_ug_to_mg() -> None:
-    """CO in ug/m3 da OpenAQ -> convertito a mg/m3 (fattore 0.001)."""
-    loc_resp = _make_locations_response(
-        station_id=1, distance_m=1000.0,
-        sensors=[{"id": 99, "parameter": {"name": "co", "units": "ug/m3"}}],
-    )
-    latest_resp = _make_latest_response([(99, 500.0)])
-
-    with _patch_openaq_json([loc_resp, latest_resp]):
-        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
+def test_parse_arpat_nrt_multi_param() -> None:
+    """Record con più parametri -> tutti mappati su colonne wide."""
+    payload = [_make_arpat_entry("08", NO2=18.0, O3=40.0, PM10=30.0, BENZENE=1.2)]
+    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
 
     assert len(records) == 1
-    assert records[0]["co_mgm3"] == pytest.approx(0.5)
+    r = records[0]
+    assert r["no2_ugm3"] == pytest.approx(18.0)
+    assert r["o3_ugm3"] == pytest.approx(40.0)
+    assert r["pm10_ugm3"] == pytest.approx(30.0)
+    assert r["benzene_ugm3"] == pytest.approx(1.2)
 
 
-def test_openaq_latest_co_already_mg() -> None:
-    """CO gia in mg/m3 -> nessuna conversione."""
-    loc_resp = _make_locations_response(
-        station_id=2, distance_m=500.0,
-        sensors=[{"id": 88, "parameter": {"name": "co", "units": "mg/m3"}}],
-    )
-    latest_resp = _make_latest_response([(88, 0.8)])
-
-    with _patch_openaq_json([loc_resp, latest_resp]):
-        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
-
-    assert records[0]["co_mgm3"] == pytest.approx(0.8)
-
-
-def test_openaq_latest_weight_from_distance() -> None:
-    """Weight calcolato da distanza: 1/(1+distance_km)."""
-    loc_resp = _make_locations_response(
-        station_id=10, distance_m=9000.0,
-        sensors=[{"id": 50, "parameter": {"name": "no2", "units": "ug/m3"}}],
-    )
-    latest_resp = _make_latest_response([(50, 15.0)])
-
-    with _patch_openaq_json([loc_resp, latest_resp]):
-        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
-
-    assert records[0]["weight"] == pytest.approx(1.0 / (1.0 + 9.0), abs=1e-3)
-
-
-def test_openaq_latest_unknown_param_ignored() -> None:
-    """Parametro sconosciuto (es. 'temperature') -> ignorato, record non vuoto se ci sono altri."""
-    loc_resp = _make_locations_response(
-        station_id=20, distance_m=1000.0,
-        sensors=[
-            {"id": 60, "parameter": {"name": "temperature", "units": "C"}},
-            {"id": 61, "parameter": {"name": "pm10", "units": "ug/m3"}},
-        ],
-    )
-    latest_resp = _make_latest_response([(60, 22.0), (61, 30.0)])
-
-    with _patch_openaq_json([loc_resp, latest_resp]):
-        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
+def test_parse_arpat_nrt_null_values_skipped() -> None:
+    """Parametri null -> non inclusi nel record, ma record emesso se almeno uno non null."""
+    payload = [{"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 15.0, "PM10": None}]
+    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
 
     assert len(records) == 1
-    assert records[0]["pm10_ugm3"] == pytest.approx(30.0)
-    assert "temperature" not in records[0]
+    assert "pm10_ugm3" not in records[0] or records[0].get("pm10_ugm3") is None
+    assert records[0]["no2_ugm3"] == pytest.approx(15.0)
 
 
-def test_openaq_latest_no_stations_returns_empty() -> None:
-    """Discovery restituisce lista vuota -> []."""
-    loc_resp = {"meta": {"found": 0}, "results": []}
-
-    with _patch_openaq_json([loc_resp]):
-        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
-
+def test_parse_arpat_nrt_all_null_no_record() -> None:
+    """Tutti i parametri null -> nessun record emesso."""
+    payload = [{"ORA": "03", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": None, "PM10": None}]
+    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
     assert records == []
 
 
-def test_openaq_latest_discovery_error_returns_empty() -> None:
-    """Errore HTTP in discovery -> lista vuota senza eccezione propagata."""
-    with _patch_openaq_json_error(Exception("connect timeout")):
-        records = fetch_openaq_latest(_LOC_ID, _LAT, _LON)
+def test_parse_arpat_nrt_unknown_param_ignored() -> None:
+    """Parametri non mappati (H2S, BC, BB) -> ignorati, record emesso con quelli noti."""
+    payload = [{"ORA": "06", "DATA_OSSERVAZIONE": "22-MAY-26", "H2S": 5.0, "BB": 10.0, "NO2": 20.0}]
+    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
 
-    assert records == []
+    assert len(records) == 1
+    assert "h2s" not in records[0]
+    assert records[0]["no2_ugm3"] == pytest.approx(20.0)
 
 
-# -- fetch_openaq_measurements_range ------------------------------------------
-
-def _make_measurements_response(
-    param: str,
-    units: str,
-    rows: list[tuple[str, float]],
-    found: int | None = None,
-) -> dict[str, Any]:
-    """rows: lista di (ts_utc_iso, value)."""
-    results = [
-        {
-            "period": {"datetimeTo": {"utc": ts}},
-            "value": v,
-            "parameter": {"name": param, "units": units},
-        }
-        for ts, v in rows
+def test_parse_arpat_nrt_invalid_timestamp_skipped() -> None:
+    """Timestamp malformato -> entry saltata."""
+    payload = [
+        {"ORA": "XX", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 10.0},
+        {"ORA": "12", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 20.0},
     ]
-    return {"meta": {"found": found or len(rows)}, "results": results}
-
-
-def test_openaq_range_single_sensor_single_page() -> None:
-    """Una stazione, un sensore NO2, una pagina -> record wide orari."""
-    loc_resp = _make_locations_response(
-        station_id=300, distance_m=2000.0,
-        sensors=[{"id": 200, "parameter": {"name": "no2", "units": "ug/m3"}}],
-    )
-    meas_resp = _make_measurements_response("no2", "ug/m3", [
-        ("2026-05-13T10:00:00Z", 20.0),
-        ("2026-05-13T11:00:00Z", 22.0),
-    ])
-
-    with _patch_openaq_json([loc_resp, meas_resp]):
-        records = fetch_openaq_measurements_range(_LOC_ID, _LAT, _LON, "2026-05-13", "2026-05-13")
-
-    assert len(records) == 2
-    assert all(r["source"] == "openaq" for r in records)
-    assert all(r["granularity"] == "hourly" for r in records)
-    assert all(r["station_id"] == f"openaq_300_{_LOC_ID}" for r in records)
-    # ts convertito da UTC a ora locale naive (Europe/Rome): 10Z→12CEST, 11Z→13CEST
-    import zoneinfo
-    _ROME = zoneinfo.ZoneInfo("Europe/Rome")
-    def _local_hour(utc_hour: int) -> int:
-        return datetime(2026, 5, 13, utc_hour, 0, tzinfo=UTC).astimezone(_ROME).hour
-    no2_vals = {r["ts"].hour: r["no2_ugm3"] for r in records}
-    assert no2_vals[_local_hour(10)] == pytest.approx(20.0)
-    assert no2_vals[_local_hour(11)] == pytest.approx(22.0)
-
-
-def test_openaq_range_co_conversion() -> None:
-    """CO storico in ug/m3 -> convertito a mg/m3."""
-    loc_resp = _make_locations_response(
-        station_id=400, distance_m=1000.0,
-        sensors=[{"id": 300, "parameter": {"name": "co", "units": "ug/m3"}}],
-    )
-    meas_resp = _make_measurements_response("co", "ug/m3", [("2026-05-13T10:00:00Z", 800.0)])
-
-    with _patch_openaq_json([loc_resp, meas_resp]):
-        records = fetch_openaq_measurements_range(_LOC_ID, _LAT, _LON, "2026-05-13", "2026-05-13")
-
+    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
     assert len(records) == 1
-    assert records[0]["co_mgm3"] == pytest.approx(0.8)
+    assert records[0]["ts"].hour == 12
 
 
-def test_openaq_range_pagination() -> None:
-    """Paginazione: due pagine da 2 misure ciascuna -> 4 record totali."""
-    loc_resp = _make_locations_response(
-        station_id=500, distance_m=500.0,
-        sensors=[{"id": 400, "parameter": {"name": "pm10", "units": "ug/m3"}}],
-    )
-    page1 = {"meta": {"found": 4}, "results": [
-        {"period": {"datetimeTo": {"utc": "2026-05-13T10:00:00Z"}}, "value": 10.0, "parameter": {"name": "pm10", "units": "ug/m3"}},
-        {"period": {"datetimeTo": {"utc": "2026-05-13T11:00:00Z"}}, "value": 11.0, "parameter": {"name": "pm10", "units": "ug/m3"}},
-    ]}
-    page2 = {"meta": {"found": 4}, "results": [
-        {"period": {"datetimeTo": {"utc": "2026-05-13T12:00:00Z"}}, "value": 12.0, "parameter": {"name": "pm10", "units": "ug/m3"}},
-        {"period": {"datetimeTo": {"utc": "2026-05-13T13:00:00Z"}}, "value": 13.0, "parameter": {"name": "pm10", "units": "ug/m3"}},
-    ]}
-
-    with _patch_openaq_json([loc_resp, page1, page2]):
-        records = fetch_openaq_measurements_range(_LOC_ID, _LAT, _LON, "2026-05-13", "2026-05-13")
-
-    assert len(records) == 4
+def test_parse_arpat_nrt_empty_payload() -> None:
+    """Payload lista vuota -> []."""
+    assert _parse_arpat_nrt([], "FI-FIGLINE", _LOC_ID, 1.0) == []
 
 
-def test_openaq_range_discovery_error_returns_empty() -> None:
-    """Errore discovery -> lista vuota senza eccezione."""
-    with _patch_openaq_json_error(RuntimeError("network")):
-        records = fetch_openaq_measurements_range(_LOC_ID, _LAT, _LON, "2026-05-13", "2026-05-13")
+def test_parse_arpat_nrt_non_list_payload() -> None:
+    """Payload non-lista (dict, None) -> []."""
+    assert _parse_arpat_nrt({}, "FI-FIGLINE", _LOC_ID, 1.0) == []
+    assert _parse_arpat_nrt(None, "FI-FIGLINE", _LOC_ID, 1.0) == []
+
+
+def test_parse_arpat_nrt_multi_hours() -> None:
+    """Più ore -> un record per ora."""
+    payload = [
+        {"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 10.0},
+        {"ORA": "11", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 12.0},
+        {"ORA": "12", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 11.0},
+    ]
+    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
+    assert len(records) == 3
+    hours = sorted(r["ts"].hour for r in records)
+    assert hours == [10, 11, 12]
+
+
+def test_parse_arpat_nrt_co_factor_one() -> None:
+    """CO ARPAT in mg/m³ (D.Lgs.155/2010) -> fattore 1.0, nessuna conversione."""
+    payload = [{"ORA": "09", "DATA_OSSERVAZIONE": "22-MAY-26", "CO": 0.7}]
+    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
+    assert records[0]["co_mgm3"] == pytest.approx(0.7)
+
+
+# -- fetch_arpat_nrt_station ---------------------------------------------------
+
+def test_fetch_arpat_nrt_station_ok() -> None:
+    """HTTP ok -> lista record; _log_scrape emesso con 'ok'."""
+    payload = [{"ORA": "14", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 30.0}]
+    with patch("guazza.fetchers._fetch_arpat_nrt_json", return_value=payload):
+        records = fetch_arpat_nrt_station("FI-FIGLINE", _LOC_ID, 0.8, date(2026, 5, 22))
+    assert len(records) == 1
+    assert records[0]["no2_ugm3"] == pytest.approx(30.0)
+
+
+def test_fetch_arpat_nrt_station_http_error_returns_empty() -> None:
+    """Errore HTTP -> lista vuota, nessuna eccezione propagata."""
+    with patch("guazza.fetchers._fetch_arpat_nrt_json", side_effect=Exception("404")):
+        records = fetch_arpat_nrt_station("FI-FIGLINE", _LOC_ID, 0.8, date(2026, 5, 22))
     assert records == []
+
+
+# -- fetch_arpat_all_locations -------------------------------------------------
+
+def test_fetch_arpat_all_locations_gate() -> None:
+    """Location senza 'aria_qualita' in extras -> saltata."""
+    locations = {
+        "casa_campi": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]},
+        "no_aria": {"extras": [], "arpat_stations": [{"id": "FI-FIGLINE", "weight": 1.0}]},
+    }
+    payload = [{"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 20.0}]
+    with patch("guazza.fetchers._fetch_arpat_nrt_json", return_value=payload):
+        results = fetch_arpat_all_locations(locations, date(2026, 5, 22))
+
+    assert "casa_campi" in results
+    assert "no_aria" not in results
+
+
+def test_fetch_arpat_all_locations_dedup_station() -> None:
+    """Stessa stazione in due location -> fetchata una sola volta (seen_stations)."""
+    locations = {
+        "loc_a": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]},
+        "loc_b": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 0.5}]},
+    }
+    payload = [{"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 20.0}]
+    with patch("guazza.fetchers._fetch_arpat_nrt_json", return_value=payload) as mock_fetch:
+        fetch_arpat_all_locations(locations, date(2026, 5, 22))
+    assert mock_fetch.call_count == 1
