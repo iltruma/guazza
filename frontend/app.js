@@ -308,11 +308,11 @@ function renderCurrentPanel(data) {
   const current  = data.current;
   const todayDay = data.days.find(d => isToday(d.target_date));
   const locMeta  = LOCATIONS.find(l => l.id === data.location_id);
-  const sunTimes = locMeta ? SunCalc.getTimes(new Date(), locMeta.lat, locMeta.lon) : null;
-  const dawn     = sunTimes?.dawn;
+  const now      = new Date();
+  const sunTimes = locMeta ? SunCalc.getTimes(now, locMeta.lat, locMeta.lon) : null;
   const sunrise  = sunTimes?.sunrise;
   const sunset   = sunTimes?.sunset;
-  const dusk     = sunTimes?.dusk;
+  const moonPhase = SunCalc.getMoonIllumination(now).phase;
 
   // Icona meteo: da realtime se disponibile, altrimenti da previsione di oggi
   let icon, iconLabel;
@@ -363,12 +363,13 @@ function renderCurrentPanel(data) {
 
   const aqSection = renderAirQuality(data.air_quality);
 
+  const moonEmoji = ['🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘'][Math.round(moonPhase * 8) % 8];
+  const moonLabel = ['Luna nuova','Luna crescente','Primo quarto','Gibbosa crescente','Luna piena','Gibbosa calante','Ultimo quarto','Luna calante'][Math.round(moonPhase * 8) % 8];
   const sunLine = sunTimes ? `
     <div class="flex gap-3 text-xs text-base-content/40 mt-0.5 flex-wrap">
-      <span class="tooltip tooltip-top" data-tip="Aurora civile">🌄 <strong class="text-base-content/60">${fmtSunTime(dawn)}</strong></span>
       <span class="tooltip tooltip-top" data-tip="Alba">🌅 <strong class="text-base-content/60">${fmtSunTime(sunrise)}</strong></span>
       <span class="tooltip tooltip-top" data-tip="Tramonto">🌇 <strong class="text-base-content/60">${fmtSunTime(sunset)}</strong></span>
-      <span class="tooltip tooltip-top" data-tip="Crepuscolo civile">🌆 <strong class="text-base-content/60">${fmtSunTime(dusk)}</strong></span>
+      <span class="tooltip tooltip-top" data-tip="${moonLabel}">${moonEmoji}</span>
     </div>` : '';
   const noRealtimeNote = !current
     ? `<p class="text-xs text-base-content/50 mt-3 italic">Dati realtime non disponibili — indicatori calcolati su previsione</p>`
