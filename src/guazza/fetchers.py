@@ -60,10 +60,13 @@ def _log_scrape(scraper: str, status: str, rows: int | None = None, detail: str 
 
 
 def _is_retryable_http(exc: BaseException) -> bool:
-    """Ritenta su 429 (rate limit) e 5xx. I 4xx permanenti (400, 404, 422) non si ritentano."""
+    """Ritenta su 429, 5xx e errori di trasporto transitori (timeout, connection reset).
+    JSONDecodeError e altri errori applicativi non si ritentano — sono permanenti."""
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code == 429 or exc.response.status_code >= 500
-    return True
+    if isinstance(exc, httpx.TransportError):
+        return True
+    return False
 
 # ── User-Agent comune ────────────────────────────────────────────────────────
 
