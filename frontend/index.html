@@ -4,28 +4,190 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guazza — Previsioni meteo iper-locale Toscana</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['Inter','system-ui','sans-serif'] } } } };
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js" defer></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" defer></script>
-  <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/suncalc/suncalc.js" crossorigin="anonymous" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous" defer></script>
+  <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-base-200 text-base-content min-h-screen">
-  <header class="bg-base-100 border-b border-base-300 sticky top-0 z-10 shadow-sm">
-    <div class="max-w-4xl mx-auto px-4 py-3">
-      <h1 class="text-xl font-bold tracking-tight">🌦 Guazza</h1>
-      <nav id="tabs" class="flex gap-1 mt-2 flex-wrap" aria-label="Location"></nav>
+
+<body class="bg-[#F4F6F8] dark:bg-[#050914] text-slate-900 dark:text-slate-100 font-sans antialiased min-h-screen">
+
+  <header class="sticky top-0 z-50 backdrop-blur-xl bg-white/75 dark:bg-[#050914]/70 border-b border-black/5 dark:border-white/5 transition-all duration-300">
+    <div class="max-w-6xl mx-auto px-4 md:px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <svg class="w-7 h-7" style="color:#6366F1" viewBox="0 0 28 28" fill="none">
+          <path d="M2 16c2 6 8 10 14 8s10-8 8-14c-2-6-8-10-14-8S0 10 2 16z" fill="currentColor" opacity="0.2"/>
+          <path d="M8 14c1 3 4 5 7 4s5-4 4-7-4-5-7-4-5 4-4 7z" fill="currentColor"/>
+        </svg>
+        <span class="text-lg font-bold tracking-tight">Guazza</span>
+      </div>
+      <div id="header-meta" class="flex items-center gap-2 text-[11px] text-slate-400 font-medium"></div>
+    </div>
+    <div class="max-w-6xl mx-auto px-4 md:px-6 pb-3">
+      <nav id="tabs" class="flex gap-2 overflow-x-auto no-scrollbar snap-x" aria-label="Location"></nav>
     </div>
   </header>
-  <main id="app" class="max-w-4xl mx-auto px-4 py-4">
-    <div class="flex items-center justify-center p-12 gap-3 text-base-content/60">
-      <span class="loading loading-spinner loading-md"></span>Caricamento…
+
+  <main id="app" class="max-w-6xl mx-auto px-4 md:px-6 py-6 space-y-6">
+
+    <div id="skeleton-state" class="space-y-6">
+      <div class="rounded-3xl bg-white/60 dark:bg-white/5 h-80 skeleton"></div>
+      <div class="rounded-3xl bg-white/60 dark:bg-white/5 h-64 skeleton"></div>
     </div>
+
+    <div id="error-state" class="hidden">
+      <div class="rounded-3xl bg-red-500/10 border border-red-500/20 p-6 text-red-600 dark:text-red-400">
+        <p class="font-semibold" id="error-msg">Errore nel caricamento</p>
+        <p class="text-sm mt-1 opacity-70">Assicurati che il server stia servendo i JSON da /data/</p>
+      </div>
+    </div>
+
+    <!-- ① HERO: Condizioni Attuali -->
+    <section id="hero-card" class="hidden relative rounded-3xl bg-white dark:bg-slate-900/60 border border-black/[0.04] dark:border-white/[0.06] shadow-xl overflow-hidden anim-fade-up">
+      <div id="hero-temp-gradient" class="absolute inset-0 pointer-events-none z-0"></div>
+      <div class="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-blue-500 via-violet-500 to-orange-400 opacity-60 z-10"></div>
+      <div class="relative z-10 p-4 sm:p-6 md:p-8 grid grid-cols-1 md:grid-cols-5 gap-5 md:gap-8">
+        <div class="md:col-span-2 flex items-start gap-5">
+          <div id="hero-icon" class="text-7xl mt-1 hero-icon-float cursor-default select-none"></div>
+          <div class="flex-1 min-w-0">
+            <div id="hero-temp" class="text-[4rem] md:text-[5rem] font-extrabold tracking-tighter leading-none text-slate-900 dark:text-slate-50">—</div>
+            <div id="hero-meta" class="mt-2 flex gap-4 text-sm text-slate-500 dark:text-slate-400 flex-wrap"></div>
+          </div>
+        </div>
+        <div class="md:col-span-3 space-y-4">
+          <div id="hero-stats" class="divide-y divide-slate-100 dark:divide-white/5"></div>
+          <div>
+            <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2" id="hero-aq-label">Qualità aria</div>
+            <div id="hero-aq" class="flex flex-wrap gap-1.5 mt-1"></div>
+          </div>
+          <div id="hero-sun" class="flex gap-4 text-xs text-slate-400 tabular-nums"></div>
+        </div>
+      </div>
+      <div class="relative z-10 border-t border-slate-100 dark:border-white/5 px-6 py-4">
+        <div id="hero-indicators" class="flex gap-3 overflow-x-auto no-scrollbar"></div>
+      </div>
+    </section>
+
+    <!-- ② RADAR -->
+    <section id="radar-section" class="hidden relative rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-[#0B0F19] h-[280px] md:h-[360px]">
+      <div id="radar-map" class="absolute inset-0 z-[1]"></div>
+      <div class="absolute bottom-4 left-4 right-4 z-[6] flex items-center gap-3">
+        <button id="radar-play" class="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white flex items-center justify-center hover:bg-white/20 active:scale-90 transition-all duration-150 flex-none" aria-label="Play/Pausa"></button>
+        <input id="radar-slider" type="range" class="flex-1 range range-xs range-primary" min="0" max="0" value="0" step="1" aria-label="Radar timeline">
+        <span id="radar-time" class="text-xs text-white font-mono tabular-nums bg-black/30 px-2 py-1 rounded-lg backdrop-blur-md w-[5rem] text-right shrink-0">—</span>
+      </div>
+      <div class="absolute top-3 right-3 z-[6] flex flex-col gap-1" id="radar-zoom-btns">
+        <button class="w-8 h-8 rounded-xl bg-white/10 backdrop-blur-md border border-white/10 text-white font-bold hover:bg-white/20 transition-all" id="radar-zoom-in" aria-label="Zoom in">+</button>
+        <button class="w-8 h-8 rounded-xl bg-white/10 backdrop-blur-md border border-white/10 text-white font-bold hover:bg-white/20 transition-all" id="radar-zoom-out" aria-label="Zoom out">−</button>
+      </div>
+      <div id="radar-error" class="hidden absolute inset-0 z-[7] flex items-center justify-center bg-[#0B0F19]/80 text-sm text-white/60 p-4"></div>
+    </section>
+
+    <!-- ③ PREVISIONI: Striscia + Dettaglio -->
+    <div id="forecast-section" class="hidden space-y-4">
+      <div class="flex items-end justify-between px-1">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Prossimi giorni</h2>
+      </div>
+      <div id="day-strip" class="flex gap-3 overflow-x-auto snap-x snap-mandatory py-2 px-1 no-scrollbar"></div>
+
+      <section id="day-detail" class="rounded-3xl bg-white dark:bg-slate-900/60 border border-black/[0.04] dark:border-white/[0.06] shadow-xl overflow-hidden anim-fade-up">
+        <div class="p-6 md:p-8">
+          <div class="flex items-center gap-3 mb-6">
+            <span id="detail-icon" class="text-5xl shrink-0"></span>
+            <div>
+              <h3 id="detail-title" class="text-2xl font-bold tracking-tight"></h3>
+              <p class="text-sm text-slate-400 flex items-center gap-2 mt-0.5">
+                <span id="detail-date"></span>
+                <span id="detail-lead" class="rounded-full bg-slate-100 dark:bg-white/5 px-2.5 py-0.5 text-xs font-medium text-slate-500 dark:text-slate-400"></span>
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="md:col-span-2 rounded-2xl bg-slate-50 dark:bg-white/5 p-5 border border-slate-100 dark:border-white/5 relative overflow-hidden">
+              <p class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-3">Temperatura</p>
+              <div class="flex items-end gap-6 md:gap-10">
+                <div>
+                  <span id="detail-tmax" class="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-slate-50">—</span>
+                  <span class="text-sm text-slate-400 ml-1">max</span>
+                </div>
+                <div>
+                  <span id="detail-tmin" class="text-4xl font-extrabold tracking-tight text-slate-400">—</span>
+                  <span class="text-sm text-slate-400 ml-1">min</span>
+                </div>
+              </div>
+              <div id="detail-ci-tmax" class="mt-5"></div>
+              <div id="detail-ci-tmin" class="mt-3"></div>
+            </div>
+            <div class="rounded-2xl bg-slate-50 dark:bg-white/5 p-5 border border-slate-100 dark:border-white/5">
+              <p class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-3">Precipitazione</p>
+              <div id="detail-precip-val" class="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-slate-50">—</div>
+              <div id="detail-ci-precip" class="mt-5"></div>
+            </div>
+          </div>
+
+          <div id="detail-indicators" class="flex gap-3 overflow-x-auto no-scrollbar mt-6"></div>
+
+          <div class="mt-8">
+            <h4 class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-3">Confronto modelli</h4>
+            <div id="nwp-list" class="divide-y divide-slate-100 dark:divide-white/5"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ④ GRAFICO ORARIO GIORNALIERO -->
+    <section id="chart-daily-section" class="hidden rounded-3xl bg-white dark:bg-slate-900/60 border border-black/[0.04] dark:border-white/[0.06] shadow-xl p-6 anim-fade-up">
+      <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Andamento orario</h3>
+        <div class="relative inline-flex bg-slate-100 dark:bg-slate-800 rounded-full p-1" id="model-switch">
+          <span id="model-pill" class="absolute top-1 bottom-1 bg-white dark:bg-slate-700 rounded-full shadow-sm pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"></span>
+        </div>
+      </div>
+      <div class="relative h-[280px] w-full">
+        <canvas id="meteo-chart"></canvas>
+        <div id="chart-tooltip" class="absolute pointer-events-none opacity-0 transition-opacity duration-200 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl rounded-xl border border-black/5 dark:border-white/10 shadow-2xl px-3 py-2 z-20 min-w-[140px]"></div>
+      </div>
+      <div class="flex gap-5 mt-4 text-xs text-slate-400 flex-wrap">
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>Temperatura</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-500 inline-block"></span>Umidità</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-600/60 inline-block"></span>Precip</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-teal-500 inline-block"></span>Vento</span>
+      </div>
+    </section>
+
+    <!-- ⑤ GRAFICO SETTIMANALE -->
+    <section id="chart-weekly-section" class="hidden rounded-3xl bg-white dark:bg-slate-900/60 border border-black/[0.04] dark:border-white/[0.06] shadow-xl p-6 anim-fade-up">
+      <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Tendenza settimanale</h3>
+        <div class="relative inline-flex bg-slate-100 dark:bg-slate-800 rounded-full p-1" id="weekly-model-switch">
+          <span id="weekly-model-pill" class="absolute top-1 bottom-1 bg-white dark:bg-slate-700 rounded-full shadow-sm pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"></span>
+        </div>
+      </div>
+      <div class="relative h-[260px] w-full">
+        <canvas id="multiday-chart"></canvas>
+      </div>
+      <div class="flex gap-5 mt-4 text-xs text-slate-400 flex-wrap">
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>Temperatura</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-500 inline-block"></span>Umidità</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-600/60 inline-block"></span>Precip</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-teal-500 inline-block"></span>Vento</span>
+      </div>
+    </section>
+
+    <div id="coverage-bar" class="hidden pt-2"></div>
+
   </main>
+
   <script src="app.js" defer></script>
 </body>
 </html>

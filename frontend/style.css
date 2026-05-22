@@ -1,61 +1,146 @@
-/* Semantic indicator colors — referenced by VERDICT_CLS in app.js */
-:root { --verde: #16a34a; --giallo: #b45309; --rosso: #dc2626; }
+/* === CSS Variables === */
+:root {
+  --accent: #6366F1;
+  --accent-glow: rgba(99,102,241,0.25);
+}
 
-.ind-verde  { background: #dcfce7; color: #15803d; }
-.ind-giallo { background: #fef9c3; color: #a16207; }
-.ind-rosso  { background: #fee2e2; color: #b91c1c; }
+/* === No-scrollbar utility === */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 
-[data-theme="dark"] .ind-verde  { background: rgba(20,83,45,.35);  color: #86efac; }
-[data-theme="dark"] .ind-giallo { background: rgba(113,63,18,.35); color: #fde68a; }
-[data-theme="dark"] .ind-rosso  { background: rgba(127,29,29,.35); color: #fca5a5; }
+/* === Indicator verdict classes === */
+.ind-verde  { background: rgba(16,185,129,0.08);  color: #059669; border-color: rgba(16,185,129,0.2); }
+.ind-giallo { background: rgba(245,158,11,0.08);  color: #D97706; border-color: rgba(245,158,11,0.2); }
+.ind-rosso  { background: rgba(239,68,68,0.08);   color: #DC2626; border-color: rgba(239,68,68,0.2);  }
 
-/* CI bar — custom component, no DaisyUI equivalent */
-.ci-bar-track { position: relative; height: 8px; background: #e2e8f0; border-radius: 4px; margin-bottom: .25rem; }
-.ci-range-80  { position: absolute; height: 100%; background: #2563eb; opacity: .5; border-radius: 4px; }
-.ci-p50       { position: absolute; width: 3px; height: 16px; top: -4px; background: #2563eb; border-radius: 2px; transform: translateX(-50%); }
-.ci-labels    { display: flex; justify-content: space-between; font-size: .7rem; color: #64748b; }
-.ci-detail    { font-size: .7rem; color: #64748b; margin-top: .375rem; }
+.dark .ind-verde  { background: rgba(16,185,129,0.12);  color: #34D399; border-color: rgba(16,185,129,0.25); }
+.dark .ind-giallo { background: rgba(245,158,11,0.12);  color: #FBBF24; border-color: rgba(245,158,11,0.25); }
+.dark .ind-rosso  { background: rgba(239,68,68,0.12);   color: #F87171; border-color: rgba(239,68,68,0.25);  }
 
-[data-theme="dark"] .ci-bar-track { background: #334155; }
-[data-theme="dark"] .ci-labels,
-[data-theme="dark"] .ci-detail { color: #94a3b8; }
+/* === Keyframes === */
+@keyframes slow-float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-6px); }
+}
 
-/* Chart container — overflow for horizontal scroll on mobile */
-.combined-chart-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 6px; }
+@keyframes sonar {
+  0%   { transform: scale(0.5); opacity: 0.8; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
 
-/* Fade-in animation for location/day transitions */
-@keyframes guazza-fade-in {
-  from { opacity: 0; transform: translateY(5px); }
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.anim-fade-in { animation: guazza-fade-in 0.2s ease-out both; }
 
-/* Leaflet — z-index controls/panes default to 1000+ which covers the sticky header (z-10).
-   Force them below so the header stays on top when scrolling. */
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(245,158,11,0.1); }
+  50%       { border-color: rgba(245,158,11,0.4); }
+}
+
+@keyframes badge-bounce {
+  0%   { transform: scale(0); }
+  60%  { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+@keyframes ci-expand {
+  from { transform: scaleX(0); opacity: 0; }
+  to   { transform: scaleX(1); opacity: 1; }
+}
+
+@keyframes ci-pop {
+  from { transform: translateY(-50%) scale(0); }
+  to   { transform: translateY(-50%) scale(1); }
+}
+
+/* === Skeleton shimmer === */
+.skeleton {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.45) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+.dark .skeleton {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* === Animation utilities === */
+.anim-fade-up       { animation: fade-up 0.4s ease-out both; }
+.hero-icon-float    { animation: slow-float 4s ease-in-out infinite; }
+.stale-pulse        { animation: pulse-border 2s ease-in-out infinite; }
+.today-badge-anim   { animation: badge-bounce 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+/* DaisyUI tooltip needs position context on parent */
+.tooltip { display: inline-flex; }
+
+/* === Hero icon hover (desktop only) === */
+@media (hover: hover) {
+  .hero-icon-float:hover {
+    animation: none;
+    transform: scale(1.12) rotate(4deg);
+    transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+  }
+}
+
+/* === Day card active glow === */
+.day-card-active { position: relative; }
+.day-card-active::after {
+  content: '';
+  position: absolute;
+  inset-x: 10%;
+  bottom: -8px;
+  height: 16px;
+  background: var(--accent-glow);
+  filter: blur(12px);
+  border-radius: 50%;
+  z-index: -1;
+  opacity: 0.6;
+}
+
+/* === CI Bar === */
+.ci-range-90 {
+  animation: ci-expand 400ms 200ms cubic-bezier(0.4,0,0.2,1) both;
+  transform-origin: left;
+}
+.ci-range-80 {
+  animation: ci-expand 400ms 320ms cubic-bezier(0.4,0,0.2,1) both;
+  transform-origin: left;
+}
+.ci-median {
+  animation: ci-pop 400ms 520ms cubic-bezier(0.34,1.56,0.64,1) both;
+}
+
+/* === Leaflet overrides === */
 .leaflet-pane,
 .leaflet-top,
 .leaflet-bottom { z-index: 5 !important; }
 
-/* Dark theme adjustments for Leaflet controls */
-[data-theme="dark"] .leaflet-control-attribution {
-  background: rgba(30, 41, 59, 0.85);
+[data-theme="dark"] .leaflet-control-attribution,
+.dark .leaflet-control-attribution {
+  background: rgba(30,41,59,0.85);
   color: #94a3b8;
 }
-[data-theme="dark"] .leaflet-control-attribution a { color: #60a5fa; }
-[data-theme="dark"] .leaflet-bar a {
+[data-theme="dark"] .leaflet-control-attribution a,
+.dark .leaflet-control-attribution a { color: #60a5fa; }
+[data-theme="dark"] .leaflet-bar a,
+.dark .leaflet-bar a {
   background: #1e293b;
   color: #e2e8f0;
   border-color: #334155;
 }
-[data-theme="dark"] .leaflet-bar a:hover { background: #334155; }
+[data-theme="dark"] .leaflet-bar a:hover,
+.dark .leaflet-bar a:hover { background: #334155; }
 
-/* Placeholder background while tiles load */
-#radar-map { background: #e2e8f0; }
-[data-theme="dark"] #radar-map { background: #1e293b; }
+#radar-map { background: #0b0f19; }
 
-/* Twemoji — <img class="emoji"> injected by twemoji.parse().
-   Without this, SVGs render at intrinsic size (~36px) ignoring Tailwind text-* classes.
-   height/width in em → inherits font-size from parent; vertical-align matches native emoji baseline. */
+/* === Twemoji === */
 img.emoji {
   height: 1em;
   width: 1em;
