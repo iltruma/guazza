@@ -45,6 +45,7 @@ from guazza.fetchers import (  # noqa: E402
     _OM_MODELS,
     _log_scrape,
     fetch_arpat_all_locations,
+    fetch_arpat_bollettino_all_locations,
     fetch_netatmo_all_locations,
     fetch_openmeteo_all_locations,
     fetch_openmeteo_historical_batch,
@@ -541,7 +542,12 @@ def cmd_realtime(
             for _loc_id, records in aq_results.items():
                 if records:
                     aq_total += db.upsert_sir_observations(records)
-            logger.info(f"realtime ARPAT: {aq_total} record")
+
+            # 4. ARPAT bollettino — PM10/PM2.5 giornaliero (latenza ~2gg, unico endpoint regionale)
+            boll_records = fetch_arpat_bollettino_all_locations(locations)
+            if boll_records:
+                aq_total += db.upsert_sir_observations(boll_records)
+            logger.info(f"realtime ARPAT: {aq_total} record ({len(boll_records)} bollettino PM10/PM2.5)")
 
     except Exception as e:
         logger.error(f"realtime fallito: {e}")

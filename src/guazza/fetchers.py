@@ -1628,6 +1628,125 @@ def fetch_arpat_all_locations(
     return results
 
 
+# ── ARPAT bollettino giornaliero (PM10 / PM2.5) ───────────────────────────────
+
+_ARPAT_BOLLETTINO_URL = (
+    "https://opendata.arpat.toscana.it/temi-ambientali/aria/qualita-aria"
+    "/bollettini/bollettino_json/"
+)
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=60, max=600),
+    retry=retry_if_exception(_is_retryable_http),
+)
+def _fetch_arpat_bollettino_json() -> Any:
+    """Fetch ultimo bollettino ARPAT Toscana (un endpoint per tutta la regione)."""
+    with httpx.Client(timeout=10, headers={"User-Agent": _UA}) as client:
+        r = client.get(_ARPAT_BOLLETTINO_URL)
+        r.raise_for_status()
+    return r.json()
+
+
+def _parse_arpat_bollettino(
+    payload: Any,
+    station_location_map: dict[str, tuple[str, float]],
+) -> list[dict[str, Any]]:
+    """Parsifica bollettino ARPAT: estrae solo PM10 e PM2.5 per le stazioni configurate.
+
+    Args:
+        payload: risposta JSON bollettino (lista di dict stazione).
+        station_location_map: {station_id -> (location_id, weight)} per le stazioni
+            configurate. Solo le stazioni presenti nella mappa vengono importate.
+
+    Returns:
+        Lista di record wide con granularity='daily', ts=mezzanotte del giorno bollettino.
+    """
+    if not isinstance(payload, list):
+        return []
+
+    records: list[dict[str, Any]] = []
+    for entry in payload:
+        if not isinstance(entry, dict):
+            continue
+
+        station_id: str = str(entry.get("NOME_STAZIONE") or "").strip()
+        if station_id not in station_location_map:
+            continue
+
+        data_str = str(entry.get("DATA_OSSERVAZIONE") or "").strip()
+        if not data_str:
+            continue
+        try:
+            ts = datetime.strptime(data_str, "%d-%b-%y")
+        except ValueError:
+            logger.debug(f"ARPAT bollettino [{station_id}] DATA non parsificabile: {data_str!r}")
+            continue
+
+        location_id, weight = station_location_map[station_id]
+
+        def _boll_val(raw: Any) -> float | None:
+            if raw is None:
+                return None
+            s = str(raw).strip().replace(",", ".")
+            if s in ("-", "n.d.", ""):
+                return None
+            try:
+                return float(s)
+            except ValueError:
+                return None
+
+        pm10 = _boll_val(entry.get("PM10"))
+        pm25 = _boll_val(entry.get("PM2.5"))
+        if pm10 is None and pm25 is None:
+            continue
+
+        records.append({
+            "source": "arpat",
+            "station_id": station_id,
+            "location_id": location_id,
+            "ts": ts,
+            "granularity": "daily",
+            "weight": weight,
+            "qc_pass": True,
+            "pm10_ugm3": pm10,
+            "pm25_ugm3": pm25,
+        })
+
+    return records
+
+
+def fetch_arpat_bollettino_all_locations(
+    locations: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Fetch bollettino ARPAT PM10/PM2.5 per tutte le location configurate.
+
+    Returns:
+        Lista record wide per upsert su observations (granularity='daily').
+        Lista vuota su fallimento — il prossimo cron riprova.
+    """
+    station_location_map: dict[str, tuple[str, float]] = {}
+    for loc_id, loc in locations.items():
+        if "aria_qualita" not in (loc.get("extras") or []):
+            continue
+        for station in (loc.get("arpat_stations") or []):
+            sid: str = station["id"]
+            w: float = float(station.get("weight", 1.0))
+            if sid not in station_location_map:
+                station_location_map[sid] = (loc_id, w)
+
+    if not station_location_map:
+        return []
+
+    try:
+        payload = _fetch_arpat_bollettino_json()
+        records = _parse_arpat_bollettino(payload, station_location_map)
+        _log_scrape("arpat_bollettino", "ok", rows=len(records))
+        return records
+    except Exception as e:
+        _log_scrape("arpat_bollettino", "fail", detail=str(e))
+        return []
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

@@ -1030,3 +1030,111 @@ def test_fetch_arpat_all_locations_dedup_station() -> None:
     with patch("guazza.fetchers._fetch_arpat_nrt_json", return_value=payload) as mock_fetch:
         fetch_arpat_all_locations(locations)
     assert mock_fetch.call_count == 1
+
+
+# -- _parse_arpat_bollettino + fetch_arpat_bollettino_all_locations ────────────
+
+from guazza.fetchers import (  # noqa: E402
+    _parse_arpat_bollettino,
+    fetch_arpat_bollettino_all_locations,
+)
+
+_BOLL_MAP: dict[str, tuple[str, float]] = {
+    "FI-SIGNA": ("casa_campi", 1.0),
+    "FI-SCANDICCI": ("lavoro_cosimo", 0.8),
+}
+
+_BOLL_ENTRY = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2.5": 9}
+
+
+def test_parse_arpat_bollettino_happy_path() -> None:
+    """Stazione configurata con PM10 e PM2.5 -> un record daily."""
+    records = _parse_arpat_bollettino([_BOLL_ENTRY], _BOLL_MAP)
+    assert len(records) == 1
+    r = records[0]
+    assert r["station_id"] == "FI-SIGNA"
+    assert r["location_id"] == "casa_campi"
+    assert r["granularity"] == "daily"
+    assert r["pm10_ugm3"] == pytest.approx(18.0)
+    assert r["pm25_ugm3"] == pytest.approx(9.0)
+    assert r["ts"].hour == 0 and r["ts"].minute == 0
+
+
+def test_parse_arpat_bollettino_station_not_in_map() -> None:
+    """Stazione non configurata -> scartata."""
+    entry = {"NOME_STAZIONE": "LU-CAPANNORI", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 20, "PM2.5": 10}
+    records = _parse_arpat_bollettino([entry], _BOLL_MAP)
+    assert records == []
+
+
+def test_parse_arpat_bollettino_dash_values() -> None:
+    """'-' e 'n.d.' -> None; se entrambi None record scartato."""
+    entry = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": "-", "PM2.5": "n.d."}
+    records = _parse_arpat_bollettino([entry], _BOLL_MAP)
+    assert records == []
+
+
+def test_parse_arpat_bollettino_partial_values() -> None:
+    """PM10 presente, PM2.5 assente -> record con solo PM10."""
+    entry = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 22}
+    records = _parse_arpat_bollettino([entry], _BOLL_MAP)
+    assert len(records) == 1
+    assert records[0]["pm10_ugm3"] == pytest.approx(22.0)
+    assert records[0]["pm25_ugm3"] is None
+
+
+def test_parse_arpat_bollettino_invalid_date() -> None:
+    """DATA_OSSERVAZIONE non parsificabile -> record scartato."""
+    entry = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "INVALID", "PM10": 20}
+    records = _parse_arpat_bollettino([entry], _BOLL_MAP)
+    assert records == []
+
+
+def test_parse_arpat_bollettino_non_list_payload() -> None:
+    """Payload non-lista -> []."""
+    assert _parse_arpat_bollettino({}, _BOLL_MAP) == []
+    assert _parse_arpat_bollettino(None, _BOLL_MAP) == []
+
+
+def test_parse_arpat_bollettino_multi_stations() -> None:
+    """Più stazioni configurate -> un record per stazione presente."""
+    payload = [
+        {"NOME_STAZIONE": "FI-SIGNA",     "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2.5": 9},
+        {"NOME_STAZIONE": "FI-SCANDICCI", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 25, "PM2.5": 12},
+        {"NOME_STAZIONE": "LU-CAPANNORI", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 30},
+    ]
+    records = _parse_arpat_bollettino(payload, _BOLL_MAP)
+    assert len(records) == 2
+    ids = {r["station_id"] for r in records}
+    assert ids == {"FI-SIGNA", "FI-SCANDICCI"}
+
+
+def test_fetch_arpat_bollettino_all_locations_ok() -> None:
+    """HTTP ok -> lista record dai record daily."""
+    locations = {
+        "casa_campi": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]},
+    }
+    payload = [{"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2.5": 9}]
+    with patch("guazza.fetchers._fetch_arpat_bollettino_json", return_value=payload):
+        records = fetch_arpat_bollettino_all_locations(locations)
+    assert len(records) == 1
+    assert records[0]["granularity"] == "daily"
+
+
+def test_fetch_arpat_bollettino_all_locations_http_error() -> None:
+    """Errore HTTP -> lista vuota, nessuna eccezione propagata."""
+    locations = {
+        "casa_campi": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]},
+    }
+    with patch("guazza.fetchers._fetch_arpat_bollettino_json", side_effect=Exception("500")):
+        records = fetch_arpat_bollettino_all_locations(locations)
+    assert records == []
+
+
+def test_fetch_arpat_bollettino_no_aria_qualita() -> None:
+    """Location senza 'aria_qualita' in extras -> nessuna chiamata HTTP, lista vuota."""
+    locations = {"no_aria": {"extras": [], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]}}
+    with patch("guazza.fetchers._fetch_arpat_bollettino_json") as mock_fetch:
+        records = fetch_arpat_bollettino_all_locations(locations)
+    assert records == []
+    mock_fetch.assert_not_called()

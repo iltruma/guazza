@@ -348,8 +348,10 @@ def get_current_air_quality(
         FROM observations
         WHERE location_id = ?
           AND source = 'arpat'
-          AND granularity = 'hourly'
-          AND ts >= CURRENT_TIMESTAMP - INTERVAL 6 HOURS
+          AND (
+              (granularity = 'hourly' AND ts >= CURRENT_TIMESTAMP - INTERVAL 6 HOURS)
+           OR (granularity = 'daily'  AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 DAYS)
+          )
     """, [location_id]).fetchone()
 
     if row is None or all(v is None for v in row):
