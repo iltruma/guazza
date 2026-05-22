@@ -2,6 +2,7 @@
 
 // Dev: ln -s ../data/output frontend/data  then: cd frontend && python3 -m http.server 8080
 const DATA_URL = loc => `/data/${loc}.json`;
+const TWEMOJI_OPTS = { folder: 'svg', ext: '.svg' };
 
 const LOCATIONS = [
   { id: 'casa_campi',    label: 'Casa Campi' },
@@ -263,8 +264,10 @@ function ciBar(fc, unit) {
   const p80width = (pct(ci80_hi) - pct(ci80_lo)).toFixed(1);
   const p50pos   = pct(p50);
 
+  const tip = `Mediana: ${p50.toFixed(1)}${unit} · nell'80% dei casi: ${ci80_lo.toFixed(1)} – ${ci80_hi.toFixed(1)}${unit} · nel 90%: ${ci90_lo.toFixed(1)} – ${ci90_hi.toFixed(1)}${unit}`;
+
   return `
-    <div class="my-1">
+    <div class="my-1 tooltip tooltip-bottom w-full" data-tip="${tip}">
       <div class="ci-bar-track">
         <div class="ci-range-80" style="left:${p80lo}%;width:${p80width}%"></div>
         <div class="ci-p50" style="left:${p50pos}%"></div>
@@ -273,9 +276,6 @@ function ciBar(fc, unit) {
         <span>${ci90_lo.toFixed(1)}${unit}</span>
         <span>${ci90_hi.toFixed(1)}${unit}</span>
       </div>
-    </div>
-    <div class="ci-detail">
-      p50 ${p50.toFixed(1)}${unit} &middot; CI80 [${ci80_lo.toFixed(1)}, ${ci80_hi.toFixed(1)}]${unit}
     </div>`;
 }
 
@@ -903,6 +903,8 @@ function render(container, data) {
     ${coverageBadge(data.coverage_empirical_30d)}
   `;
 
+  twemoji.parse(container, TWEMOJI_OPTS);
+
   // trigger fade-in
   container.classList.remove('anim-fade-in');
   void container.offsetWidth;
@@ -947,5 +949,6 @@ function render(container, data) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 initDarkMode();
+twemoji.parse(document.querySelector('header'), TWEMOJI_OPTS);
 window.addEventListener('popstate', () => loadLocation(getActiveLoc()));
 loadLocation(getActiveLoc());
