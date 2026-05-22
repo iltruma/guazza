@@ -341,7 +341,8 @@ Struttura multi-giorno: ogni file contiene la striscia `days` da D+0 a D+7.
     "precip_ci80": float | null, "precip_ci90": float | null
   },
   "current": {"ts": str, "temp_c": float, "humidity_pct": float, "precip_mm": float,
-              "wind_speed_ms": float | null, "dewpoint_c": float, "feels_like_c": float,
+              "wind_speed_ms": float | null, "wind_dir_deg": float | null,
+              "dewpoint_c": float, "feels_like_c": float,
               "pressure_hpa": float | null},
   "air_quality": {"pm10_ugm3": float | null, "pm25_ugm3": float | null,
                   "no2_ugm3": float | null, "o3_ugm3": float | null,

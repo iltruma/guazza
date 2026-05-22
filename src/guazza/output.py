@@ -386,7 +386,8 @@ def get_current_conditions(
             ROUND(AVG(temp_c), 1)                               AS temp_c,
             ROUND(AVG(humidity_pct), 0)                         AS humidity_pct,
             ROUND(SUM(COALESCE(precip_mm, 0.0)), 2)             AS precip_mm,
-            ROUND(AVG(wind_speed_ms), 1)                        AS wind_speed_ms
+            ROUND(AVG(wind_speed_ms), 1)                        AS wind_speed_ms,
+            ROUND(AVG(wind_dir_deg), 0)                         AS wind_dir_deg
         FROM observations
         WHERE location_id = ?
           AND granularity = 'realtime'
@@ -397,7 +398,7 @@ def get_current_conditions(
     if row is None or row[1] is None:
         return None
 
-    ts, temp_c, humidity_pct, precip_mm, wind_speed_ms = row
+    ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg = row
 
     # pressure_hpa viene dai forecast NWP (tabella forecasts), non dalle stazioni realtime
     pres_row = db.execute("""
@@ -411,7 +412,8 @@ def get_current_conditions(
     pressure_hpa = pres_row[0] if pres_row else None
     t    = float(temp_c)
     rh   = float(humidity_pct) if humidity_pct is not None else None
-    ws   = float(wind_speed_ms) if wind_speed_ms is not None else None
+    ws  = float(wind_speed_ms) if wind_speed_ms is not None else None
+    wd  = float(wind_dir_deg)  if wind_dir_deg  is not None else None
 
     dew      = _dewpoint(t, rh) if rh is not None else None
     apparent = _apparent_temp(t, rh, ws if ws is not None else 0.0) if rh is not None else None
@@ -422,6 +424,7 @@ def get_current_conditions(
         "humidity_pct":  rh,
         "precip_mm":     float(precip_mm) if precip_mm is not None else None,
         "wind_speed_ms": ws,
+        "wind_dir_deg":  wd,
         "dewpoint_c":    dew,
         "feels_like_c":  apparent,
         "pressure_hpa":  float(pressure_hpa) if pressure_hpa is not None else None,

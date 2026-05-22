@@ -175,6 +175,13 @@ function fmtDateTime(iso) {
 function fmtTemp(v)   { return v != null ? `${v.toFixed(1)}°` : '—'; }
 function fmtPrecip(v) { return v != null ? `${v.toFixed(1)} mm` : '—'; }
 function fmtWind(v)   { return v != null ? `${(v * 3.6).toFixed(0)} km/h` : '—'; }
+function windDirLabel(deg) {
+  if (deg == null) return null;
+  const dirs = ['N','NE','E','SE','S','SO','O','NO'];
+  const arrows = ['↓','↙','←','↖','↑','↗','→','↘'];
+  const i = Math.round(deg / 45) % 8;
+  return { label: dirs[i], arrow: arrows[i] };
+}
 
 function fmtSunTime(d) {
   if (!d || isNaN(d)) return '—';
@@ -334,7 +341,10 @@ function renderCurrentPanel(data) {
   // Campi derivati (solo da realtime)
   const feelsLike = current?.feels_like_c  != null ? `${current.feels_like_c.toFixed(1)}°` : null;
   const dewpoint  = current?.dewpoint_c    != null ? `${current.dewpoint_c.toFixed(1)}°`   : null;
-  const wind      = current?.wind_speed_ms != null ? fmtWind(current.wind_speed_ms)         : null;
+  const windDir   = windDirLabel(current?.wind_dir_deg);
+  const wind      = current?.wind_speed_ms != null
+    ? `${fmtWind(current.wind_speed_ms)}${windDir ? ` ${windDir.arrow} ${windDir.label}` : ''}`
+    : null;
   const hum       = current?.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%`  : null;
   const prec      = current?.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm`   : null;
   const presVal   = current?.pressure_hpa;
