@@ -337,7 +337,9 @@ function renderCurrentPanel(data) {
   const wind      = current?.wind_speed_ms != null ? fmtWind(current.wind_speed_ms)         : null;
   const hum       = current?.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%`  : null;
   const prec      = current?.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm`   : null;
-  const pres      = current?.pressure_hpa  != null ? `${current.pressure_hpa.toFixed(0)} hPa` : null;
+  const presVal   = current?.pressure_hpa;
+  const presArrow = presVal == null ? '' : presVal > 1020 ? ' <span class="text-success">⬆</span>' : presVal < 1005 ? ' <span class="text-warning">⬇</span>' : ' <span class="text-base-content/40">➡</span>';
+  const pres      = presVal != null ? `${presVal.toFixed(0)} hPa${presArrow}` : null;
   const ts        = current?.ts ? new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : null;
 
   const metaRow = (feelsLike || dewpoint) ? `

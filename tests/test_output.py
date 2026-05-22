@@ -711,6 +711,55 @@ def test_current_conditions_has_derived_fields(seeded_db: Path) -> None:
     assert result["dewpoint_c"] < result["temp_c"]  # rugiada sempre < temperatura
 
 
+def test_current_conditions_pressure_null_without_forecasts(seeded_db: Path) -> None:
+    """pressure_hpa è None se non ci sono forecast NWP recenti."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, humidity_pct)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ["sir", "ST001", "casa_campi", now - timedelta(minutes=10), "realtime", 18.0, 60.0])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    assert result["pressure_hpa"] is None
+
+
+def test_current_conditions_pressure_from_forecasts(seeded_db: Path) -> None:
+    """pressure_hpa viene dalla tabella forecasts (Open-Meteo), non da observations."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, humidity_pct)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ["sir", "ST001", "casa_campi", now - timedelta(minutes=10), "realtime", 18.0, 60.0])
+    con.execute("""
+        INSERT INTO forecasts
+            (source, location_id, ts_run, ts_valid, lead_time_h, pressure_hpa)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, ["open_meteo_icon_d2", "casa_campi", now - timedelta(hours=2), now - timedelta(minutes=30), 2, 1018.5])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    assert result["pressure_hpa"] == pytest.approx(1018.5, abs=0.5)
+
+
 # ── get_nwp_models_hourly ─────────────────────────────────────────────────────
 
 def test_nwp_models_hourly_empty(seeded_db: Path) -> None:
