@@ -314,3 +314,18 @@ Per gli indicatori `motorino` (vento < 5 km/h) e simili, questo introduce una
 discrepanza tra display realtime e logica DLE.
 
 **Nessun fix pianificato**: limitazione hardware/dati a monte.
+
+---
+
+## KI-015 — pressure_hpa nel pannello realtime può essere null
+
+**Severità**: bassa (informativa — solo display)
+**Stato**: by design
+
+`current.pressure_hpa` è la pressione di superficie aggregata dalle osservazioni
+realtime (`granularity='realtime'`, finestra 3h). Le stazioni SIR e Netatmo non
+riportano la pressione; il valore viene solo da Open-Meteo quando il job `realtime`
+inserisce le sue osservazioni sintetiche. Se il job non è stato eseguito di recente
+il campo è `null` e la 4a cella della stats grid mostra `—`.
+
+**Nessun fix pianificato**: dipende dalla disponibilità del dato a monte.

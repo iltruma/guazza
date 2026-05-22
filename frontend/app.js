@@ -337,6 +337,7 @@ function renderCurrentPanel(data) {
   const wind      = current?.wind_speed_ms != null ? fmtWind(current.wind_speed_ms)         : null;
   const hum       = current?.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%`  : null;
   const prec      = current?.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm`   : null;
+  const pres      = current?.pressure_hpa  != null ? `${current.pressure_hpa.toFixed(0)} hPa` : null;
   const ts        = current?.ts ? new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : null;
 
   const metaRow = (feelsLike || dewpoint) ? `
@@ -346,7 +347,7 @@ function renderCurrentPanel(data) {
     </div>` : '';
 
   const statsRow = `
-    <div class="grid grid-cols-3 gap-3 mt-4">
+    <div class="grid grid-cols-4 gap-3 mt-4">
       <div class="bg-base-200 rounded-lg p-2.5 text-center">
         <div class="text-xs text-base-content/60 mb-0.5">💨 Vento</div>
         <div class="font-semibold text-sm">${wind ?? '—'}</div>
@@ -358,6 +359,10 @@ function renderCurrentPanel(data) {
       <div class="bg-base-200 rounded-lg p-2.5 text-center">
         <div class="text-xs text-base-content/60 mb-0.5">🌧 Pioggia</div>
         <div class="font-semibold text-sm">${prec ?? '—'}</div>
+      </div>
+      <div class="bg-base-200 rounded-lg p-2.5 text-center">
+        <div class="text-xs text-base-content/60 mb-0.5">🔵 Pressione</div>
+        <div class="font-semibold text-sm">${pres ?? '—'}</div>
       </div>
     </div>`;
 

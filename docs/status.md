@@ -382,6 +382,20 @@ aperto, definito turno per turno: bug fix, raffinamenti UX, micro-feature.
 Criterio di uscita: tutto gira pulito in locale per ≥1 settimana senza
 interventi.
 
+#### Raffinamenti frontend (2026-05-20 → 2026-05-22)
+
+- **Twemoji** (`twemoji@14.0.2`, jsDelivr): emoji Unicode renderizzate come SVG per
+  consistenza cross-browser. Fix CSS `img.emoji` in `style.css`.
+- **suncalc** (jsDelivr): sostituisce il calcolo NOAA manuale per alba/tramonto e
+  fase lunare, calcolati client-side dalle coordinate location.
+- **Alba e tramonto** nel pannello realtime: flex row con emoji + ora + tooltip DaisyUI.
+- **Fase lunare**: 8 emoji lunari (🌑→🌘) con tooltip nome fase in italiano.
+  Aurora civile e crepuscolo civile rimossi.
+- **Tooltip CI bar**: hover sul track confidence interval mostra mediana e range
+  80%/90% in testo leggibile.
+- **Pressione atmosferica**: `pressure_hpa` (surface pressure Open-Meteo) esposta in
+  `get_current_conditions()` e mostrata come 4a cella nella stats grid (grid-cols-4).
+
 ### Sprint 8 — Deploy VPS
 **Dipendenza**: Sprint 7 chiuso, sistema stabile in locale
 

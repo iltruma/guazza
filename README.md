@@ -104,7 +104,7 @@ guazza/
 - **Orchestrazione**: cron Linux (no Prefect, no Airflow)
 - **Storage**: DuckDB (colonnare, file singolo) + R2 backup
 - **ML**: LightGBM quantile regression + CQR calibration
-- **Frontend**: HTML+JS vanilla + Tailwind CSS + DaisyUI v4 + Chart.js (CDN, statico)
+- **Frontend**: HTML+JS vanilla + Tailwind CSS + DaisyUI v4 + Chart.js + Twemoji + suncalc (CDN, statico)
 - **DNS/CDN/WAF**: Cloudflare (gratis)
 - **Monitoring**: Healthchecks.io + UptimeRobot (free tier)
 

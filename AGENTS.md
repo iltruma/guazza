@@ -341,7 +341,8 @@ Struttura multi-giorno: ogni file contiene la striscia `days` da D+0 a D+7.
     "precip_ci80": float | null, "precip_ci90": float | null
   },
   "current": {"ts": str, "temp_c": float, "humidity_pct": float, "precip_mm": float,
-              "wind_speed_ms": float | null, "dewpoint_c": float, "feels_like_c": float},
+              "wind_speed_ms": float | null, "dewpoint_c": float, "feels_like_c": float,
+              "pressure_hpa": float | null},
   "air_quality": {"pm10_ugm3": float | null, "pm25_ugm3": float | null,
                   "no2_ugm3": float | null, "o3_ugm3": float | null,
                   "co_mgm3": float | null, "benzene_ugm3": float | null,
@@ -370,6 +371,20 @@ Struttura multi-giorno: ogni file contiene la striscia `days` da D+0 a D+7.
 
 `coverage_empirical_30d`: rolling 30 giorni predictions vs obs. `null` se < 10 campioni → dashboard mostra "calibrazione in corso".
 `current` e `air_quality` sono `null` se non ci sono osservazioni recenti (rispettivamente realtime meteo e ARPAT).
+`current.pressure_hpa` è la pressione di superficie da Open-Meteo (non SIR) — può essere `null` se non ci sono dati NWP recenti.
+
+### Frontend — librerie client-side (CDN jsDelivr)
+
+Oltre a Tailwind/DaisyUI/Chart.js il frontend carica:
+- **twemoji@14.0.2** — emoji Unicode convertite in SVG per consistenza cross-browser.
+  `twemoji.parse(container, TWEMOJI_OPTS)` va chiamato **dopo ogni update di `innerHTML`
+  nel container `#app`** e una volta sull'`header` all'init. Senza il fix CSS
+  `img.emoji { height:1em; width:1em; vertical-align:-0.1em; }` in `style.css` gli SVG
+  ignorano le classi `text-*` di Tailwind.
+- **suncalc** — alba/tramonto (`SunCalc.getTimes`) e fase lunare
+  (`SunCalc.getMoonIllumination().phase`) calcolati client-side dalle coordinate location.
+  Fase lunare: 8 emoji (🌑→🌘) con tooltip nome in italiano. Aurora/crepuscolo civile
+  non mostrati.
 
 ### Qualità del codice
 
