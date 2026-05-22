@@ -326,7 +326,11 @@ def get_current_air_quality(
     db: DuckDBClient,
     location_id: str,
 ) -> dict[str, float | None] | None:
-    """Ultimi valori qualità aria ARPAT NRT per una location (finestra 3h, solo orario).
+    """Ultimi valori qualità aria ARPAT NRT per una location (finestra 6h, solo orario).
+
+    Finestra 6h invece di 3h: ARPAT pubblica con 2-3h di ritardo sull'ora corrente.
+    Con il cron ogni 30min, senza margine sufficiente i valori sparirebbero tra un fetch
+    e il successivo aggiornamento ARPAT.
 
     Returns:
         {pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3, co_mgm3, benzene_ugm3, so2_ugm3}
@@ -345,7 +349,7 @@ def get_current_air_quality(
         WHERE location_id = ?
           AND source = 'arpat'
           AND granularity = 'hourly'
-          AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 HOURS
+          AND ts >= CURRENT_TIMESTAMP - INTERVAL 6 HOURS
     """, [location_id]).fetchone()
 
     if row is None or all(v is None for v in row):
