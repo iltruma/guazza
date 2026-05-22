@@ -19,6 +19,23 @@ Versioning: major per sprint, minor per milestone interne.
 
 ---
 
+## [0.6.3] — 2026-05-22
+
+### Changed
+- **Sostituito fetcher qualità aria OpenAQ con ARPAT OpenData NRT**: endpoint
+  pubblico senza auth (`/json_orari_nrt/{STATION}/{DD-MM-YYYY}`). Lista statica
+  stazioni da `locations.yaml` (arpat_stations). Source nel DB: `arpat`. CO in
+  mg/m³ nativo (D.Lgs.155/2010), nessuna conversione.
+- Rimosso `--only-openaq` da `historical` (nessun endpoint range disponibile).
+- `get_current_air_quality()`: filtro `source='arpat'` (era `'openaq'`).
+- QC `_insert_range_arpat_flags`: filtro `source='arpat'`.
+
+### Fixed
+- **KI-017 chiuso**: recuperate stazioni AR-ENELSB-SANGIOVANNI (BENZENE/CO,
+  casa_cesto) e FI-LAVAGNINI (NO2, casa_nicco), assenti da OpenAQ.
+
+---
+
 ## [0.6.2] — 2026-05-20
 
 ### Changed
