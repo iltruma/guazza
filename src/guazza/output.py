@@ -448,8 +448,7 @@ def get_nwp_models_hourly(
             ROUND(temp_c, 1)                             AS temp_c,
             ROUND(humidity_pct, 0)                       AS humidity_pct,
             ROUND(COALESCE(precip_mm, 0.0), 2)           AS precip_mm,
-            ROUND(wind_speed_ms, 1)                      AS wind_speed_ms,
-            ROUND(wind_dir_deg, 0)                       AS wind_dir_deg
+            ROUND(wind_speed_ms, 1)                      AS wind_speed_ms
         FROM forecasts
         WHERE location_id = ?
           AND CAST(ts_valid AS DATE) >= CURRENT_DATE
@@ -472,7 +471,6 @@ def get_nwp_models_hourly(
             "humidity_pct":  float(r["humidity_pct"]) if r["humidity_pct"] is not None else None,
             "precip_mm":     float(r["precip_mm"]) if r["precip_mm"] is not None else None,
             "wind_speed_ms": float(r["wind_speed_ms"]) if r["wind_speed_ms"] is not None else None,
-            "wind_dir_deg":  float(r["wind_dir_deg"]) if r["wind_dir_deg"] is not None else None,
         })
 
     return [
@@ -512,16 +510,9 @@ def compute_hourly_profile(
             AVG(CASE WHEN precip_mm IS NULL THEN NULL
                      WHEN precip_mm > 0.1   THEN 1.0
                      ELSE 0.0 END)                                              AS precip_prob,
-            AVG(wind_speed_ms)                                                  AS wind_mean,
-            ROUND(
-                (DEGREES(ATAN2(
-                    AVG(SIN(RADIANS(wind_dir_deg))),
-                    AVG(COS(RADIANS(wind_dir_deg)))
-                )) + 360) % 360,
-                0
-            )                                                                   AS wind_dir_mean
+            AVG(wind_speed_ms)                                                  AS wind_mean
         FROM (
-            SELECT source, ts_valid, temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg
+            SELECT source, ts_valid, temp_c, humidity_pct, precip_mm, wind_speed_ms
             FROM forecasts
             WHERE location_id = ?
               AND CAST(ts_valid AS DATE) = ?
@@ -538,19 +529,18 @@ def compute_hourly_profile(
     if df.empty:
         return None
 
-    hour_data: dict[int, tuple[float, float | None, float, float | None, float | None, float | None]] = {
+    hour_data: dict[int, tuple[float, float | None, float, float | None, float | None]] = {
         int(r["hour"]): (
             float(r["temp_mean"]),
             float(r["humidity_mean"]) if r["humidity_mean"] is not None else None,
             float(r["precip_mean"]),
             float(r["precip_prob"]) if r["precip_prob"] is not None else None,
             float(r["wind_mean"]) if r["wind_mean"] is not None else None,
-            float(r["wind_dir_mean"]) if r["wind_dir_mean"] is not None else None,
         )
         for _, r in df.iterrows()
     }
 
-    raw_temps = [v for _, (v, _, _, _, _, _) in sorted(hour_data.items())]
+    raw_temps = [v for _, (v, _, _, _, _) in sorted(hour_data.items())]
     raw_min = min(raw_temps)
     raw_max = max(raw_temps)
 
@@ -562,7 +552,7 @@ def compute_hourly_profile(
             return round((tmin_p50 + tmax_p50) / 2.0, 1)
         return round(tmin_p50 + (v - raw_min) / span_raw * (tmax_p50 - tmin_p50), 1)
 
-    total_precip_raw = sum(v for _, (_, _, v, _, _, _) in hour_data.items())
+    total_precip_raw = sum(v for _, (_, _, v, _, _) in hour_data.items())
     if total_precip_raw > 0 and precip_p50 is not None and precip_p50 > 0:
         precip_scale = precip_p50 / total_precip_raw
     else:
@@ -571,7 +561,7 @@ def compute_hourly_profile(
     result: list[dict[str, float | None]] = []
     for h in range(24):
         if h in hour_data:
-            t_raw, hum, p_raw, prob, wind, wind_dir = hour_data[h]
+            t_raw, hum, p_raw, prob, wind = hour_data[h]
             result.append({
                 "hour":          h,
                 "temp_c":        _rescale_temp(t_raw),
@@ -579,12 +569,11 @@ def compute_hourly_profile(
                 "precip_mm":     round(p_raw * precip_scale, 2),
                 "precip_prob":   round(prob, 2) if prob is not None else None,
                 "wind_speed_ms": round(wind, 1) if wind is not None else None,
-                "wind_dir_deg":  round(wind_dir, 0) if wind_dir is not None else None,
             })
         else:
             result.append({
                 "hour": h, "temp_c": None, "humidity_pct": None,
-                "precip_mm": None, "precip_prob": None, "wind_speed_ms": None, "wind_dir_deg": None,
+                "precip_mm": None, "precip_prob": None, "wind_speed_ms": None,
             })
 
     return result
