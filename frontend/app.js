@@ -556,7 +556,7 @@ function buildChartPoints(data, model, targetDate) {
       points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0),
                     temp_c: h.temp_c, humidity_pct: h.humidity_pct,
                     precip_mm: h.precip_mm, precip_prob: h.precip_prob,
-                    wind_speed_ms: h.wind_speed_ms });
+                    wind_speed_ms: h.wind_speed_ms, wind_dir_deg: h.wind_dir_deg ?? null });
     });
   } else {
     const modelData = (data.nwp_models_hourly || []).find(mdl => mdl.source === model);
@@ -565,7 +565,7 @@ function buildChartPoints(data, model, targetDate) {
       if (ts >= dayStart && ts <= dayEnd) {
         points.push({ ts, temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
                       precip_mm: pt.precip_mm, precip_prob: null,
-                      wind_speed_ms: pt.wind_speed_ms });
+                      wind_speed_ms: pt.wind_speed_ms, wind_dir_deg: pt.wind_dir_deg ?? null });
       }
     });
   }
@@ -595,6 +595,41 @@ function precipDatasets(points) {
     }),
   };
 }
+
+// Frecce direzione vento sotto l'asse X
+const windArrowPlugin = {
+  id: 'windArrows',
+  afterDraw(chart) {
+    const dirs = chart.options.plugins?.windArrows?.dirs;
+    if (!dirs?.length) return;
+    const xScale = chart.scales.x;
+    const { bottom, left, right } = chart.chartArea;
+    const ctx = chart.ctx;
+    const arrowY = bottom + 18;
+    const minSpacing = 18; // px minimi tra frecce consecutive
+    let lastX = -Infinity;
+
+    ctx.save();
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#10b981';
+
+    dirs.forEach(({ x, dir }) => {
+      if (dir == null) return;
+      const px = xScale.getPixelForValue(x instanceof Date ? x.getTime() : x);
+      if (px < left || px > right) return;
+      if (px - lastX < minSpacing) return;
+      lastX = px;
+      ctx.save();
+      ctx.translate(px, arrowY);
+      ctx.rotate((dir - 90) * Math.PI / 180);
+      ctx.fillText('↑', 0, 0);
+      ctx.restore();
+    });
+    ctx.restore();
+  },
+};
 
 // Crosshair verticale inline
 const crosshairPlugin = {
@@ -633,7 +668,7 @@ function initChart(data, model, targetDate) {
   const p = chartPalette();
   const { data: precipData, bg: precipBg } = precipDatasets(points);
 
-  meteoChart = new Chart(canvas.getContext('2d'), { plugins: [crosshairPlugin],
+  meteoChart = new Chart(canvas.getContext('2d'), { plugins: [crosshairPlugin, windArrowPlugin],
     data: {
       datasets: [
         {
@@ -692,6 +727,7 @@ function initChart(data, model, targetDate) {
       maintainAspectRatio: false,
       hover: { mode: 'index', intersect: false },
       interaction: { mode: 'index', intersect: false },
+      layout: { padding: { bottom: 28 } },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -703,11 +739,16 @@ function initChart(data, model, targetDate) {
               if (item.datasetIndex === 0) return ` ${item.raw.y.toFixed(1)}°C`;
               if (item.datasetIndex === 1) return ` Umidità: ${item.raw.y.toFixed(0)}%`;
               if (item.datasetIndex === 2 && item.raw.y > 0.05) return ` Precip: ${item.raw.y.toFixed(1)} mm`;
-              if (item.datasetIndex === 3) return ` Vento: ${item.raw.y.toFixed(0)} km/h`;
+              if (item.datasetIndex === 3) {
+                const pt = points.find(p => p.ts.getTime() === item.raw.x.getTime());
+                const dir = pt ? windDirLabel(pt.wind_dir_deg) : null;
+                return ` Vento: ${item.raw.y.toFixed(0)} km/h${dir ? ` ${dir.arrow} ${dir.label}` : ''}`;
+              }
               return null;
             },
           },
         },
+        windArrows: { dirs: points.map(pt => ({ x: pt.ts, dir: pt.wind_dir_deg })) },
       },
       scales: {
         x: {
@@ -734,7 +775,7 @@ function initChart(data, model, targetDate) {
           position: 'right',
           min: 0,
           grid: { drawOnChartArea: false },
-          ticks: { color: p.wind, callback: v => `${v}`, font: { size: 9 } },
+          ticks: { color: p.wind, callback: v => `${v} km/h`, font: { size: 9 } },
           display: true,
         },
       },
@@ -752,6 +793,7 @@ function updateChartModel(data, model, targetDate) {
   meteoChart.data.datasets[2].backgroundColor = precipBg;
   meteoChart.data.datasets[3].data = points.filter(pt => pt.wind_speed_ms != null)
                                             .map(pt => ({ x: pt.ts, y: pt.wind_speed_ms * 3.6 }));
+  meteoChart.options.plugins.windArrows.dirs = points.map(pt => ({ x: pt.ts, dir: pt.wind_dir_deg }));
   meteoChart.update();
 }
 
@@ -766,7 +808,7 @@ function buildWeeklyPoints(data, model) {
         points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0),
                       temp_c: h.temp_c, humidity_pct: h.humidity_pct,
                       precip_mm: h.precip_mm, precip_prob: h.precip_prob,
-                      wind_speed_ms: h.wind_speed_ms });
+                      wind_speed_ms: h.wind_speed_ms, wind_dir_deg: h.wind_dir_deg ?? null });
       });
     });
     return points.sort((a, b) => a.ts - b.ts);
@@ -776,7 +818,7 @@ function buildWeeklyPoints(data, model) {
     ts: new Date(pt.ts.replace('Z', '')),
     temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
     precip_mm: pt.precip_mm, precip_prob: null,
-    wind_speed_ms: pt.wind_speed_ms,
+    wind_speed_ms: pt.wind_speed_ms, wind_dir_deg: pt.wind_dir_deg ?? null,
   })).sort((a, b) => a.ts - b.ts);
 }
 
@@ -803,7 +845,7 @@ function initWeeklyChart(data, model) {
   const p = chartPalette();
   const { data: precipData, bg: precipBg } = precipDatasets(points);
 
-  multiDayChart = new Chart(canvas.getContext('2d'), { plugins: [crosshairPlugin],
+  multiDayChart = new Chart(canvas.getContext('2d'), { plugins: [crosshairPlugin, windArrowPlugin],
     data: {
       datasets: [
         { type: 'line', label: 'Temperatura (°C)',
@@ -828,6 +870,7 @@ function initWeeklyChart(data, model) {
       responsive: true, maintainAspectRatio: false,
       hover: { mode: 'index', intersect: false },
       interaction: { mode: 'index', intersect: false },
+      layout: { padding: { bottom: 28 } },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -839,11 +882,16 @@ function initWeeklyChart(data, model) {
               if (item.datasetIndex === 0) return ` ${item.raw.y.toFixed(1)}°C`;
               if (item.datasetIndex === 1) return ` Umidità: ${item.raw.y.toFixed(0)}%`;
               if (item.datasetIndex === 2 && item.raw.y > 0.05) return ` Precip: ${item.raw.y.toFixed(1)} mm`;
-              if (item.datasetIndex === 3) return ` Vento: ${item.raw.y.toFixed(0)} km/h`;
+              if (item.datasetIndex === 3) {
+                const pt = points.find(p => p.ts.getTime() === item.raw.x.getTime());
+                const dir = pt ? windDirLabel(pt.wind_dir_deg) : null;
+                return ` Vento: ${item.raw.y.toFixed(0)} km/h${dir ? ` ${dir.arrow} ${dir.label}` : ''}`;
+              }
               return null;
             },
           },
         },
+        windArrows: { dirs: points.map(pt => ({ x: pt.ts, dir: pt.wind_dir_deg })) },
       },
       scales: {
         x: { type: 'time', min: xMin, max: xMax,
@@ -855,7 +903,7 @@ function initWeeklyChart(data, model) {
         yHum:  { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false },
                  ticks: { color: p.hum, callback: v => `${v}%`, font: { size: 9 } } },
         yWind: { position: 'right', min: 0, grid: { drawOnChartArea: false },
-                 ticks: { color: p.wind, callback: v => `${v}`, font: { size: 9 } }, display: true },
+                 ticks: { color: p.wind, callback: v => `${v} km/h`, font: { size: 9 } }, display: true },
       },
     },
   });
@@ -871,6 +919,7 @@ function updateWeeklyChart(data, model) {
   multiDayChart.data.datasets[2].backgroundColor = precipBg;
   multiDayChart.data.datasets[3].data = points.filter(pt => pt.wind_speed_ms != null)
                                                .map(pt => ({ x: pt.ts, y: pt.wind_speed_ms * 3.6 }));
+  multiDayChart.options.plugins.windArrows.dirs = points.map(pt => ({ x: pt.ts, dir: pt.wind_dir_deg }));
   multiDayChart.update();
 }
 
