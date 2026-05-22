@@ -5,11 +5,11 @@ const DATA_URL = loc => `/data/${loc}.json`;
 const TWEMOJI_OPTS = { folder: 'svg', ext: '.svg' };
 
 const LOCATIONS = [
-  { id: 'casa_campi',    label: 'Casa Campi' },
-  { id: 'lavoro_cosimo', label: 'Lav. Cosimo' },
-  { id: 'lavoro_madda',  label: 'Lav. Madda' },
-  { id: 'casa_cesto',    label: 'Casa Cesto' },
-  { id: 'casa_nicco',    label: 'Casa Nicco' },
+  { id: 'casa_campi',    label: 'Casa Campi',  lat: 43.82,  lon: 11.13  },
+  { id: 'lavoro_cosimo', label: 'Lav. Cosimo', lat: 43.75,  lon: 11.17  },
+  { id: 'lavoro_madda',  label: 'Lav. Madda',  lat: 43.88,  lon: 11.09  },
+  { id: 'casa_cesto',    label: 'Casa Cesto',  lat: 43.59,  lon: 11.46  },
+  { id: 'casa_nicco',    label: 'Casa Nicco',  lat: 43.791, lon: 11.219 },
 ];
 
 const INDICATOR_META = {
@@ -176,6 +176,11 @@ function fmtTemp(v)   { return v != null ? `${v.toFixed(1)}°` : '—'; }
 function fmtPrecip(v) { return v != null ? `${v.toFixed(1)} mm` : '—'; }
 function fmtWind(v)   { return v != null ? `${(v * 3.6).toFixed(0)} km/h` : '—'; }
 
+function fmtSunTime(d) {
+  if (!d || isNaN(d)) return '—';
+  return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+}
+
 // Soglie ARPAT livelli 1–2 = verde, 3–4 = giallo, 5–7 = rosso
 const AQ_THRESHOLDS = {
   pm10:    [20, 40],   // µg/m³: <20 verde, 20–40 giallo, ≥40 rosso
@@ -302,6 +307,12 @@ function renderIndicatorsGrid(indicators) {
 function renderCurrentPanel(data) {
   const current  = data.current;
   const todayDay = data.days.find(d => isToday(d.target_date));
+  const locMeta  = LOCATIONS.find(l => l.id === data.location_id);
+  const sunTimes = locMeta ? SunCalc.getTimes(new Date(), locMeta.lat, locMeta.lon) : null;
+  const dawn     = sunTimes?.dawn;
+  const sunrise  = sunTimes?.sunrise;
+  const sunset   = sunTimes?.sunset;
+  const dusk     = sunTimes?.dusk;
 
   // Icona meteo: da realtime se disponibile, altrimenti da previsione di oggi
   let icon, iconLabel;
@@ -352,9 +363,16 @@ function renderCurrentPanel(data) {
 
   const aqSection = renderAirQuality(data.air_quality);
 
+  const sunLine = sunTimes ? `
+    <div class="flex gap-3 text-xs text-base-content/40 mt-0.5 flex-wrap">
+      <span class="tooltip tooltip-top" data-tip="Aurora civile">🌄 <strong class="text-base-content/60">${fmtSunTime(dawn)}</strong></span>
+      <span class="tooltip tooltip-top" data-tip="Alba">🌅 <strong class="text-base-content/60">${fmtSunTime(sunrise)}</strong></span>
+      <span class="tooltip tooltip-top" data-tip="Tramonto">🌇 <strong class="text-base-content/60">${fmtSunTime(sunset)}</strong></span>
+      <span class="tooltip tooltip-top" data-tip="Crepuscolo civile">🌆 <strong class="text-base-content/60">${fmtSunTime(dusk)}</strong></span>
+    </div>` : '';
   const noRealtimeNote = !current
     ? `<p class="text-xs text-base-content/50 mt-3 italic">Dati realtime non disponibili — indicatori calcolati su previsione</p>`
-    : `<p class="text-xs text-base-content/40 mt-3">SIR/Netatmo${ts ? ` · ${ts}` : ''}</p>`;
+    : `<p class="text-xs text-base-content/40 mt-3">SIR/Netatmo${ts ? ` · ${ts}` : ''}</p>${sunLine}`;
 
   const indSection = todayDay ? `
     <div class="border-t border-base-300 mt-4 pt-4">
