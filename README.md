@@ -50,13 +50,13 @@ guazza/
 ├── src/guazza/
 │   ├── schema.sql          # Schema DuckDB — unica source of truth
 │   ├── storage.py          # DuckDBClient, upsert bulk Arrow, backfill_prediction_obs
-│   ├── fetchers.py         # SIR storico/realtime, Netatmo, Open-Meteo (6 modelli), OpenAQ v3
+│   ├── fetchers.py         # SIR storico/realtime, Netatmo, Open-Meteo (6 modelli), ARPAT NRT
 │   ├── weights.py          # Pesi stazione→location, ring upstream pluvio
 │   ├── features.py         # build_features_daily() — 50 feature, tabella materializzata
 │   ├── models.py           # LightGBM quantile + CQR, train_all(), predict()
 │   ├── indicators.py       # Decision Logic Engine: evaluate_all(), log_results()
 │   ├── output.py           # build_signals(), build_signals_today(), dewpoint/apparent_temp, write_location_json()
-│   ├── qc.py               # Quality control osservazioni SIR + OpenAQ
+│   ├── qc.py               # Quality control osservazioni SIR + ARPAT
 │   ├── _logging.py         # setup_logging() — TTY pretty / cron JSON strutturato
 │   └── jobs/
 │       ├── ingest.py       # Cron: historical / daily / realtime / forecasts
@@ -193,7 +193,8 @@ cd frontend && python3 -m http.server 8080
 
 | Sezione | Contenuto |
 |---|---|
-| **A — Condizioni attuali** | Temperatura grande, icona meteo, temperatura percepita (Steadman), punto di rugiada (Magnus), vento/umidità/precipitazione realtime SIR, indicatori DLE calcolati su obs realtime, card qualità aria OpenAQ (PM10, PM2.5, NO₂, O₃, CO, benzene, SO₂ — sempre tutti i 7 indicatori, `—` se non misurati) |
+| **A — Condizioni attuali** | Temperatura grande, icona meteo, temperatura percepita (Steadman), punto di rugiada (Magnus), grid stats: vento (velocità + direzione), umidità, precipitazione, pressione (hPa + indicatore alta/bassa), alba/tramonto (SunCalc), fase lunare; card qualità aria ARPAT (PM10, PM2.5, NO₂, O₃, CO, benzene, SO₂); indicatori DLE calcolati su obs realtime |
+| **Radar precipitazioni** | Mappa Leaflet con overlay RainViewer: ultimi ~60min osservati + nowcast +60min (se attivo); timeline animata, pausa di default, zoom custom DaisyUI |
 | **B — Previsioni giornaliere** | Striscia card D+0…D+7 con icona/Tmax/Tmin/precip/indicator-dots; clic espande CI bar 80/90% + 8 indicatori + tabella NWP con data ultimo run |
 | **C — Grafico multi-giorno** | Chart.js: temperatura, umidità, precipitazioni, vento — switch Guazza ML ↔ 6 modelli NWP, crosshair verticale |
 
@@ -201,9 +202,9 @@ cd frontend && python3 -m http.server 8080
 
 ```
 frontend/
-├── index.html      # HTML + CDN links (Tailwind, DaisyUI v4, Chart.js)
-├── app.js          # Logica completa (rendering, chart, routing)
-├── style.css       # Solo CI bar + indicatori DLE + chart scroll (~25 righe)
+├── index.html      # HTML + CDN links (Tailwind, DaisyUI v4, Chart.js, Leaflet, Twemoji, SunCalc)
+├── app.js          # Logica completa (rendering, chart, radar, routing)
+├── style.css       # CI bar, indicatori DLE, Leaflet overrides, Twemoji fix
 └── data/           # Symlink → ../data/output (JSON per ogni location)
 ```
 
@@ -211,7 +212,7 @@ frontend/
 
 ```
 {location_id, generated_at, coverage_empirical_30d,
- current: {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, dewpoint_c, feels_like_c},
+ current: {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg, dewpoint_c, feels_like_c, pressure_hpa},
  air_quality: {pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3, co_mgm3, benzene_ugm3, so2_ugm3},
  nwp_models_hourly: [{source, label, data: [{ts, temp_c, humidity_pct, precip_mm, wind_speed_ms}]}],
  days: [{target_date, lead_time_h,
@@ -273,7 +274,8 @@ uv run mypy src/
 | Open-Meteo Forecast + Historical | 6 modelli NWP (ECMWF, ICON-EU, ICON-D2, GFS, AROME, ICON-2I) | API pubblica, no key |
 | SIR Toscana | Ground truth osservazioni validate, 34 stazioni | Open Data |
 | Netatmo | Osservazioni iperlocali real-time | OAuth2 |
-| OpenAQ v3 | Qualità aria multi-provider (include ARPAT Toscana upstream) | `X-API-Key` header (`OPENAQ_API_KEY`) |
+| ARPAT OpenData NRT | Qualità aria oraria (NO₂, O₃, CO, SO₂, PM10, PM2.5, benzene) | Open Data |
+| RainViewer | Radar precipitazioni (solo frontend) | API pubblica, no key |
 
 Per la lista completa con endpoint e stato: `config/sources.yaml`.
 
