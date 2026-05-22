@@ -337,10 +337,11 @@ def fetch_sir_realtime(station_id: str) -> dict[str, Any]:
     url = f"{_SIR_REALTIME_BASE}/actions.php"
     params = {"action": "station", "id": station_id}
     logger.debug(f"SIR realtime: {station_id}")
-    with httpx.Client(timeout=15) as client:
+    with httpx.Client(timeout=10) as client:
         r = client.get(url, params=params, headers=_SIR_RT_HEADERS)
         r.raise_for_status()
     data = r.json()
+    time.sleep(1.0)
 
     # ts: proviamo a parsare il timestamp dalla risposta (primo sensore con campo "date").
     # Formato SIR atteso: "DD/MM/YYYY HH:MM" (locale Italy, ma SIR pubblica UTC+1 senza TZ).
@@ -489,7 +490,7 @@ def _parse_bulk_float(raw: str | None) -> float | None:
 def _fetch_sir_bulk_json(action: str) -> dict[str, Any]:
     """Fetch JSON da un endpoint bulk SIR (TERMO24, IGRO24, ANEMO24, PLUVIO)."""
     logger.debug(f"SIR bulk fetch: {action}")
-    with httpx.Client(timeout=15) as client:
+    with httpx.Client(timeout=10) as client:
         r = client.get(
             f"{_SIR_REALTIME_BASE}/actions.php",
             params={"action": action},
@@ -1505,7 +1506,7 @@ _ITALY_TZ = zoneinfo.ZoneInfo("Europe/Rome")
 def _fetch_arpat_nrt_json(station_id: str) -> Any:
     """Fetch JSON NRT ARPAT per stazione (ultimi valori disponibili) con retry."""
     url = f"{_ARPAT_NRT_BASE}/{station_id}/last"
-    with httpx.Client(timeout=30, headers={"User-Agent": _UA}) as client:
+    with httpx.Client(timeout=10, headers={"User-Agent": _UA}) as client:
         r = client.get(url)
         r.raise_for_status()
     return r.json()
