@@ -57,3 +57,6 @@ htmlcov/
 
 # claude code
 .claude/
+
+# graphify (knowledge graph — generato con /graphify o graphify update .)
+graphify-out/
