@@ -851,32 +851,74 @@ function externalTooltipHandler({ chart, tooltip }) {
   if (!tooltip.opacity) { el.style.opacity = '0'; return; }
   const items = tooltip.dataPoints ?? [];
   if (!items.length) return;
+
   const ts   = new Date(items[0].raw.x);
-  const time = ts.toLocaleString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const date = ts.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
+  const time = ts.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
   const temp = items.find(i => i.datasetIndex === 0);
   const hum  = items.find(i => i.datasetIndex === 1);
   const prec = items.find(i => i.datasetIndex === 2);
   const wind = items.find(i => i.datasetIndex === 3);
+
+  const row = (dot, label, val) =>
+    `<div class="flex items-center justify-between gap-5 py-[3px]">
+       <span class="flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-white/40">${dot}${label}</span>
+       <span class="text-[11px] font-bold tabular-nums text-slate-800 dark:text-white/90">${val}</span>
+     </div>`;
+  const dot = cls => `<span class="w-1.5 h-1.5 rounded-full ${cls} shrink-0"></span>`;
+
   el.innerHTML = `
-    <div class="text-[10px] text-slate-400 font-medium mb-1">${time}</div>
-    ${temp ? `<div class="text-sm font-bold text-slate-800 dark:text-slate-100">${temp.raw.y.toFixed(1)}°C</div>` : ''}
-    ${hum  ? `<div class="text-xs text-slate-500 dark:text-slate-400">Umidità ${hum.raw.y.toFixed(0)}%</div>` : ''}
-    ${prec && prec.raw.y > 0.05 ? `<div class="text-xs text-slate-500 dark:text-slate-400">Precip ${prec.raw.y.toFixed(1)} mm</div>` : ''}
-    ${wind ? `<div class="text-xs text-slate-500 dark:text-slate-400">Vento ${wind.raw.y.toFixed(0)} km/h</div>` : ''}`;
+    <div class="flex items-baseline justify-between gap-3 mb-2 pb-2 border-b border-slate-100 dark:border-white/[0.07]">
+      <span class="text-[10px] text-slate-400 dark:text-white/35 font-medium capitalize">${date}</span>
+      <span class="text-sm font-bold tabular-nums text-slate-900 dark:text-white">${time}</span>
+    </div>
+    ${temp ? row(dot('bg-orange-500'), 'Temp', `${temp.raw.y.toFixed(1)}°C`) : ''}
+    ${hum  ? row(dot('bg-sky-500'),    'Umidità', `${hum.raw.y.toFixed(0)}%`) : ''}
+    ${prec && prec.raw.y > 0.05 ? row(dot('bg-blue-500'), 'Precip', `${prec.raw.y.toFixed(1)} mm`) : ''}
+    ${wind ? row(dot('bg-teal-500'),   'Vento', `${wind.raw.y.toFixed(0)} km/h`) : ''}`;
+
   const cRect = chart.canvas.parentElement.getBoundingClientRect();
-  const x = tooltip.caretX;
-  const y = tooltip.caretY;
   el.style.opacity = '1';
-  el.style.left    = `${Math.max(0, Math.min(x - 70, cRect.width - 160))}px`;
-  el.style.top     = `${Math.max(0, y - 90)}px`;
+  el.style.left    = `${Math.max(0, Math.min(tooltip.caretX - 80, cRect.width - 175))}px`;
+  el.style.top     = `${Math.max(4, tooltip.caretY - 130)}px`;
+}
+
+// Populates the 4-cell stat strip above the daily chart canvas
+function renderChartStatStrip(points) {
+  const el = document.getElementById('chart-stat-strip');
+  if (!el) return;
+  if (!points.length) { el.innerHTML = ''; return; }
+
+  const temps  = points.map(p => p.temp_c).filter(v => v != null);
+  const hums   = points.map(p => p.humidity_pct).filter(v => v != null);
+  const precip = points.reduce((s, p) => s + (p.precip_mm ?? 0), 0);
+  const winds  = points.map(p => p.wind_speed_ms).filter(v => v != null);
+
+  const tRange  = temps.length  ? `${Math.min(...temps).toFixed(1)}–${Math.max(...temps).toFixed(1)}°` : '—';
+  const hAvg    = hums.length   ? `${(hums.reduce((a,b)=>a+b,0)/hums.length).toFixed(0)}%` : '—';
+  const precipS = precip > 0.05 ? `${precip.toFixed(1)} mm` : '—';
+  const wMax    = winds.length  ? `${(Math.max(...winds) * 3.6).toFixed(0)} km/h` : '—';
+
+  const stats = [
+    { label: 'Range temp',   value: tRange,  color: '#F97316' },
+    { label: 'Umid. media',  value: hAvg,    color: '#0EA5E9' },
+    { label: 'Precip tot.',  value: precipS, color: '#2563EB' },
+    { label: 'Vento max',    value: wMax,    color: '#14B8A6' },
+  ];
+  el.innerHTML = stats.map(s => `
+    <div class="flex flex-col items-center py-2.5 px-2 bg-slate-50/70 dark:bg-white/[0.02]">
+      <div class="text-[9px] font-semibold text-slate-400 dark:text-white/20 uppercase tracking-widest mb-1 whitespace-nowrap">${s.label}</div>
+      <div class="text-[13px] font-bold tabular-nums leading-none" style="color:${s.color}">${s.value}</div>
+    </div>`).join('');
 }
 
 function _buildChartDatasets(canvas, points, p) {
   const ctx = canvas.getContext('2d');
-  const gradTemp = ctx.createLinearGradient(0, 0, 0, 280);
+  const gradTemp = ctx.createLinearGradient(0, 0, 0, 320);
   const dark = document.documentElement.dataset.theme === 'dark';
-  gradTemp.addColorStop(0, dark ? 'rgba(249,115,22,0.35)' : 'rgba(249,115,22,0.15)');
-  gradTemp.addColorStop(1, dark ? 'rgba(249,115,22,0.05)' : 'rgba(249,115,22,0.0)');
+  gradTemp.addColorStop(0, dark ? 'rgba(249,115,22,0.42)' : 'rgba(249,115,22,0.18)');
+  gradTemp.addColorStop(0.65, dark ? 'rgba(249,115,22,0.08)' : 'rgba(249,115,22,0.04)');
+  gradTemp.addColorStop(1, 'rgba(249,115,22,0)');
   const { data: precipData, bg: precipBg } = precipDatasets(points);
   return [
     {
@@ -961,6 +1003,7 @@ function initChart(data, model, targetDate) {
     data: { datasets: _buildChartDatasets(canvas, points, p) },
     options: _baseChartOptions(p, xMin, xMax, 'hour'),
   });
+  renderChartStatStrip(points);
 }
 
 function updateChartModel(data, model, targetDate) {
@@ -971,6 +1014,7 @@ function updateChartModel(data, model, targetDate) {
   const ds = _buildChartDatasets(canvas, points, p);
   meteoChart.data.datasets.forEach((d, i) => { d.data = ds[i].data; if (i === 2) d.backgroundColor = ds[i].backgroundColor; });
   meteoChart.update();
+  renderChartStatStrip(points);
 }
 
 function initWeeklyChart(data, model) {
