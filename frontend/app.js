@@ -447,25 +447,44 @@ function renderHeroSun(locMeta, now) {
 function renderHeroIndicators(todayDay) {
   const el = document.getElementById('hero-indicators');
   if (!todayDay) { el.innerHTML = ''; return; }
+
+  /*
+   * DaisyUI tooltip usa :hover — non scatta su touch.
+   * Soluzione: testo della regola inline, nascosto, toggle al click/tap.
+   * Funziona su mobile (tap) e desktop (click); niente dipendenze extra.
+   */
   el.innerHTML = Object.entries(todayDay.indicators).map(([id, ind], i) => {
-    const meta  = INDICATOR_META[id] ?? { label: id, icon: '?' };
-    const vc    = VERDICT_COLOR[ind.verdict] ?? VERDICT_COLOR.giallo;
+    const meta       = INDICATOR_META[id] ?? { label: id, icon: '?' };
+    const vc         = VERDICT_COLOR[ind.verdict] ?? VERDICT_COLOR.giallo;
     const verdictCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
-    const tip   = escHtml(ind.rule_text || ind.rule_matched || verdictCap);
-    /* Hero è sempre dark: usiamo stili white-on-dark espliciti per leggibilità */
-    return `<div class="shrink-0 tooltip tooltip-top" data-tip="${tip}">
-      <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-2xl bg-white/[0.07] border border-white/[0.1] hover:bg-white/[0.1] hover:scale-[1.02] active:scale-95 transition-all duration-200 cursor-default" style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
-        <span class="text-2xl leading-none">${meta.icon}</span>
+    const tip        = escHtml(ind.rule_text || ind.rule_matched || '');
+    return `<div data-hero-chip class="shrink-0">
+      <div class="flex items-center gap-2 px-3 py-2.5 sm:gap-2.5 sm:px-3.5 sm:py-3 rounded-2xl bg-white/[0.07] border border-white/[0.1] hover:bg-white/[0.1] active:scale-95 transition-all duration-200 cursor-pointer select-none"
+           style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
+        <span class="text-xl sm:text-2xl leading-none">${meta.icon}</span>
         <div class="text-left min-w-0">
           <div class="text-[10px] font-semibold text-white/45 leading-tight">${meta.label}</div>
           <div class="flex items-center gap-1.5 mt-1">
             <span class="w-2 h-2 rounded-full ${vc.dot} shrink-0"></span>
             <span class="text-xs font-bold text-white/85">${verdictCap}</span>
           </div>
+          ${tip ? `<div class="chip-tip text-[9px] text-white/35 leading-snug mt-1 hidden">${tip}</div>` : ''}
         </div>
       </div>
     </div>`;
   }).join('');
+
+  /* Toggle rule text on click/tap — close others when opening a new one */
+  el.querySelectorAll('[data-hero-chip]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const tipEl = chip.querySelector('.chip-tip');
+      if (!tipEl) return;
+      const opening = tipEl.classList.contains('hidden');
+      el.querySelectorAll('.chip-tip').forEach(t => t.classList.add('hidden'));
+      if (opening) tipEl.classList.remove('hidden');
+    });
+  });
+
   twemoji.parse(el, TWEMOJI_OPTS);
 }
 
