@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guazza — Previsioni meteo iper-locale Toscana</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script>
-    tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['Inter','system-ui','sans-serif'] } } } };
+    tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['Outfit','system-ui','sans-serif'] } } } };
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
@@ -24,7 +24,7 @@
   <header class="sticky top-0 z-50 backdrop-blur-xl bg-white/75 dark:bg-[#050914]/70 border-b border-black/5 dark:border-white/5 transition-all duration-300">
     <div class="max-w-6xl mx-auto px-4 md:px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-2.5">
-        <svg class="w-7 h-7" style="color:#6366F1" viewBox="0 0 28 28" fill="none">
+        <svg class="w-7 h-7" style="color:#3D6B4F" viewBox="0 0 28 28" fill="none">
           <path d="M2 16c2 6 8 10 14 8s10-8 8-14c-2-6-8-10-14-8S0 10 2 16z" fill="currentColor" opacity="0.2"/>
           <path d="M8 14c1 3 4 5 7 4s5-4 4-7-4-5-7-4-5 4-4 7z" fill="currentColor"/>
         </svg>
@@ -54,7 +54,7 @@
     <!-- ① HERO: Condizioni Attuali -->
     <section id="hero-card" class="hidden relative rounded-3xl bg-white dark:bg-slate-900/60 border border-black/[0.04] dark:border-white/[0.06] shadow-xl overflow-hidden anim-fade-up">
       <div id="hero-temp-gradient" class="absolute inset-0 pointer-events-none z-0"></div>
-      <div class="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-blue-500 via-violet-500 to-orange-400 opacity-60 z-10"></div>
+      <div class="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-[#3D6B4F]/60 to-[#3D6B4F]/20 z-10"></div>
       <div class="relative z-10 p-4 sm:p-6 md:p-8 grid grid-cols-1 md:grid-cols-5 gap-5 md:gap-8">
         <div class="md:col-span-2 flex items-start gap-5">
           <div id="hero-icon" class="text-7xl mt-1 hero-icon-float cursor-default select-none"></div>
@@ -66,7 +66,7 @@
         <div class="md:col-span-3 space-y-4">
           <div id="hero-stats" class="divide-y divide-slate-100 dark:divide-white/5"></div>
           <div>
-            <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2" id="hero-aq-label">Qualità aria</div>
+            <div class="text-[11px] text-slate-400 font-medium mb-2" id="hero-aq-label">Qualità aria</div>
             <div id="hero-aq" class="flex flex-wrap gap-1.5 mt-1"></div>
           </div>
           <div id="hero-sun" class="flex gap-4 text-xs text-slate-400 tabular-nums"></div>
@@ -95,7 +95,7 @@
     <!-- ③ PREVISIONI: Striscia + Dettaglio -->
     <div id="forecast-section" class="hidden space-y-4">
       <div class="flex items-end justify-between px-1">
-        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Prossimi giorni</h2>
+        <h2 class="text-xs font-semibold text-slate-400">Prossimi giorni</h2>
       </div>
       <div id="day-strip" class="flex gap-3 overflow-x-auto snap-x snap-mandatory py-2 px-1 no-scrollbar"></div>
 
@@ -114,7 +114,7 @@
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="md:col-span-2 rounded-2xl bg-slate-50 dark:bg-white/5 p-5 border border-slate-100 dark:border-white/5 relative overflow-hidden">
-              <p class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-3">Temperatura</p>
+              <p class="text-[11px] text-slate-400 font-medium mb-3">Temperatura</p>
               <div class="flex items-end gap-6 md:gap-10">
                 <div>
                   <span id="detail-tmax" class="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-slate-50">—</span>
@@ -129,7 +129,7 @@
               <div id="detail-ci-tmin" class="mt-3"></div>
             </div>
             <div class="rounded-2xl bg-slate-50 dark:bg-white/5 p-5 border border-slate-100 dark:border-white/5">
-              <p class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-3">Precipitazione</p>
+              <p class="text-[11px] text-slate-400 font-medium mb-3">Precipitazione</p>
               <div id="detail-precip-val" class="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-slate-50">—</div>
               <div id="detail-ci-precip" class="mt-5"></div>
             </div>
@@ -138,7 +138,7 @@
           <div id="detail-indicators" class="flex gap-3 overflow-x-auto no-scrollbar mt-6"></div>
 
           <div class="mt-8">
-            <h4 class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-3">Confronto modelli</h4>
+            <h4 class="text-[11px] text-slate-400 font-medium mb-3">Confronto modelli</h4>
             <div id="nwp-list" class="divide-y divide-slate-100 dark:divide-white/5"></div>
           </div>
         </div>
@@ -148,7 +148,7 @@
     <!-- ④ GRAFICO ORARIO GIORNALIERO -->
     <section id="chart-daily-section" class="hidden rounded-3xl bg-white dark:bg-slate-900/60 border border-black/[0.04] dark:border-white/[0.06] shadow-xl p-6 anim-fade-up">
       <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Andamento orario</h3>
+        <h3 class="text-xs font-semibold text-slate-400">Andamento orario</h3>
         <div class="relative inline-flex bg-slate-100 dark:bg-slate-800 rounded-full p-1" id="model-switch">
           <span id="model-pill" class="absolute top-1 bottom-1 bg-white dark:bg-slate-700 rounded-full shadow-sm pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"></span>
         </div>
@@ -168,7 +168,7 @@
     <!-- ⑤ GRAFICO SETTIMANALE -->
     <section id="chart-weekly-section" class="hidden rounded-3xl bg-white dark:bg-slate-900/60 border border-black/[0.04] dark:border-white/[0.06] shadow-xl p-6 anim-fade-up">
       <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Tendenza settimanale</h3>
+        <h3 class="text-xs font-semibold text-slate-400">Tendenza settimanale</h3>
         <div class="relative inline-flex bg-slate-100 dark:bg-slate-800 rounded-full p-1" id="weekly-model-switch">
           <span id="weekly-model-pill" class="absolute top-1 bottom-1 bg-white dark:bg-slate-700 rounded-full shadow-sm pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"></span>
         </div>

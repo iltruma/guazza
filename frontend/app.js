@@ -226,7 +226,7 @@ function renderTabs(activeLoc) {
   nav.innerHTML = LOCATIONS.map(l => {
     const active = l.id === activeLoc;
     const cls = active
-      ? 'px-3 py-1.5 rounded-full text-sm font-semibold text-white bg-[#6366F1] shadow-lg snap-center shrink-0 transition-all duration-200'
+      ? 'px-3 py-1.5 rounded-full text-sm font-semibold text-white bg-[#3D6B4F] shadow-lg snap-center shrink-0 transition-all duration-200'
       : 'px-3 py-1.5 rounded-full text-sm font-medium text-slate-500 dark:text-slate-400 bg-transparent hover:bg-slate-100 dark:hover:bg-white/5 snap-center shrink-0 transition-all duration-200 relative overflow-hidden';
     return `<button class="${cls}" data-loc="${l.id}">${l.label}</button>`;
   }).join('');
@@ -245,7 +245,7 @@ function addRipple(btn, e) {
   const rect   = btn.getBoundingClientRect();
   const span   = document.createElement('span');
   const size   = Math.max(rect.width, rect.height) * 2;
-  span.style.cssText = `position:absolute;border-radius:50%;background:rgba(99,102,241,0.25);width:${size}px;height:${size}px;left:${e.clientX - rect.left - size/2}px;top:${e.clientY - rect.top - size/2}px;transform:scale(0);pointer-events:none;transition:transform 400ms ease-out,opacity 300ms ease-out;opacity:0.5`;
+  span.style.cssText = `position:absolute;border-radius:50%;background:rgba(61,107,79,0.25);width:${size}px;height:${size}px;left:${e.clientX - rect.left - size/2}px;top:${e.clientY - rect.top - size/2}px;transform:scale(0);pointer-events:none;transition:transform 400ms ease-out,opacity 300ms ease-out;opacity:0.5`;
   btn.appendChild(span);
   requestAnimationFrame(() => { span.style.transform = 'scale(1)'; span.style.opacity = '0'; });
   setTimeout(() => span.remove(), 500);
@@ -402,7 +402,7 @@ function renderHeroAQ(aq, _generatedAt) {
     const textCls    = cls ? cls.text   : 'text-slate-400 dark:text-slate-600';
     const opacityCls = it.value == null ? 'opacity-40' : '';
     return `<div class="shrink-0 w-[68px] rounded-xl py-2 bg-slate-50 dark:bg-white/5 border ${borderCls} ${opacityCls} text-center">
-      <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider leading-tight">${it.label}</div>
+      <div class="text-[10px] font-medium text-slate-400 leading-tight">${it.label}</div>
       <div class="text-sm font-semibold ${textCls} tabular-nums mt-1 leading-tight">${display}</div>
       <div class="text-[10px] text-slate-300 dark:text-slate-600 mt-0.5 leading-tight">${it.unit}</div>
     </div>`;
@@ -445,7 +445,7 @@ function renderHeroIndicators(todayDay) {
       <div class="flex items-center gap-2 px-3 py-2.5 rounded-xl ${vc.bg} border ${vc.border} hover:scale-105 active:scale-95 transition-transform duration-200 cursor-default" style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
         <span class="text-xl leading-none">${meta.icon}</span>
         <div class="text-left min-w-0">
-          <div class="text-[10px] font-bold uppercase tracking-wider ${vc.text} leading-tight">${meta.label}</div>
+          <div class="text-[10px] font-semibold ${vc.text} leading-tight">${meta.label}</div>
           <div class="flex items-center gap-1 mt-0.5">
             <span class="w-1.5 h-1.5 rounded-full ${vc.dot} shrink-0"></span>
             <span class="text-[11px] font-semibold ${vc.text} opacity-90">${verdictCap}</span>
@@ -473,8 +473,8 @@ function ciBar(fc, unit) {
     <div class="mt-4">
       <div class="relative h-2 rounded-full bg-slate-200 dark:bg-slate-700" style="overflow:visible">
         <div class="ci-range-90 absolute inset-0 rounded-full bg-slate-300/50 dark:bg-slate-500/30" style="transform-origin:left"></div>
-        <div class="ci-range-80 absolute top-0 h-full rounded-full" style="background:rgba(99,102,241,0.35);left:${p80l}%;width:${p80w}%;transform-origin:left"></div>
-        <div class="ci-median absolute w-3 h-3 rounded-full bg-white dark:bg-slate-900" style="border:2px solid #6366F1;top:50%;margin-left:-6px;left:${p50pos}%"></div>
+        <div class="ci-range-80 absolute top-0 h-full rounded-full" style="background:rgba(61,107,79,0.35);left:${p80l}%;width:${p80w}%;transform-origin:left"></div>
+        <div class="ci-median absolute w-3 h-3 rounded-full bg-white dark:bg-slate-900" style="border:2px solid #3D6B4F;top:50%;margin-left:-6px;left:${p50pos}%"></div>
       </div>
       <div class="flex justify-between mt-2 text-[11px] text-slate-400 tabular-nums">
         <span>${ci90_lo.toFixed(1)}${unit}</span>
@@ -504,7 +504,7 @@ function renderDayStrip(days, activeDayIdx) {
 
     // Active: border accent + shadow, no vertical translate (avoid clipping in overflow-x-auto)
     const cardStyle = active
-      ? 'border:2px solid #6366F1;box-shadow:0 8px 24px -4px rgba(99,102,241,0.25)'
+      ? 'border:2px solid #3D6B4F;box-shadow:0 8px 24px -4px rgba(61,107,79,0.25)'
       : 'border:1px solid transparent';
     const cardCls = active
       ? 'snap-center shrink-0 w-[92px] sm:w-[110px] rounded-2xl bg-white dark:bg-slate-900/80 p-2.5 sm:p-3 text-center shadow-lg cursor-pointer transition-all duration-300'
@@ -512,7 +512,7 @@ function renderDayStrip(days, activeDayIdx) {
 
     return `<div class="${cardCls}" data-idx="${idx}" style="${cardStyle}">
       ${diff === 0
-        ? `<div class="text-[9px] font-bold uppercase tracking-wider text-white rounded-full px-2 py-0.5 mx-auto mb-1.5 leading-none w-fit today-badge-anim" style="background:#6366F1">Oggi</div>`
+        ? `<div class="text-[9px] font-bold text-white rounded-full px-2 py-0.5 mx-auto mb-1.5 leading-none w-fit today-badge-anim" style="background:#3D6B4F">Oggi</div>`
         : `<div class="h-[17px] mb-1.5"></div>`}
       <span class="text-2xl leading-none block">${icon}</span>
       <div class="text-xs font-semibold text-slate-700 dark:text-slate-200 capitalize mt-1.5 leading-tight">${fmtDayShort(target_date)}</div>
@@ -590,7 +590,7 @@ function renderIndicatorChips(indicators) {
       <div class="flex items-center gap-2 px-3 py-2.5 rounded-xl ${vc.bg} border ${vc.border} hover:scale-105 active:scale-95 transition-transform duration-200 cursor-default" style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
         <span class="text-xl leading-none">${meta.icon}</span>
         <div class="text-left min-w-0">
-          <div class="text-[10px] font-bold uppercase tracking-wider ${vc.text} leading-tight">${meta.label}</div>
+          <div class="text-[10px] font-semibold ${vc.text} leading-tight">${meta.label}</div>
           <div class="flex items-center gap-1 mt-0.5">
             <span class="w-1.5 h-1.5 rounded-full ${vc.dot} shrink-0"></span>
             <span class="text-[11px] font-semibold ${vc.text} opacity-90">${verdCap}</span>
@@ -620,8 +620,8 @@ function renderNwpList(day) {
     </div>`).join('');
 
   const guazzaRow = `
-    <div class="flex items-center py-3 px-1 rounded-r-lg -ml-1 pl-1" style="background:rgba(99,102,241,0.05);border-left:3px solid #6366F1">
-      <div class="w-32 text-sm font-bold shrink-0" style="color:#6366F1">★ Guazza ML</div>
+    <div class="flex items-center py-3 px-1 rounded-r-lg -ml-1 pl-1" style="background:rgba(61,107,79,0.05);border-left:3px solid #3D6B4F">
+      <div class="w-32 text-sm font-bold shrink-0" style="color:#3D6B4F">★ Guazza ML</div>
       <div class="flex-1 grid grid-cols-3 gap-4 text-right">
         <div class="text-sm font-semibold tabular-nums">${fmtTemp(fc.tmin_c?.p50)}</div>
         <div class="text-sm font-semibold tabular-nums">${fmtTemp(fc.tmax_c?.p50)}</div>
@@ -632,7 +632,7 @@ function renderNwpList(day) {
 
   // Header
   el.innerHTML = `
-    <div class="flex items-center py-2 px-1 text-[11px] text-slate-400 font-semibold uppercase tracking-wider">
+    <div class="flex items-center py-2 px-1 text-[11px] text-slate-400 font-medium">
       <div class="w-32 shrink-0">Modello</div>
       <div class="flex-1 grid grid-cols-3 gap-4 text-right">
         <div>Tmin</div><div>Tmax</div><div>Precip</div>
@@ -701,7 +701,7 @@ function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
     const btn = document.createElement('button');
     const active = m.source === activeSource;
     btn.className = `relative z-10 px-3 py-1 text-xs transition-colors duration-200 ${active ? 'font-semibold' : 'font-medium text-slate-500 dark:text-slate-400'}`;
-    btn.style.color = active ? '#6366F1' : '';
+    btn.style.color = active ? '#3D6B4F' : '';
     btn.dataset.src = m.source;
     btn.textContent = m.label;
     container.appendChild(btn);
@@ -709,7 +709,7 @@ function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
       container.querySelectorAll('[data-src]').forEach(b => {
         const isActive = b.dataset.src === m.source;
         b.className = `relative z-10 px-3 py-1 text-xs transition-colors duration-200 ${isActive ? 'font-semibold' : 'font-medium text-slate-500 dark:text-slate-400'}`;
-        b.style.color = isActive ? '#6366F1' : '';
+        b.style.color = isActive ? '#3D6B4F' : '';
       });
       updatePillPosition(switchId, pillId, m.source);
       onChange(m.source);
@@ -802,7 +802,7 @@ const crosshairPlugin = {
     ctx.moveTo(x, top);
     ctx.lineTo(x, bottom);
     ctx.lineWidth   = 1;
-    ctx.strokeStyle = 'rgba(99,102,241,0.25)';
+    ctx.strokeStyle = 'rgba(61,107,79,0.25)';
     ctx.setLineDash([]);
     ctx.stroke();
     // Glow circle around active temp point
@@ -1100,8 +1100,8 @@ function buildRadarMap(locationId, host, frames) {
 
   // Sonar marker using DivIcon
   const sonarHtml = `<div style="position:relative;width:20px;height:20px">
-    <div style="position:absolute;inset:0;border-radius:50%;background:#6366F1;opacity:0.9"></div>
-    <div style="position:absolute;inset:-5px;border-radius:50%;border:2px solid #6366F1;animation:sonar 2s ease-out infinite;pointer-events:none"></div>
+    <div style="position:absolute;inset:0;border-radius:50%;background:#3D6B4F;opacity:0.9"></div>
+    <div style="position:absolute;inset:-5px;border-radius:50%;border:2px solid #3D6B4F;animation:sonar 2s ease-out infinite;pointer-events:none"></div>
   </div>`;
   L.marker([loc.lat, loc.lon], {
     icon: L.divIcon({ className: '', html: sonarHtml, iconSize: [20, 20], iconAnchor: [10, 10] }),

@@ -1,7 +1,23 @@
 /* === CSS Variables === */
 :root {
-  --accent: #6366F1;
-  --accent-glow: rgba(99,102,241,0.25);
+  --accent: #3D6B4F;
+  --accent-glow: rgba(61,107,79,0.25);
+}
+
+/* === DaisyUI primary → accent verde toscano === */
+/* --color-primary (v4) + --p (v3 fallback) + accent-color diretto sul range */
+:root, [data-theme="light"], [data-theme="dark"] {
+  --color-primary: oklch(0.43 0.09 152);
+  --color-primary-content: #ffffff;
+  --p: 0.43 0.09 152;
+  --pc: 1 0 0;
+}
+
+#radar-slider,
+.range-primary {
+  accent-color: #3D6B4F;
+  --range-thumb: #3D6B4F;
+  --range-fill: #3D6B4F;
 }
 
 /* === No-scrollbar utility === */
