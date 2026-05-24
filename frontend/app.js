@@ -641,17 +641,18 @@ function renderIndicatorChips(indicators) {
     const vc      = VERDICT_COLOR[ind.verdict] ?? VERDICT_COLOR.giallo;
     const verdCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
     const tip     = escHtml(ind.rule_text || ind.rule_matched || '');
+    /* Stesso linguaggio visivo degli hero indicators: chip neutro, solo il dot è colorato */
     return `<div data-detail-chip class="shrink-0">
-      <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-2xl ${vc.bg} border ${vc.border} hover:scale-[1.02] active:scale-95 transition-all duration-200 cursor-pointer select-none"
+      <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-2xl bg-slate-100 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.1] hover:bg-slate-200/60 dark:hover:bg-white/[0.1] active:scale-95 transition-all duration-200 cursor-pointer select-none"
            style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
         <span class="text-2xl leading-none">${meta.icon}</span>
         <div class="text-left min-w-0">
-          <div class="text-[10px] font-semibold ${vc.text} leading-tight opacity-75">${meta.label}</div>
+          <div class="text-[10px] font-semibold text-slate-500 dark:text-white/45 leading-tight">${meta.label}</div>
           <div class="flex items-center gap-1.5 mt-1">
             <span class="w-2 h-2 rounded-full ${vc.dot} shrink-0"></span>
-            <span class="text-xs font-bold ${vc.text}">${verdCap}</span>
+            <span class="text-xs font-bold text-slate-800 dark:text-white/85">${verdCap}</span>
           </div>
-          ${tip ? `<div class="chip-tip text-[9px] ${vc.text} opacity-60 leading-snug mt-1 hidden">${tip}</div>` : ''}
+          ${tip ? `<div class="chip-tip text-[9px] text-slate-500 dark:text-white/35 leading-snug mt-1 hidden">${tip}</div>` : ''}
         </div>
       </div>
     </div>`;
