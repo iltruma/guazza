@@ -373,12 +373,6 @@ Il server `www.sir.toscana.it` serializza le connessioni lato server (~3s per re
 - **Crosshair su Edge**: `chart.tooltip._active` → optional chaining; `chart.tooltip`
   è `undefined` durante i primi `afterDraw` su Edge.
 
-### Tooling — graphify (2026-05-23)
-
-- Knowledge graph generato in `graphify-out/` (847 nodi, 1467 archi, 55 community)
-- Hook pre-commit in `.claude/settings.json`: `graphify update .` automatico ad ogni `git commit`
-- Regole di utilizzo documentate in `AGENTS.md` → sezione "Knowledge Graph (graphify)"
-
 ### Sprint 7 — Raffinamenti in locale
 **Dipendenza**: nessuna — lavoro continuo prima del deploy
 

@@ -149,20 +149,6 @@ guazza/
     └── known_issues.md     # problemi noti e workaround
 ```
 
-## Knowledge Graph (graphify)
-
-Il progetto ha un knowledge graph in `graphify-out/` generato da
-[graphify](https://github.com/safishamsi/graphifyy).
-
-**Regole:**
-- Per domande sul codice, eseguire `graphify query "<domanda>"` se `graphify-out/graph.json` esiste.
-  Restituisce un sottografo mirato — molto più veloce che leggere file raw.
-- Per relazioni tra due concetti: `graphify path "<A>" "<B>"`
-- Per spiegare un nodo: `graphify explain "<concetto>"`
-- Leggere `graphify-out/GRAPH_REPORT.md` solo per review architetturale ampia.
-- Dopo modifiche al codice: `graphify update .` (AST-only, nessun costo LLM, ~2s).
-  È configurato come hook automatico pre-commit in `.claude/settings.json`.
-
 ## Guardrail operativi
 
 ### 🔴 Zona rossa — mostrare e aspettare conferma
