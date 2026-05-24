@@ -98,6 +98,19 @@ function weatherIconForDay(day) {
   );
 }
 
+function weatherConditionText(precipP50, tmaxP50, temporaleVerdict, nebbiaVerdict) {
+  if (nebbiaVerdict === 'rosso' || nebbiaVerdict === 'giallo') return 'Nebbia';
+  if (temporaleVerdict === 'rosso')  return 'Temporale';
+  if (temporaleVerdict === 'giallo') return 'Possibili tuoni';
+  if (precipP50 >= 10)  return 'Pioggia';
+  if (precipP50 >=  3)  return 'Pioggerella';
+  if (precipP50 >= 0.5) return 'Nuvoloso';
+  if (tmaxP50 == null)  return 'Variabile';
+  if (tmaxP50 >= 22)    return 'Soleggiato';
+  if (tmaxP50 >= 15)    return 'Sereno';
+  return 'Variabile';
+}
+
 function weatherIconFromCurrent(current) {
   const prec = current?.precip_mm ?? 0;
   if (prec >= 5)   return '🌧️';
@@ -189,22 +202,9 @@ function diffDays(isoDate) {
 // ── Dark mode ─────────────────────────────────────────────────────────────────
 
 function initDarkMode() {
-  const mq = window.matchMedia('(prefers-color-scheme: dark)');
-  const apply = dark => {
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-    document.documentElement.classList.toggle('dark', dark);
-    if (currentData) {
-      if (meteoChart)    { meteoChart.destroy();    meteoChart    = null; }
-      if (multiDayChart) { multiDayChart.destroy(); multiDayChart = null; }
-      const td = currentData.days[selectedDayIdx]?.target_date;
-      initChart(currentData, selectedModel, td);
-      initWeeklyChart(currentData, selectedWeeklyModel);
-      destroyRadar();
-      initRadar(currentData.location_id);
-    }
-  };
-  mq.addEventListener('change', e => apply(e.matches));
-  apply(mq.matches);
+  // Tema scuro fisso — nessuna preference OS
+  document.documentElement.dataset.theme = 'dark';
+  document.documentElement.classList.add('dark');
 }
 
 // ── URL routing ───────────────────────────────────────────────────────────────
@@ -226,9 +226,10 @@ function renderTabs(activeLoc) {
   nav.innerHTML = LOCATIONS.map(l => {
     const active = l.id === activeLoc;
     const cls = active
-      ? 'px-3 py-1.5 rounded-full text-sm font-semibold text-white bg-[#3D6B4F] shadow-lg snap-center shrink-0 transition-all duration-200'
-      : 'px-3 py-1.5 rounded-full text-sm font-medium text-slate-500 dark:text-slate-400 bg-transparent hover:bg-slate-100 dark:hover:bg-white/5 snap-center shrink-0 transition-all duration-200 relative overflow-hidden';
-    return `<button class="${cls}" data-loc="${l.id}">${l.label}</button>`;
+      ? 'px-3 py-1.5 rounded-full text-xs font-semibold text-white snap-center shrink-0 transition-all duration-200'
+      : 'px-3 py-1.5 rounded-full text-xs font-medium text-slate-500 dark:text-white/40 bg-transparent hover:bg-slate-200/70 dark:hover:bg-white/[0.06] snap-center shrink-0 transition-all duration-200 relative overflow-hidden';
+    const style = active ? 'background:rgba(59,154,108,0.85);box-shadow:0 2px 10px -2px rgba(59,154,108,0.4)' : '';
+    return `<button class="${cls}" style="${style}" data-loc="${l.id}">${l.label}</button>`;
   }).join('');
 
   nav.querySelectorAll('[data-loc]').forEach(btn => {
@@ -245,7 +246,7 @@ function addRipple(btn, e) {
   const rect   = btn.getBoundingClientRect();
   const span   = document.createElement('span');
   const size   = Math.max(rect.width, rect.height) * 2;
-  span.style.cssText = `position:absolute;border-radius:50%;background:rgba(61,107,79,0.25);width:${size}px;height:${size}px;left:${e.clientX - rect.left - size/2}px;top:${e.clientY - rect.top - size/2}px;transform:scale(0);pointer-events:none;transition:transform 400ms ease-out,opacity 300ms ease-out;opacity:0.5`;
+  span.style.cssText = `position:absolute;border-radius:50%;background:rgba(59,154,108,0.25);width:${size}px;height:${size}px;left:${e.clientX - rect.left - size/2}px;top:${e.clientY - rect.top - size/2}px;transform:scale(0);pointer-events:none;transition:transform 400ms ease-out,opacity 300ms ease-out;opacity:0.5`;
   btn.appendChild(span);
   requestAnimationFrame(() => { span.style.transform = 'scale(1)'; span.style.opacity = '0'; });
   setTimeout(() => span.remove(), 500);
@@ -367,21 +368,18 @@ function renderHero(data) {
 function renderHeroStats(current) {
   const windDir = windDirLabel(current?.wind_dir_deg);
   const stats = [
-    { icon: '💨', label: 'Vento',     value: current?.wind_speed_ms != null ? `${fmtWind(current.wind_speed_ms)}${windDir ? ` ${windDir.arrow} ${windDir.label}` : ''}` : '—' },
-    { icon: '💧', label: 'Umidità',   value: current?.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%`    : '—' },
-    { icon: '🌧', label: 'Pioggia',   value: current?.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm`    : '—' },
-    { icon: '🔵', label: 'Pressione', value: current?.pressure_hpa  != null ? `${current.pressure_hpa.toFixed(0)} hPa` : '—' },
+    { label: 'Vento',     value: current?.wind_speed_ms != null ? `${fmtWind(current.wind_speed_ms)}${windDir ? ` ${windDir.label}` : ''}` : '—' },
+    { label: 'Umidità',   value: current?.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%`    : '—' },
+    { label: 'Pioggia',   value: current?.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm`    : '—' },
+    { label: 'Pressione', value: current?.pressure_hpa  != null ? `${current.pressure_hpa.toFixed(0)} hPa` : '—' },
   ];
   const el = document.getElementById('hero-stats');
+  /* Le celle hanno bg semi-opaco per lavorare con il trucco gap-px del container */
   el.innerHTML = stats.map(s => `
-    <div class="flex items-center gap-3 py-2 border-b border-slate-100 dark:border-white/5 last:border-0 group hover:translate-x-1 transition-transform duration-200 ease-out">
-      <span class="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center text-base shrink-0">${s.icon}</span>
-      <div class="flex-1 min-w-0">
-        <div class="text-xs text-slate-400 font-medium">${s.label}</div>
-        <div class="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">${s.value}</div>
-      </div>
+    <div class="px-4 py-3 flex flex-col gap-0.5 bg-[#09172A] hover:bg-[#0d1e38] transition-colors duration-200">
+      <div class="text-[10px] font-semibold text-white/30 uppercase tracking-widest">${s.label}</div>
+      <div class="text-sm font-bold text-white tabular-nums">${s.value}</div>
     </div>`).join('');
-  twemoji.parse(el, TWEMOJI_OPTS);
 }
 
 function renderHeroAQ(aq, _generatedAt) {
@@ -395,16 +393,25 @@ function renderHeroAQ(aq, _generatedAt) {
     { key: 'so2',     label: 'SO₂',   value: aq?.so2_ugm3     ?? null, unit: 'µg/m³', dec: 0 },
   ];
   const el = document.getElementById('hero-aq');
+  /*
+   * Hero è sempre su sfondo scuro (.hero-sky) — usiamo colori espliciti
+   * senza `dark:` prefix, che dipende dall'OS preference non dal background locale.
+   */
   el.innerHTML = items.map(it => {
-    const cls        = aqColorCls(it.key, it.value);
-    const display    = it.value != null ? it.value.toFixed(it.dec) : '—';
-    const borderCls  = cls ? cls.border : 'border-slate-200 dark:border-white/5';
-    const textCls    = cls ? cls.text   : 'text-slate-400 dark:text-slate-600';
-    const opacityCls = it.value == null ? 'opacity-40' : '';
-    return `<div class="shrink-0 w-[68px] rounded-xl py-2 bg-slate-50 dark:bg-white/5 border ${borderCls} ${opacityCls} text-center">
-      <div class="text-[10px] font-medium text-slate-400 leading-tight">${it.label}</div>
-      <div class="text-sm font-semibold ${textCls} tabular-nums mt-1 leading-tight">${display}</div>
-      <div class="text-[10px] text-slate-300 dark:text-slate-600 mt-0.5 leading-tight">${it.unit}</div>
+    const display = it.value != null ? it.value.toFixed(it.dec) : '—';
+    const opacityCls = it.value == null ? 'opacity-30' : '';
+    let borderCls = 'border-white/10';
+    let textCls   = 'text-white/35';
+    if (it.value != null) {
+      const [lo, hi] = AQ_THRESHOLDS[it.key] ?? [0, Infinity];
+      if (it.value < lo)      { borderCls = 'border-emerald-500/30'; textCls = 'text-emerald-400'; }
+      else if (it.value < hi) { borderCls = 'border-amber-500/30';   textCls = 'text-amber-400';   }
+      else                    { borderCls = 'border-red-500/35';     textCls = 'text-red-400';     }
+    }
+    return `<div class="shrink-0 w-[72px] rounded-xl py-2.5 bg-white/[0.06] border ${borderCls} ${opacityCls} text-center">
+      <div class="text-[10px] font-semibold text-white/35 leading-tight">${it.label}</div>
+      <div class="text-sm font-bold ${textCls} tabular-nums mt-1 leading-tight">${display}</div>
+      <div class="text-[9px] text-white/20 mt-0.5 leading-tight">${it.unit}</div>
     </div>`;
   }).join('');
 }
@@ -418,17 +425,21 @@ function renderHeroSun(locMeta, now) {
   const moonEmoji = ['🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘'][idx];
   const moonLabel = ['Luna nuova','Luna crescente','Primo quarto','Gibbosa crescente','Luna piena','Gibbosa calante','Ultimo quarto','Luna calante'][idx];
 
+  /* Three glassmorphic pills: sunrise · sunset · moon phase */
   el.innerHTML = `
-    <div class="flex items-center gap-3 text-xs text-slate-400 tabular-nums">
-      <span class="tooltip tooltip-top flex items-center gap-1" data-tip="Alba">
-        🌅 <span>${fmtSunTime(sunTimes.sunrise)}</span>
-      </span>
-      <span class="text-slate-300 dark:text-slate-600 select-none">·</span>
-      <span class="tooltip tooltip-top flex items-center gap-1" data-tip="Tramonto">
-        🌇 <span>${fmtSunTime(sunTimes.sunset)}</span>
-      </span>
-      <span class="text-slate-300 dark:text-slate-600 select-none">·</span>
-      <span class="tooltip tooltip-top" data-tip="${moonLabel}">${moonEmoji}</span>
+    <div class="flex items-center gap-2 flex-wrap justify-end">
+      <div class="tooltip tooltip-left flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/[0.08]" data-tip="Alba">
+        <span class="text-sm leading-none">🌅</span>
+        <span class="text-xs font-semibold text-white/65 tabular-nums">${fmtSunTime(sunTimes.sunrise)}</span>
+      </div>
+      <div class="tooltip tooltip-left flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/[0.08]" data-tip="Tramonto">
+        <span class="text-sm leading-none">🌇</span>
+        <span class="text-xs font-semibold text-white/65 tabular-nums">${fmtSunTime(sunTimes.sunset)}</span>
+      </div>
+      <div class="tooltip tooltip-left flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/[0.08]" data-tip="${moonLabel}">
+        <span class="text-sm leading-none">${moonEmoji}</span>
+        <span class="text-xs font-medium text-white/45">${moonLabel}</span>
+      </div>
     </div>`;
   twemoji.parse(el, TWEMOJI_OPTS);
 }
@@ -441,14 +452,15 @@ function renderHeroIndicators(todayDay) {
     const vc    = VERDICT_COLOR[ind.verdict] ?? VERDICT_COLOR.giallo;
     const verdictCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
     const tip   = escHtml(ind.rule_text || ind.rule_matched || verdictCap);
+    /* Hero è sempre dark: usiamo stili white-on-dark espliciti per leggibilità */
     return `<div class="shrink-0 tooltip tooltip-top" data-tip="${tip}">
-      <div class="flex items-center gap-2 px-3 py-2.5 rounded-xl ${vc.bg} border ${vc.border} hover:scale-105 active:scale-95 transition-transform duration-200 cursor-default" style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
-        <span class="text-xl leading-none">${meta.icon}</span>
+      <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-2xl bg-white/[0.07] border border-white/[0.1] hover:bg-white/[0.1] hover:scale-[1.02] active:scale-95 transition-all duration-200 cursor-default" style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
+        <span class="text-2xl leading-none">${meta.icon}</span>
         <div class="text-left min-w-0">
-          <div class="text-[10px] font-semibold ${vc.text} leading-tight">${meta.label}</div>
-          <div class="flex items-center gap-1 mt-0.5">
-            <span class="w-1.5 h-1.5 rounded-full ${vc.dot} shrink-0"></span>
-            <span class="text-[11px] font-semibold ${vc.text} opacity-90">${verdictCap}</span>
+          <div class="text-[10px] font-semibold text-white/45 leading-tight">${meta.label}</div>
+          <div class="flex items-center gap-1.5 mt-1">
+            <span class="w-2 h-2 rounded-full ${vc.dot} shrink-0"></span>
+            <span class="text-xs font-bold text-white/85">${verdictCap}</span>
           </div>
         </div>
       </div>
@@ -473,8 +485,8 @@ function ciBar(fc, unit) {
     <div class="mt-4">
       <div class="relative h-2 rounded-full bg-slate-200 dark:bg-slate-700" style="overflow:visible">
         <div class="ci-range-90 absolute inset-0 rounded-full bg-slate-300/50 dark:bg-slate-500/30" style="transform-origin:left"></div>
-        <div class="ci-range-80 absolute top-0 h-full rounded-full" style="background:rgba(61,107,79,0.35);left:${p80l}%;width:${p80w}%;transform-origin:left"></div>
-        <div class="ci-median absolute w-3 h-3 rounded-full bg-white dark:bg-slate-900" style="border:2px solid #3D6B4F;top:50%;margin-left:-6px;left:${p50pos}%"></div>
+        <div class="ci-range-80 absolute top-0 h-full rounded-full" style="background:rgba(59,154,108,0.35);left:${p80l}%;width:${p80w}%;transform-origin:left"></div>
+        <div class="ci-median absolute w-3 h-3 rounded-full bg-white dark:bg-[#0D1E35]" style="border:2px solid #3B9A6C;top:50%;margin-left:-6px;left:${p50pos}%"></div>
       </div>
       <div class="flex justify-between mt-2 text-[11px] text-slate-400 tabular-nums">
         <span>${ci90_lo.toFixed(1)}${unit}</span>
@@ -493,36 +505,51 @@ function renderDayStrip(days, activeDayIdx) {
     const active  = idx === activeDayIdx;
     const diff    = diffDays(target_date);
     const icon    = weatherIconForDay(day);
-    const hasRain = (fc.precip_mm?.p50 ?? 0) >= 0.1;
+    const condText = weatherConditionText(
+      fc.precip_mm?.p50 ?? 0,
+      fc.tmax_c?.p50   ?? null,
+      indicators.temporale?.verdict,
+      indicators.nebbia?.verdict,
+    );
 
+    /* Verdict dots row */
     const dots = Object.entries(indicators).map(([id, ind]) => {
       const vc = VERDICT_COLOR[ind.verdict];
       return vc
         ? `<span class="w-2 h-2 rounded-full shrink-0 ${vc.dot}" title="${INDICATOR_META[id]?.label ?? id}: ${ind.verdict}"></span>`
-        : `<span class="w-2 h-2 rounded-full shrink-0 bg-slate-200 dark:bg-slate-600"></span>`;
+        : `<span class="w-2 h-2 rounded-full shrink-0 bg-slate-200 dark:bg-white/10"></span>`;
     }).join('');
 
-    // Active: border accent + shadow, no vertical translate (avoid clipping in overflow-x-auto)
+    const isToday_   = diff === 0;
+    const isTomorrow = diff === 1;
+    const dayLabel   = fmtDayShort(target_date);
+
     const cardStyle = active
-      ? 'border:2px solid #3D6B4F;box-shadow:0 8px 24px -4px rgba(61,107,79,0.25)'
-      : 'border:1px solid transparent';
+      ? `border:2px solid rgba(59,154,108,0.6);box-shadow:0 0 0 4px rgba(59,154,108,0.08),0 8px 24px -6px rgba(59,154,108,0.2)`
+      : '';
     const cardCls = active
-      ? 'snap-center shrink-0 w-[92px] sm:w-[110px] rounded-2xl bg-white dark:bg-slate-900/80 p-2.5 sm:p-3 text-center shadow-lg cursor-pointer transition-all duration-300'
-      : 'snap-center shrink-0 w-[92px] sm:w-[110px] rounded-2xl bg-white dark:bg-white/5 p-2.5 sm:p-3 text-center shadow-sm cursor-pointer hover:-translate-y-1 hover:shadow-md transition-all duration-300 ease-out';
+      ? 'snap-center shrink-0 w-[100px] sm:w-[116px] rounded-2xl bg-white dark:bg-white/[0.09] px-3 py-3.5 text-center cursor-pointer transition-all duration-300'
+      : 'snap-center shrink-0 w-[100px] sm:w-[116px] rounded-2xl bg-white/70 dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] px-3 py-3.5 text-center cursor-pointer hover:-translate-y-0.5 hover:bg-white dark:hover:bg-white/[0.08] transition-all duration-300 ease-out';
+
+    /* Day label: "Oggi" verde accent, "Domani" normal, others dimmed */
+    const labelCls  = isToday_   ? 'text-[11px] font-bold tracking-tight today-badge-anim'
+                    : isTomorrow ? 'text-[11px] font-semibold text-slate-600 dark:text-white/65'
+                    :              'text-[11px] font-medium text-slate-400 dark:text-white/35 capitalize';
+    const labelStyle = isToday_ ? 'color:#3B9A6C' : '';
+
+    /* Temps: max prominent, min muted — side by side */
+    const tmax = fmtTemp(fc.tmax_c?.p50);
+    const tmin = fmtTemp(fc.tmin_c?.p50);
 
     return `<div class="${cardCls}" data-idx="${idx}" style="${cardStyle}">
-      ${diff === 0
-        ? `<div class="text-[9px] font-bold text-white rounded-full px-2 py-0.5 mx-auto mb-1.5 leading-none w-fit today-badge-anim" style="background:#3D6B4F">Oggi</div>`
-        : `<div class="h-[17px] mb-1.5"></div>`}
-      <span class="text-2xl leading-none block">${icon}</span>
-      <div class="text-xs font-semibold text-slate-700 dark:text-slate-200 capitalize mt-1.5 leading-tight">${fmtDayShort(target_date)}</div>
-      <div class="text-[10px] text-slate-400 capitalize">${fmtDateShort(target_date)}</div>
-      <div class="text-sm font-bold tabular-nums mt-1.5 leading-none" style="color:#F97316">↑ ${fmtTemp(fc.tmax_c?.p50)}</div>
-      <div class="text-xs font-semibold tabular-nums mt-0.5 leading-none" style="color:#3B82F6">↓ ${fmtTemp(fc.tmin_c?.p50)}</div>
-      ${hasRain
-        ? `<div class="text-[10px] text-blue-400 font-medium mt-1 tabular-nums leading-none">💧 ${fmtPrecip(fc.precip_mm?.p50)}</div>`
-        : `<div class="h-[14px] mt-1"></div>`}
-      <div class="flex gap-0.5 flex-wrap justify-center mt-1.5">${dots}</div>
+      <div class="${labelCls} leading-none mb-2.5" style="${labelStyle}">${dayLabel}</div>
+      <span class="text-4xl leading-none block mb-1.5">${icon}</span>
+      <div class="text-[10px] font-medium text-slate-400 dark:text-white/30 mb-2.5 leading-tight">${condText}</div>
+      <div class="flex items-baseline justify-center gap-1.5 mb-2.5">
+        <span class="text-sm font-extrabold tabular-nums text-slate-800 dark:text-white">${tmax}</span>
+        <span class="text-[11px] font-medium tabular-nums text-slate-400 dark:text-white/35">${tmin}</span>
+      </div>
+      <div class="flex gap-1 flex-wrap justify-center">${dots}</div>
     </div>`;
   }).join('');
 
@@ -586,14 +613,15 @@ function renderIndicatorChips(indicators) {
     const vc      = VERDICT_COLOR[ind.verdict] ?? VERDICT_COLOR.giallo;
     const verdCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
     const tip     = escHtml(ind.rule_text || ind.rule_matched || verdCap);
+    /* Stessi dimensionamenti degli hero indicators per consistenza visiva */
     return `<div class="shrink-0 tooltip tooltip-bottom" data-tip="${tip}">
-      <div class="flex items-center gap-2 px-3 py-2.5 rounded-xl ${vc.bg} border ${vc.border} hover:scale-105 active:scale-95 transition-transform duration-200 cursor-default" style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
-        <span class="text-xl leading-none">${meta.icon}</span>
+      <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-2xl ${vc.bg} border ${vc.border} hover:scale-[1.02] active:scale-95 transition-all duration-200 cursor-default" style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
+        <span class="text-2xl leading-none">${meta.icon}</span>
         <div class="text-left min-w-0">
-          <div class="text-[10px] font-semibold ${vc.text} leading-tight">${meta.label}</div>
-          <div class="flex items-center gap-1 mt-0.5">
-            <span class="w-1.5 h-1.5 rounded-full ${vc.dot} shrink-0"></span>
-            <span class="text-[11px] font-semibold ${vc.text} opacity-90">${verdCap}</span>
+          <div class="text-[10px] font-semibold ${vc.text} leading-tight opacity-75">${meta.label}</div>
+          <div class="flex items-center gap-1.5 mt-1">
+            <span class="w-2 h-2 rounded-full ${vc.dot} shrink-0"></span>
+            <span class="text-xs font-bold ${vc.text}">${verdCap}</span>
           </div>
         </div>
       </div>
@@ -620,8 +648,8 @@ function renderNwpList(day) {
     </div>`).join('');
 
   const guazzaRow = `
-    <div class="flex items-center py-3 px-1 rounded-r-lg -ml-1 pl-1" style="background:rgba(61,107,79,0.05);border-left:3px solid #3D6B4F">
-      <div class="w-32 text-sm font-bold shrink-0" style="color:#3D6B4F">★ Guazza ML</div>
+    <div class="flex items-center py-3 px-1 rounded-r-lg -ml-1 pl-1" style="background:rgba(59,154,108,0.06);border-left:3px solid #3B9A6C">
+      <div class="w-32 text-sm font-bold shrink-0" style="color:#3B9A6C">★ Guazza ML</div>
       <div class="flex-1 grid grid-cols-3 gap-4 text-right">
         <div class="text-sm font-semibold tabular-nums">${fmtTemp(fc.tmin_c?.p50)}</div>
         <div class="text-sm font-semibold tabular-nums">${fmtTemp(fc.tmax_c?.p50)}</div>
@@ -701,7 +729,7 @@ function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
     const btn = document.createElement('button');
     const active = m.source === activeSource;
     btn.className = `relative z-10 px-3 py-1 text-xs transition-colors duration-200 ${active ? 'font-semibold' : 'font-medium text-slate-500 dark:text-slate-400'}`;
-    btn.style.color = active ? '#3D6B4F' : '';
+    btn.style.color = active ? '#3B9A6C' : '';
     btn.dataset.src = m.source;
     btn.textContent = m.label;
     container.appendChild(btn);
@@ -709,7 +737,7 @@ function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
       container.querySelectorAll('[data-src]').forEach(b => {
         const isActive = b.dataset.src === m.source;
         b.className = `relative z-10 px-3 py-1 text-xs transition-colors duration-200 ${isActive ? 'font-semibold' : 'font-medium text-slate-500 dark:text-slate-400'}`;
-        b.style.color = isActive ? '#3D6B4F' : '';
+        b.style.color = isActive ? '#3B9A6C' : '';
       });
       updatePillPosition(switchId, pillId, m.source);
       onChange(m.source);
@@ -802,7 +830,7 @@ const crosshairPlugin = {
     ctx.moveTo(x, top);
     ctx.lineTo(x, bottom);
     ctx.lineWidth   = 1;
-    ctx.strokeStyle = 'rgba(61,107,79,0.25)';
+    ctx.strokeStyle = 'rgba(59,154,108,0.25)';
     ctx.setLineDash([]);
     ctx.stroke();
     // Glow circle around active temp point
@@ -1100,8 +1128,8 @@ function buildRadarMap(locationId, host, frames) {
 
   // Sonar marker using DivIcon
   const sonarHtml = `<div style="position:relative;width:20px;height:20px">
-    <div style="position:absolute;inset:0;border-radius:50%;background:#3D6B4F;opacity:0.9"></div>
-    <div style="position:absolute;inset:-5px;border-radius:50%;border:2px solid #3D6B4F;animation:sonar 2s ease-out infinite;pointer-events:none"></div>
+    <div style="position:absolute;inset:0;border-radius:50%;background:#3B9A6C;opacity:0.9"></div>
+    <div style="position:absolute;inset:-5px;border-radius:50%;border:2px solid #3B9A6C;animation:sonar 2s ease-out infinite;pointer-events:none"></div>
   </div>`;
   L.marker([loc.lat, loc.lon], {
     icon: L.divIcon({ className: '', html: sonarHtml, iconSize: [20, 20], iconAnchor: [10, 10] }),

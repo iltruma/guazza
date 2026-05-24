@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="it" data-theme="light">
+<html lang="it" data-theme="dark" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guazza — Previsioni meteo iper-locale Toscana</title>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <script>
     tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['Outfit','system-ui','sans-serif'] } } } };
   </script>
@@ -19,69 +19,81 @@
   <link rel="stylesheet" href="style.css">
 </head>
 
-<body class="bg-[#F4F6F8] dark:bg-[#050914] text-slate-900 dark:text-slate-100 font-sans antialiased min-h-screen">
+<body class="bg-slate-100 dark:bg-[#07101F] text-slate-900 dark:text-[#EEF2F8] font-sans antialiased min-h-screen">
 
-  <header class="sticky top-0 z-50 backdrop-blur-xl bg-white/75 dark:bg-[#050914]/70 border-b border-black/5 dark:border-white/5 transition-all duration-300">
-    <div class="max-w-6xl mx-auto px-4 md:px-6 py-3 flex items-center justify-between">
-      <div class="flex items-center gap-2.5">
-        <svg class="w-7 h-7" style="color:#3D6B4F" viewBox="0 0 28 28" fill="none">
-          <path d="M2 16c2 6 8 10 14 8s10-8 8-14c-2-6-8-10-14-8S0 10 2 16z" fill="currentColor" opacity="0.2"/>
-          <path d="M8 14c1 3 4 5 7 4s5-4 4-7-4-5-7-4-5 4-4 7z" fill="currentColor"/>
+  <!-- HEADER: sticky, glassmorphic -->
+  <header class="sticky top-0 z-50 backdrop-blur-2xl bg-white/85 dark:bg-[#07101F]/90 border-b border-black/[0.04] dark:border-white/[0.05] transition-all duration-300">
+    <div class="max-w-6xl mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-2.5 shrink-0">
+        <svg class="w-6 h-6 shrink-0" viewBox="0 0 28 28" fill="none">
+          <path d="M2 16c2 6 8 10 14 8s10-8 8-14c-2-6-8-10-14-8S0 10 2 16z" fill="#3B9A6C" opacity="0.25"/>
+          <path d="M8 14c1 3 4 5 7 4s5-4 4-7-4-5-7-4-5 4-4 7z" fill="#3B9A6C"/>
         </svg>
-        <span class="text-lg font-bold tracking-tight">Guazza</span>
+        <span class="text-base font-bold tracking-tight text-slate-900 dark:text-white">Guazza</span>
       </div>
-      <div id="header-meta" class="flex items-center gap-2 text-[11px] text-slate-400 font-medium"></div>
+      <div id="header-meta" class="flex items-center gap-2 text-[11px] text-slate-400 dark:text-white/30 font-medium tabular-nums"></div>
     </div>
-    <div class="max-w-6xl mx-auto px-4 md:px-6 pb-3">
-      <nav id="tabs" class="flex gap-2 overflow-x-auto no-scrollbar snap-x" aria-label="Location"></nav>
+    <div class="max-w-6xl mx-auto px-4 md:px-6 pb-2.5">
+      <nav id="tabs" class="flex gap-1 overflow-x-auto no-scrollbar snap-x" aria-label="Location"></nav>
     </div>
   </header>
 
-  <main id="app" class="max-w-6xl mx-auto px-4 md:px-6 py-6 space-y-6">
+  <main id="app" class="max-w-6xl mx-auto px-4 md:px-6 py-5 space-y-4">
 
-    <div id="skeleton-state" class="space-y-6">
-      <div class="rounded-3xl bg-white/60 dark:bg-white/5 h-80 skeleton"></div>
-      <div class="rounded-3xl bg-white/60 dark:bg-white/5 h-64 skeleton"></div>
+    <!-- Skeleton -->
+    <div id="skeleton-state" class="space-y-4">
+      <div class="rounded-3xl bg-slate-200 dark:bg-white/[0.04] h-72 skeleton"></div>
+      <div class="rounded-3xl bg-slate-200 dark:bg-white/[0.04] h-48 skeleton"></div>
     </div>
 
+    <!-- Error -->
     <div id="error-state" class="hidden">
-      <div class="rounded-3xl bg-red-500/10 border border-red-500/20 p-6 text-red-600 dark:text-red-400">
+      <div class="rounded-2xl bg-red-500/10 border border-red-500/20 p-5 text-red-600 dark:text-red-400">
         <p class="font-semibold" id="error-msg">Errore nel caricamento</p>
         <p class="text-sm mt-1 opacity-70">Assicurati che il server stia servendo i JSON da /data/</p>
       </div>
     </div>
 
-    <!-- ① HERO: Condizioni Attuali -->
-    <section id="hero-card" class="hidden relative rounded-3xl bg-white dark:bg-slate-900/60 border border-black/[0.04] dark:border-white/[0.06] shadow-xl overflow-hidden anim-fade-up">
+    <!-- ① HERO: Condizioni Attuali — sky cinematico -->
+    <section id="hero-card" class="hidden relative rounded-3xl overflow-hidden hero-sky anim-fade-up">
+      <!-- Temperatura gradient overlay (settato da JS in base alla temp) -->
       <div id="hero-temp-gradient" class="absolute inset-0 pointer-events-none z-0"></div>
-      <div class="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-[#3D6B4F]/60 to-[#3D6B4F]/20 z-10"></div>
-      <div class="relative z-10 p-4 sm:p-6 md:p-8 grid grid-cols-1 md:grid-cols-5 gap-5 md:gap-8">
-        <div class="md:col-span-2 flex items-start gap-5">
-          <div id="hero-icon" class="text-7xl mt-1 hero-icon-float cursor-default select-none"></div>
+      <!-- Linea accent in cima -->
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[#3B9A6C]/50 to-transparent z-10"></div>
+
+      <!-- Contenuto principale -->
+      <div class="relative z-10 p-5 sm:p-6 md:p-8">
+        <!-- Riga temp + icona -->
+        <div class="flex items-start justify-between mb-5 md:mb-6">
           <div class="flex-1 min-w-0">
-            <div id="hero-temp" class="text-[4rem] md:text-[5rem] font-extrabold tracking-tighter leading-none text-slate-900 dark:text-slate-50">—</div>
-            <div id="hero-meta" class="mt-2 flex gap-4 text-sm text-slate-500 dark:text-slate-400 flex-wrap"></div>
+            <div id="hero-temp" class="hero-temp-display leading-none text-white">—</div>
+            <div id="hero-meta" class="mt-2 flex flex-wrap gap-3 text-sm text-white/45"></div>
           </div>
+          <div id="hero-icon" class="hero-icon-size leading-none hero-icon-float cursor-default select-none shrink-0 ml-4 mt-1"></div>
         </div>
-        <div class="md:col-span-3 space-y-4">
-          <div id="hero-stats" class="divide-y divide-slate-100 dark:divide-white/5"></div>
-          <div>
-            <div class="text-[11px] text-slate-400 font-medium mb-2" id="hero-aq-label">Qualità aria</div>
-            <div id="hero-aq" class="flex flex-wrap gap-1.5 mt-1"></div>
-          </div>
-          <div id="hero-sun" class="flex gap-4 text-xs text-slate-400 tabular-nums"></div>
-        </div>
+
+        <!-- Stats: griglia orizzontale compatta (gap-px rivela il bg del container come divisore) -->
+        <div id="hero-stats" class="grid grid-cols-2 md:grid-cols-4 gap-px bg-white/[0.08] rounded-2xl overflow-hidden mb-5"></div>
+
+        <!-- Indicatori DLE di oggi -->
+        <div id="hero-indicators" class="flex gap-2 overflow-x-auto no-scrollbar pb-1"></div>
       </div>
-      <div class="relative z-10 border-t border-slate-100 dark:border-white/5 px-6 py-4">
-        <div id="hero-indicators" class="flex gap-3 overflow-x-auto no-scrollbar"></div>
+
+      <!-- Footer: qualità aria + sole/luna -->
+      <div class="relative z-10 border-t border-white/[0.06] px-5 sm:px-6 md:px-8 py-3 flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
+        <div class="min-w-0">
+          <div class="text-[10px] font-semibold text-white/25 mb-2 uppercase tracking-widest" id="hero-aq-label">Qualità aria</div>
+          <div id="hero-aq" class="flex flex-wrap gap-1.5"></div>
+        </div>
+        <div id="hero-sun" class="shrink-0"></div>
       </div>
     </section>
 
     <!-- ② RADAR -->
-    <section id="radar-section" class="hidden relative rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-[#0B0F19] h-[280px] md:h-[360px]">
+    <section id="radar-section" class="hidden relative rounded-3xl overflow-hidden border border-white/[0.06] shadow-2xl bg-[#0B0F19] h-[260px] md:h-[340px]">
       <div id="radar-map" class="absolute inset-0 z-[1]"></div>
       <div class="absolute bottom-4 left-4 right-4 z-[6] flex items-center gap-3">
-        <button id="radar-play" class="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white flex items-center justify-center hover:bg-white/20 active:scale-90 transition-all duration-150 flex-none" aria-label="Play/Pausa"></button>
+        <button id="radar-play" class="w-9 h-9 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white flex items-center justify-center hover:bg-white/20 active:scale-90 transition-all duration-150 flex-none" aria-label="Play/Pausa"></button>
         <input id="radar-slider" type="range" class="flex-1 range range-xs range-primary" min="0" max="0" value="0" step="1" aria-label="Radar timeline">
         <span id="radar-time" class="text-xs text-white font-mono tabular-nums bg-black/30 px-2 py-1 rounded-lg backdrop-blur-md w-[5rem] text-right shrink-0">—</span>
       </div>
@@ -93,71 +105,75 @@
     </section>
 
     <!-- ③ PREVISIONI: Striscia + Dettaglio -->
-    <div id="forecast-section" class="hidden space-y-4">
-      <div class="flex items-end justify-between px-1">
-        <h2 class="text-xs font-semibold text-slate-400">Prossimi giorni</h2>
+    <div id="forecast-section" class="hidden space-y-3">
+      <div class="flex items-center px-1">
+        <h2 class="text-[10px] font-semibold text-slate-400 dark:text-white/25 uppercase tracking-widest">Prossimi giorni</h2>
       </div>
-      <div id="day-strip" class="flex gap-3 overflow-x-auto snap-x snap-mandatory py-2 px-1 no-scrollbar"></div>
+      <div id="day-strip" class="flex gap-2 overflow-x-auto snap-x snap-mandatory py-1 px-1 no-scrollbar"></div>
 
-      <section id="day-detail" class="rounded-3xl bg-white dark:bg-slate-900/60 border border-black/[0.04] dark:border-white/[0.06] shadow-xl overflow-hidden anim-fade-up">
-        <div class="p-6 md:p-8">
-          <div class="flex items-center gap-3 mb-6">
-            <span id="detail-icon" class="text-5xl shrink-0"></span>
+      <section id="day-detail" class="rounded-2xl bg-white dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] overflow-hidden anim-fade-up">
+        <div class="p-5 md:p-7">
+          <!-- Header dettaglio -->
+          <div class="flex items-center gap-3 mb-5">
+            <span id="detail-icon" class="text-4xl shrink-0"></span>
             <div>
-              <h3 id="detail-title" class="text-2xl font-bold tracking-tight"></h3>
-              <p class="text-sm text-slate-400 flex items-center gap-2 mt-0.5">
+              <h3 id="detail-title" class="text-xl font-bold tracking-tight text-slate-900 dark:text-white"></h3>
+              <p class="text-xs text-slate-400 dark:text-white/30 flex items-center gap-2 mt-0.5">
                 <span id="detail-date"></span>
-                <span id="detail-lead" class="rounded-full bg-slate-100 dark:bg-white/5 px-2.5 py-0.5 text-xs font-medium text-slate-500 dark:text-slate-400"></span>
+                <span id="detail-lead" class="rounded-full bg-slate-100 dark:bg-white/5 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:text-white/30"></span>
               </p>
             </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="md:col-span-2 rounded-2xl bg-slate-50 dark:bg-white/5 p-5 border border-slate-100 dark:border-white/5 relative overflow-hidden">
-              <p class="text-[11px] text-slate-400 font-medium mb-3">Temperatura</p>
-              <div class="flex items-end gap-6 md:gap-10">
+          <!-- Previsioni: temp + precip -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+            <div class="md:col-span-2 rounded-xl bg-slate-50 dark:bg-white/[0.04] p-4 border border-slate-100 dark:border-white/[0.05]">
+              <p class="text-[10px] text-slate-400 dark:text-white/25 font-semibold uppercase tracking-widest mb-3">Temperatura</p>
+              <div class="flex items-end gap-6">
                 <div>
-                  <span id="detail-tmax" class="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-slate-50">—</span>
-                  <span class="text-sm text-slate-400 ml-1">max</span>
+                  <span id="detail-tmax" class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">—</span>
+                  <span class="text-xs text-slate-400 ml-1">max</span>
                 </div>
                 <div>
-                  <span id="detail-tmin" class="text-4xl font-extrabold tracking-tight text-slate-400">—</span>
-                  <span class="text-sm text-slate-400 ml-1">min</span>
+                  <span id="detail-tmin" class="text-3xl font-extrabold tracking-tight text-slate-400 dark:text-white/40">—</span>
+                  <span class="text-xs text-slate-400 ml-1">min</span>
                 </div>
               </div>
-              <div id="detail-ci-tmax" class="mt-5"></div>
+              <div id="detail-ci-tmax" class="mt-4"></div>
               <div id="detail-ci-tmin" class="mt-3"></div>
             </div>
-            <div class="rounded-2xl bg-slate-50 dark:bg-white/5 p-5 border border-slate-100 dark:border-white/5">
-              <p class="text-[11px] text-slate-400 font-medium mb-3">Precipitazione</p>
-              <div id="detail-precip-val" class="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-slate-50">—</div>
-              <div id="detail-ci-precip" class="mt-5"></div>
+            <div class="rounded-xl bg-slate-50 dark:bg-white/[0.04] p-4 border border-slate-100 dark:border-white/[0.05]">
+              <p class="text-[10px] text-slate-400 dark:text-white/25 font-semibold uppercase tracking-widest mb-3">Precipitazione</p>
+              <div id="detail-precip-val" class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">—</div>
+              <div id="detail-ci-precip" class="mt-4"></div>
             </div>
           </div>
 
-          <div id="detail-indicators" class="flex gap-3 overflow-x-auto no-scrollbar mt-6"></div>
+          <!-- Indicatori -->
+          <div id="detail-indicators" class="flex gap-2 overflow-x-auto no-scrollbar mb-5"></div>
 
-          <div class="mt-8">
-            <h4 class="text-[11px] text-slate-400 font-medium mb-3">Confronto modelli</h4>
-            <div id="nwp-list" class="divide-y divide-slate-100 dark:divide-white/5"></div>
+          <!-- Confronto NWP -->
+          <div>
+            <h4 class="text-[10px] text-slate-400 dark:text-white/25 font-semibold uppercase tracking-widest mb-3">Confronto modelli</h4>
+            <div id="nwp-list" class="divide-y divide-slate-100 dark:divide-white/[0.05]"></div>
           </div>
         </div>
       </section>
     </div>
 
     <!-- ④ GRAFICO ORARIO GIORNALIERO -->
-    <section id="chart-daily-section" class="hidden rounded-3xl bg-white dark:bg-slate-900/60 border border-black/[0.04] dark:border-white/[0.06] shadow-xl p-6 anim-fade-up">
+    <section id="chart-daily-section" class="hidden rounded-2xl bg-white dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] p-5 anim-fade-up">
       <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <h3 class="text-xs font-semibold text-slate-400">Andamento orario</h3>
-        <div class="relative inline-flex bg-slate-100 dark:bg-slate-800 rounded-full p-1" id="model-switch">
-          <span id="model-pill" class="absolute top-1 bottom-1 bg-white dark:bg-slate-700 rounded-full shadow-sm pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"></span>
+        <h3 class="text-[10px] font-semibold text-slate-400 dark:text-white/25 uppercase tracking-widest">Andamento orario</h3>
+        <div class="relative inline-flex bg-slate-100 dark:bg-white/5 rounded-full p-0.5" id="model-switch">
+          <span id="model-pill" class="absolute top-0.5 bottom-0.5 bg-white dark:bg-white/10 rounded-full shadow-sm pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"></span>
         </div>
       </div>
-      <div class="relative h-[280px] w-full">
+      <div class="relative h-[260px] w-full">
         <canvas id="meteo-chart"></canvas>
-        <div id="chart-tooltip" class="absolute pointer-events-none opacity-0 transition-opacity duration-200 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl rounded-xl border border-black/5 dark:border-white/10 shadow-2xl px-3 py-2 z-20 min-w-[140px]"></div>
+        <div id="chart-tooltip" class="absolute pointer-events-none opacity-0 transition-opacity duration-200 bg-white/95 dark:bg-[#0D1E35]/95 backdrop-blur-xl rounded-xl border border-black/5 dark:border-white/10 shadow-2xl px-3 py-2 z-20 min-w-[140px]"></div>
       </div>
-      <div class="flex gap-5 mt-4 text-xs text-slate-400 flex-wrap">
+      <div class="flex gap-5 mt-3 text-xs text-slate-400 flex-wrap">
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>Temperatura</span>
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-500 inline-block"></span>Umidità</span>
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-600/60 inline-block"></span>Precip</span>
@@ -166,17 +182,17 @@
     </section>
 
     <!-- ⑤ GRAFICO SETTIMANALE -->
-    <section id="chart-weekly-section" class="hidden rounded-3xl bg-white dark:bg-slate-900/60 border border-black/[0.04] dark:border-white/[0.06] shadow-xl p-6 anim-fade-up">
+    <section id="chart-weekly-section" class="hidden rounded-2xl bg-white dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] p-5 anim-fade-up">
       <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <h3 class="text-xs font-semibold text-slate-400">Tendenza settimanale</h3>
-        <div class="relative inline-flex bg-slate-100 dark:bg-slate-800 rounded-full p-1" id="weekly-model-switch">
-          <span id="weekly-model-pill" class="absolute top-1 bottom-1 bg-white dark:bg-slate-700 rounded-full shadow-sm pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"></span>
+        <h3 class="text-[10px] font-semibold text-slate-400 dark:text-white/25 uppercase tracking-widest">Tendenza settimanale</h3>
+        <div class="relative inline-flex bg-slate-100 dark:bg-white/5 rounded-full p-0.5" id="weekly-model-switch">
+          <span id="weekly-model-pill" class="absolute top-0.5 bottom-0.5 bg-white dark:bg-white/10 rounded-full shadow-sm pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"></span>
         </div>
       </div>
-      <div class="relative h-[260px] w-full">
+      <div class="relative h-[240px] w-full">
         <canvas id="multiday-chart"></canvas>
       </div>
-      <div class="flex gap-5 mt-4 text-xs text-slate-400 flex-wrap">
+      <div class="flex gap-5 mt-3 text-xs text-slate-400 flex-wrap">
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>Temperatura</span>
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-500 inline-block"></span>Umidità</span>
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-600/60 inline-block"></span>Precip</span>
@@ -184,7 +200,7 @@
       </div>
     </section>
 
-    <div id="coverage-bar" class="hidden pt-2"></div>
+    <div id="coverage-bar" class="hidden pt-1"></div>
 
   </main>
 
