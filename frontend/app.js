@@ -602,13 +602,17 @@ function renderDayDetail(day) {
   document.getElementById('detail-date').textContent  = fmtDate(target_date);
   document.getElementById('detail-lead').textContent  = `+${lead_time_h}h`;
 
-  document.getElementById('detail-tmax').innerHTML = `<span style="color:#F97316">↑</span> ${fmtTemp(fc.tmax_c?.p50)}`;
-  document.getElementById('detail-tmin').innerHTML = `<span style="color:#3B82F6">↓</span> ${fmtTemp(fc.tmin_c?.p50)}`;
+  /* Tmax: warm orange, no arrow — number speaks for itself */
+  document.getElementById('detail-tmax').innerHTML =
+    `<span style="color:#F97316">${fmtTemp(fc.tmax_c?.p50)}</span>`;
+  /* Tmin: cool blue-slate */
+  document.getElementById('detail-tmin').innerHTML =
+    `<span style="color:#60A5FA">${fmtTemp(fc.tmin_c?.p50)}</span>`;
 
   const precipVal = fc.precip_mm?.p50;
-  document.getElementById('detail-precip-val').innerHTML = precipVal != null
-    ? `💧 ${precipVal.toFixed(1)}<span class="text-lg text-slate-400 font-medium ml-1">mm</span>`
-    : '—';
+  document.getElementById('detail-precip-val').innerHTML = precipVal != null && precipVal > 0.05
+    ? `${precipVal.toFixed(1)}<span class="text-xl font-medium text-slate-400 dark:text-white/30 ml-1.5">mm</span>`
+    : '<span class="text-slate-400 dark:text-white/30">—</span>';
 
   document.getElementById('detail-ci-tmax').innerHTML   = ciBar(fc.tmax_c,   '°');
   document.getElementById('detail-ci-tmin').innerHTML   = ciBar(fc.tmin_c,   '°');
@@ -627,14 +631,19 @@ function renderDayDetail(day) {
 
 function renderIndicatorChips(indicators) {
   const el = document.getElementById('detail-indicators');
+  /*
+   * Stessa strategia degli hero indicators:
+   * - flex-wrap (no overflow-x-auto → no clipping mobile)
+   * - Niente DaisyUI tooltip — testo regola inline, toggle al click/tap
+   */
   el.innerHTML = Object.entries(indicators).map(([id, ind], i) => {
     const meta    = INDICATOR_META[id] ?? { label: id, icon: '?' };
     const vc      = VERDICT_COLOR[ind.verdict] ?? VERDICT_COLOR.giallo;
     const verdCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
-    const tip     = escHtml(ind.rule_text || ind.rule_matched || verdCap);
-    /* Stessi dimensionamenti degli hero indicators per consistenza visiva */
-    return `<div class="shrink-0 tooltip tooltip-bottom" data-tip="${tip}">
-      <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-2xl ${vc.bg} border ${vc.border} hover:scale-[1.02] active:scale-95 transition-all duration-200 cursor-default" style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
+    const tip     = escHtml(ind.rule_text || ind.rule_matched || '');
+    return `<div data-detail-chip class="shrink-0">
+      <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-2xl ${vc.bg} border ${vc.border} hover:scale-[1.02] active:scale-95 transition-all duration-200 cursor-pointer select-none"
+           style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
         <span class="text-2xl leading-none">${meta.icon}</span>
         <div class="text-left min-w-0">
           <div class="text-[10px] font-semibold ${vc.text} leading-tight opacity-75">${meta.label}</div>
@@ -642,10 +651,22 @@ function renderIndicatorChips(indicators) {
             <span class="w-2 h-2 rounded-full ${vc.dot} shrink-0"></span>
             <span class="text-xs font-bold ${vc.text}">${verdCap}</span>
           </div>
+          ${tip ? `<div class="chip-tip text-[9px] ${vc.text} opacity-60 leading-snug mt-1 hidden">${tip}</div>` : ''}
         </div>
       </div>
     </div>`;
   }).join('');
+
+  el.querySelectorAll('[data-detail-chip]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const tipEl = chip.querySelector('.chip-tip');
+      if (!tipEl) return;
+      const opening = tipEl.classList.contains('hidden');
+      el.querySelectorAll('.chip-tip').forEach(t => t.classList.add('hidden'));
+      if (opening) tipEl.classList.remove('hidden');
+    });
+  });
+
   twemoji.parse(el, TWEMOJI_OPTS);
 }
 
@@ -655,38 +676,47 @@ function renderNwpList(day) {
   const fc  = day.forecasts;
   if (!nwp || !nwp.length) { el.innerHTML = ''; return; }
 
-  const nwpRows = nwp.map(m => `
-    <div class="flex items-center py-3 px-1 hover:bg-slate-50 dark:hover:bg-white/5 transition-all duration-150 cursor-default group">
-      <div class="w-32 text-sm font-medium text-slate-700 dark:text-slate-300 group-hover:translate-x-1 transition-transform duration-200 shrink-0">${escHtml(m.label)}</div>
-      <div class="flex-1 grid grid-cols-3 gap-4 text-right">
-        <div class="text-sm font-semibold tabular-nums">${m.tmin_c != null ? m.tmin_c.toFixed(1)+'°' : '—'}</div>
-        <div class="text-sm font-semibold tabular-nums">${m.tmax_c != null ? m.tmax_c.toFixed(1)+'°' : '—'}</div>
-        <div class="text-sm font-semibold tabular-nums">${m.precip_mm != null ? m.precip_mm.toFixed(1)+' mm' : '—'}</div>
-      </div>
-      <div class="w-28 text-right text-[11px] text-slate-400 tabular-nums shrink-0">${fmtLastRun(m.last_run)}</div>
-    </div>`).join('');
+  /*
+   * Layout: 3 colonne [nome-modello | min · max | precip]
+   * Guazza pinnato in cima con accent border-left.
+   * last_run come riga secondaria sotto il nome del modello.
+   */
+  const colCls = 'grid grid-cols-[1fr_auto_auto] items-start gap-x-5';
 
   const guazzaRow = `
-    <div class="flex items-center py-3 px-1 rounded-r-lg -ml-1 pl-1" style="background:rgba(59,154,108,0.06);border-left:3px solid #3B9A6C">
-      <div class="w-32 text-sm font-bold shrink-0" style="color:#3B9A6C">★ Guazza ML</div>
-      <div class="flex-1 grid grid-cols-3 gap-4 text-right">
-        <div class="text-sm font-semibold tabular-nums">${fmtTemp(fc.tmin_c?.p50)}</div>
-        <div class="text-sm font-semibold tabular-nums">${fmtTemp(fc.tmax_c?.p50)}</div>
-        <div class="text-sm font-semibold tabular-nums">${fmtPrecip(fc.precip_mm?.p50)}</div>
+    <div class="${colCls} px-5 md:px-7 py-3 mb-px" style="background:rgba(59,154,108,0.07);border-left:3px solid #3B9A6C">
+      <div class="text-sm font-bold" style="color:#3B9A6C">★ Guazza ML</div>
+      <div class="text-right text-sm font-semibold tabular-nums font-mono text-slate-700 dark:text-slate-200 whitespace-nowrap">
+        <span style="color:#60A5FA">${fmtTemp(fc.tmin_c?.p50)}</span>
+        <span class="text-slate-300 dark:text-white/20 mx-1">·</span>
+        <span style="color:#F97316">${fmtTemp(fc.tmax_c?.p50)}</span>
       </div>
-      <div class="w-28"></div>
+      <div class="text-right text-sm font-semibold tabular-nums font-mono text-sky-600 dark:text-sky-400 whitespace-nowrap">${fmtPrecip(fc.precip_mm?.p50)}</div>
     </div>`;
 
-  // Header
-  el.innerHTML = `
-    <div class="flex items-center py-2 px-1 text-[11px] text-slate-400 font-medium">
-      <div class="w-32 shrink-0">Modello</div>
-      <div class="flex-1 grid grid-cols-3 gap-4 text-right">
-        <div>Tmin</div><div>Tmax</div><div>Precip</div>
+  /* Column sub-header */
+  const subHeader = `
+    <div class="${colCls} px-5 md:px-7 py-2 border-t border-b border-slate-100 dark:border-white/[0.04]">
+      <div class="text-[10px] text-slate-400 dark:text-white/25 font-semibold uppercase tracking-widest">NWP</div>
+      <div class="text-right text-[10px] text-slate-400 dark:text-white/25 font-semibold whitespace-nowrap">Min · Max</div>
+      <div class="text-right text-[10px] text-slate-400 dark:text-white/25 font-semibold">Precip</div>
+    </div>`;
+
+  const nwpRows = nwp.map(m => `
+    <div class="${colCls} px-5 md:px-7 py-3 border-t border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors duration-150">
+      <div>
+        <div class="text-sm font-medium text-slate-700 dark:text-slate-300 leading-tight">${escHtml(m.label)}</div>
+        <div class="text-[10px] text-slate-400 dark:text-white/25 tabular-nums mt-0.5">${fmtLastRun(m.last_run)}</div>
       </div>
-      <div class="w-28"></div>
-    </div>
-    ${nwpRows}${guazzaRow}`;
+      <div class="text-right text-sm font-semibold tabular-nums font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap self-center">
+        ${m.tmin_c != null ? m.tmin_c.toFixed(1)+'°' : '—'}
+        <span class="text-slate-300 dark:text-white/20 mx-1">·</span>
+        ${m.tmax_c != null ? m.tmax_c.toFixed(1)+'°' : '—'}
+      </div>
+      <div class="text-right text-sm font-semibold tabular-nums font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap self-center">${m.precip_mm != null ? m.precip_mm.toFixed(1)+' mm' : '—'}</div>
+    </div>`).join('');
+
+  el.innerHTML = guazzaRow + subHeader + nwpRows;
 }
 
 // ── Coverage badge ────────────────────────────────────────────────────────────
