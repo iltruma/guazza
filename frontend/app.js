@@ -41,6 +41,14 @@ const AQ_THRESHOLDS = {
 const PLAY_SVG  = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
 const PAUSE_SVG = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
 
+// Icone SVG per le hero stats (stroke-based, 15×15 render)
+const STAT_ICONS = {
+  'Vento':     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11a3 3 0 100-6h-1M3 12h15a3 3 0 010 6h-2"/></svg>`,
+  'Umidità':   `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 007-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6.5 11.1 5 13 5 15a7 7 0 007 7z"/></svg>`,
+  'Pioggia':   `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 17.6A5 5 0 0018 8h-1.3A8 8 0 104 16.5M8 19v2M12 18v2M16 19v2"/></svg>`,
+  'Pressione': `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2.5"/></svg>`,
+};
+
 const RV_API               = 'https://api.rainviewer.com/public/weather-maps.json';
 const RV_TTL_MS            = 5 * 60 * 1000;
 const RADAR_PAST_FRAMES    = 7;
@@ -61,6 +69,7 @@ let radarIdx     = 0;
 let radarTimer   = null;
 let radarPlaying = false;
 let radarCache   = null;
+let _tipHideTimer = null;
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
@@ -185,6 +194,55 @@ function aqColorCls(key, value) {
   if (value < lo)  return { border: 'border-emerald-500/30', text: 'text-emerald-600 dark:text-emerald-400' };
   if (value < hi)  return { border: 'border-amber-500/30',   text: 'text-amber-600 dark:text-amber-400'   };
   return             { border: 'border-red-500/30',     text: 'text-red-600 dark:text-red-400'     };
+}
+
+// ── Indicator tooltip ─────────────────────────────────────────────────────────
+
+function showIndicatorTooltip(anchorEl, text) {
+  if (!text) return;
+  clearTimeout(_tipHideTimer);
+  const tip = document.getElementById('indicator-tooltip');
+  if (!tip) return;
+  tip.textContent = text;
+  tip.style.left = '0px';
+  tip.style.top  = '0px';
+  tip.classList.remove('hidden');
+  // Misura dopo che il browser ha fatto layout e posiziona correttamente
+  requestAnimationFrame(() => {
+    const r  = anchorEl.getBoundingClientRect();
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    let top  = r.bottom + 8;
+    if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+    let left = r.left + r.width / 2 - tw / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+    tip.style.top  = `${top}px`;
+    tip.style.left = `${left}px`;
+  });
+}
+
+function hideIndicatorTooltip() {
+  document.getElementById('indicator-tooltip')?.classList.add('hidden');
+}
+
+function _wireChipTooltip(el, selector) {
+  el.querySelectorAll(selector).forEach(chip => {
+    const tip = chip.dataset.tip;
+    if (!tip) return;
+    chip.addEventListener('mouseenter', () => {
+      clearTimeout(_tipHideTimer);
+      showIndicatorTooltip(chip, tip);
+    });
+    chip.addEventListener('mouseleave', () => {
+      _tipHideTimer = setTimeout(hideIndicatorTooltip, 150);
+    });
+    chip.addEventListener('click', e => {
+      e.stopPropagation();
+      const t = document.getElementById('indicator-tooltip');
+      if (!t || t.classList.contains('hidden')) showIndicatorTooltip(chip, tip);
+      else hideIndicatorTooltip();
+    });
+  });
 }
 
 function isToday(isoDate) {
@@ -374,10 +432,12 @@ function renderHeroStats(current) {
     { label: 'Pressione', value: current?.pressure_hpa  != null ? `${current.pressure_hpa.toFixed(0)} hPa` : '—' },
   ];
   const el = document.getElementById('hero-stats');
-  /* Le celle hanno bg semi-opaco per lavorare con il trucco gap-px del container */
   el.innerHTML = stats.map(s => `
-    <div class="px-4 py-3 flex flex-col gap-0.5 bg-[#09172A] hover:bg-[#0d1e38] transition-colors duration-200">
-      <div class="text-[10px] font-semibold text-white/30 uppercase tracking-widest">${s.label}</div>
+    <div class="px-4 py-3 flex flex-col gap-1 bg-[#09172A] hover:bg-[#0d1e38] transition-colors duration-200">
+      <div class="flex items-center gap-1.5">
+        ${STAT_ICONS[s.label] ?? ''}
+        <div class="text-[9px] font-semibold text-white/30 uppercase tracking-widest">${s.label}</div>
+      </div>
       <div class="text-sm font-bold text-white tabular-nums">${s.value}</div>
     </div>`).join('');
 }
@@ -448,17 +508,12 @@ function renderHeroIndicators(todayDay) {
   const el = document.getElementById('hero-indicators');
   if (!todayDay) { el.innerHTML = ''; return; }
 
-  /*
-   * DaisyUI tooltip usa :hover — non scatta su touch.
-   * Soluzione: testo della regola inline, nascosto, toggle al click/tap.
-   * Funziona su mobile (tap) e desktop (click); niente dipendenze extra.
-   */
   el.innerHTML = Object.entries(todayDay.indicators).map(([id, ind], i) => {
     const meta       = INDICATOR_META[id] ?? { label: id, icon: '?' };
     const vc         = VERDICT_COLOR[ind.verdict] ?? VERDICT_COLOR.giallo;
     const verdictCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
     const tip        = escHtml(ind.rule_text || ind.rule_matched || '');
-    return `<div data-hero-chip class="shrink-0">
+    return `<div data-hero-chip${tip ? ` data-tip="${tip}"` : ''} class="shrink-0">
       <div class="flex items-center gap-2 px-3 py-2.5 sm:gap-2.5 sm:px-3.5 sm:py-3 rounded-2xl bg-white/[0.07] border border-white/[0.1] hover:bg-white/[0.1] active:scale-95 transition-all duration-200 cursor-pointer select-none"
            style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
         <span class="text-xl sm:text-2xl leading-none">${meta.icon}</span>
@@ -468,23 +523,12 @@ function renderHeroIndicators(todayDay) {
             <span class="w-2 h-2 rounded-full ${vc.dot} shrink-0"></span>
             <span class="text-xs font-bold text-white/85">${verdictCap}</span>
           </div>
-          ${tip ? `<div class="chip-tip text-[9px] text-white/35 leading-snug mt-1 hidden">${tip}</div>` : ''}
         </div>
       </div>
     </div>`;
   }).join('');
 
-  /* Toggle rule text on click/tap — close others when opening a new one */
-  el.querySelectorAll('[data-hero-chip]').forEach(chip => {
-    chip.addEventListener('click', () => {
-      const tipEl = chip.querySelector('.chip-tip');
-      if (!tipEl) return;
-      const opening = tipEl.classList.contains('hidden');
-      el.querySelectorAll('.chip-tip').forEach(t => t.classList.add('hidden'));
-      if (opening) tipEl.classList.remove('hidden');
-    });
-  });
-
+  _wireChipTooltip(el, '[data-hero-chip]');
   twemoji.parse(el, TWEMOJI_OPTS);
 }
 
@@ -631,18 +675,12 @@ function renderDayDetail(day) {
 
 function renderIndicatorChips(indicators) {
   const el = document.getElementById('detail-indicators');
-  /*
-   * Stessa strategia degli hero indicators:
-   * - flex-wrap (no overflow-x-auto → no clipping mobile)
-   * - Niente DaisyUI tooltip — testo regola inline, toggle al click/tap
-   */
   el.innerHTML = Object.entries(indicators).map(([id, ind], i) => {
     const meta    = INDICATOR_META[id] ?? { label: id, icon: '?' };
     const vc      = VERDICT_COLOR[ind.verdict] ?? VERDICT_COLOR.giallo;
     const verdCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
     const tip     = escHtml(ind.rule_text || ind.rule_matched || '');
-    /* Stesso linguaggio visivo degli hero indicators: chip neutro, solo il dot è colorato */
-    return `<div data-detail-chip class="shrink-0">
+    return `<div data-detail-chip${tip ? ` data-tip="${tip}"` : ''} class="shrink-0">
       <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-2xl bg-slate-100 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.1] hover:bg-slate-200/60 dark:hover:bg-white/[0.1] active:scale-95 transition-all duration-200 cursor-pointer select-none"
            style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
         <span class="text-2xl leading-none">${meta.icon}</span>
@@ -652,22 +690,12 @@ function renderIndicatorChips(indicators) {
             <span class="w-2 h-2 rounded-full ${vc.dot} shrink-0"></span>
             <span class="text-xs font-bold text-slate-800 dark:text-white/85">${verdCap}</span>
           </div>
-          ${tip ? `<div class="chip-tip text-[9px] text-slate-500 dark:text-white/35 leading-snug mt-1 hidden">${tip}</div>` : ''}
         </div>
       </div>
     </div>`;
   }).join('');
 
-  el.querySelectorAll('[data-detail-chip]').forEach(chip => {
-    chip.addEventListener('click', () => {
-      const tipEl = chip.querySelector('.chip-tip');
-      if (!tipEl) return;
-      const opening = tipEl.classList.contains('hidden');
-      el.querySelectorAll('.chip-tip').forEach(t => t.classList.add('hidden'));
-      if (opening) tipEl.classList.remove('hidden');
-    });
-  });
-
+  _wireChipTooltip(el, '[data-detail-chip]');
   twemoji.parse(el, TWEMOJI_OPTS);
 }
 
@@ -895,43 +923,48 @@ const crosshairPlugin = {
   },
 };
 
-function externalTooltipHandler({ chart, tooltip }) {
-  const el = document.getElementById('chart-tooltip');
-  if (!el) return;
-  if (!tooltip.opacity) { el.style.opacity = '0'; return; }
-  const items = tooltip.dataPoints ?? [];
-  if (!items.length) return;
+function _makeTooltipHandler(elId) {
+  return function({ chart, tooltip }) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (!tooltip.opacity) { el.style.opacity = '0'; return; }
+    const items = tooltip.dataPoints ?? [];
+    if (!items.length) return;
 
-  const ts   = new Date(items[0].raw.x);
-  const date = ts.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
-  const time = ts.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-  const temp = items.find(i => i.datasetIndex === 0);
-  const hum  = items.find(i => i.datasetIndex === 1);
-  const prec = items.find(i => i.datasetIndex === 2);
-  const wind = items.find(i => i.datasetIndex === 3);
+    const ts   = new Date(items[0].raw.x);
+    const date = ts.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
+    const time = ts.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const temp = items.find(i => i.datasetIndex === 0);
+    const hum  = items.find(i => i.datasetIndex === 1);
+    const prec = items.find(i => i.datasetIndex === 2);
+    const wind = items.find(i => i.datasetIndex === 3);
 
-  const row = (dot, label, val) =>
-    `<div class="flex items-center justify-between gap-5 py-[3px]">
-       <span class="flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-white/40">${dot}${label}</span>
-       <span class="text-[11px] font-bold tabular-nums text-slate-800 dark:text-white/90">${val}</span>
-     </div>`;
-  const dot = cls => `<span class="w-1.5 h-1.5 rounded-full ${cls} shrink-0"></span>`;
+    const row = (dot, label, val) =>
+      `<div class="flex items-center justify-between gap-5 py-[3px]">
+         <span class="flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-white/40">${dot}${label}</span>
+         <span class="text-[11px] font-bold tabular-nums text-slate-800 dark:text-white/90">${val}</span>
+       </div>`;
+    const dot = cls => `<span class="w-1.5 h-1.5 rounded-full ${cls} shrink-0"></span>`;
 
-  el.innerHTML = `
-    <div class="flex items-baseline justify-between gap-3 mb-2 pb-2 border-b border-slate-100 dark:border-white/[0.07]">
-      <span class="text-[10px] text-slate-400 dark:text-white/35 font-medium capitalize">${date}</span>
-      <span class="text-sm font-bold tabular-nums text-slate-900 dark:text-white">${time}</span>
-    </div>
-    ${temp ? row(dot('bg-orange-500'), 'Temp', `${temp.raw.y.toFixed(1)}°C`) : ''}
-    ${hum  ? row(dot('bg-sky-500'),    'Umidità', `${hum.raw.y.toFixed(0)}%`) : ''}
-    ${prec && prec.raw.y > 0.05 ? row(dot('bg-blue-500'), 'Precip', `${prec.raw.y.toFixed(1)} mm`) : ''}
-    ${wind ? row(dot('bg-teal-500'),   'Vento', `${wind.raw.y.toFixed(0)} km/h`) : ''}`;
+    el.innerHTML = `
+      <div class="flex items-baseline justify-between gap-3 mb-2 pb-2 border-b border-slate-100 dark:border-white/[0.07]">
+        <span class="text-[10px] text-slate-400 dark:text-white/35 font-medium capitalize">${date}</span>
+        <span class="text-sm font-bold tabular-nums text-slate-900 dark:text-white">${time}</span>
+      </div>
+      ${temp ? row(dot('bg-orange-500'), 'Temp', `${temp.raw.y.toFixed(1)}°C`) : ''}
+      ${hum  ? row(dot('bg-sky-500'),    'Umidità', `${hum.raw.y.toFixed(0)}%`) : ''}
+      ${prec && prec.raw.y > 0.05 ? row(dot('bg-blue-500'), 'Precip', `${prec.raw.y.toFixed(1)} mm`) : ''}
+      ${wind ? row(dot('bg-teal-500'),   'Vento', `${wind.raw.y.toFixed(0)} km/h`) : ''}`;
 
-  const cRect = chart.canvas.parentElement.getBoundingClientRect();
-  el.style.opacity = '1';
-  el.style.left    = `${Math.max(0, Math.min(tooltip.caretX - 80, cRect.width - 175))}px`;
-  el.style.top     = `${Math.max(4, tooltip.caretY - 130)}px`;
+    const cRect = chart.canvas.parentElement.getBoundingClientRect();
+    el.style.opacity = '1';
+    el.style.left    = `${Math.max(0, Math.min(tooltip.caretX - 80, cRect.width - 175))}px`;
+    el.style.top     = `${Math.max(4, tooltip.caretY - 130)}px`;
+  };
 }
+
+const externalTooltipHandler       = _makeTooltipHandler('chart-tooltip');
+const externalTooltipHandlerWeekly = _makeTooltipHandler('chart-weekly-tooltip');
 
 // Populates the 4-cell stat strip above the daily chart canvas
 function renderChartStatStrip(points) {
@@ -955,27 +988,23 @@ function renderChartStatStrip(points) {
     { label: 'Precip tot.',  value: precipS, color: '#2563EB' },
     { label: 'Vento max',    value: wMax,    color: '#14B8A6' },
   ];
-  el.innerHTML = stats.map(s => `
-    <div class="flex flex-col items-center py-2.5 px-2 bg-slate-50/70 dark:bg-white/[0.02]">
-      <div class="text-[9px] font-semibold text-slate-400 dark:text-white/20 uppercase tracking-widest mb-1 whitespace-nowrap">${s.label}</div>
-      <div class="text-[13px] font-bold tabular-nums leading-none" style="color:${s.color}">${s.value}</div>
+  el.innerHTML = stats.map((s, i) => `
+    <div class="flex flex-col justify-center px-4 py-3 bg-white dark:bg-[#080F1C]"
+         style="border-left:2px solid ${s.color};animation:fade-up 0.28s ease-out ${i * 55}ms both">
+      <div class="text-[9px] font-semibold uppercase tracking-widest mb-1.5 leading-none whitespace-nowrap"
+           style="color:rgba(100,116,139,0.75)">${s.label}</div>
+      <div class="text-sm font-extrabold tabular-nums leading-none" style="color:${s.color}">${s.value}</div>
     </div>`).join('');
 }
 
 function _buildChartDatasets(canvas, points, p) {
-  const ctx = canvas.getContext('2d');
-  const gradTemp = ctx.createLinearGradient(0, 0, 0, 320);
-  const dark = document.documentElement.dataset.theme === 'dark';
-  gradTemp.addColorStop(0, dark ? 'rgba(249,115,22,0.42)' : 'rgba(249,115,22,0.18)');
-  gradTemp.addColorStop(0.65, dark ? 'rgba(249,115,22,0.08)' : 'rgba(249,115,22,0.04)');
-  gradTemp.addColorStop(1, 'rgba(249,115,22,0)');
   const { data: precipData, bg: precipBg } = precipDatasets(points);
   return [
     {
       type: 'line', label: 'Temperatura (°C)',
       data: points.filter(pt => pt.temp_c != null).map(pt => ({ x: pt.ts, y: pt.temp_c })),
-      borderColor: p.temp, backgroundColor: gradTemp, fill: true,
-      borderWidth: 3, pointRadius: 0, pointHoverRadius: 6,
+      borderColor: p.temp, backgroundColor: 'transparent', fill: false,
+      borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 6,
       pointHoverBackgroundColor: '#fff', pointHoverBorderColor: p.temp, pointHoverBorderWidth: 3,
       yAxisID: 'yTemp', tension: 0.4, order: 1,
     },
@@ -1078,26 +1107,7 @@ function initWeeklyChart(data, model) {
   const points = buildWeeklyPoints(data, model);
   const p = chartPalette();
   const opts = _baseChartOptions(p, xMin, xMax, 'day');
-  const dark = document.documentElement.dataset.theme === 'dark';
-  opts.plugins.tooltip = {
-    backgroundColor: dark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.97)',
-    titleColor:      dark ? '#94a3b8' : '#64748b',
-    bodyColor:       dark ? '#e2e8f0' : '#1e293b',
-    borderColor:     dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-    borderWidth: 1,
-    padding: 10,
-    cornerRadius: 12,
-    callbacks: {
-      title: items => new Date(items[0].raw.x).toLocaleString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
-      label: item => {
-        if (item.datasetIndex === 0) return ` ${item.raw.y.toFixed(1)}°C`;
-        if (item.datasetIndex === 1) return ` Umidità: ${item.raw.y.toFixed(0)}%`;
-        if (item.datasetIndex === 2 && item.raw.y > 0.05) return ` Precip: ${item.raw.y.toFixed(1)} mm`;
-        if (item.datasetIndex === 3) return ` Vento: ${item.raw.y.toFixed(0)} km/h`;
-        return null;
-      },
-    },
-  };
+  opts.plugins.tooltip = { enabled: false, external: externalTooltipHandlerWeekly };
   multiDayChart = new Chart(canvas.getContext('2d'), {
     plugins: [crosshairPlugin],
     data: { datasets: _buildChartDatasets(canvas, points, p) },
@@ -1165,8 +1175,20 @@ function showRadarFrame(i) {
   const lbl = f.kind === 'nowcast' ? `${t} (prev.)` : t;
   const timeEl   = document.getElementById('radar-time');
   const sliderEl = document.getElementById('radar-slider');
-  if (timeEl)   timeEl.textContent  = lbl;
+  if (timeEl)   timeEl.textContent = lbl;
   if (sliderEl) sliderEl.value = String(i);
+  // Frame-type badge: verde = osservato, amber = previsione
+  const badgeEl = document.getElementById('radar-frame-badge');
+  if (badgeEl) {
+    if (f.kind === 'nowcast') {
+      badgeEl.textContent  = 'Previsione';
+      badgeEl.style.cssText = 'background:rgba(245,158,11,0.18);color:#FBBF24';
+    } else {
+      badgeEl.textContent  = 'Osservato';
+      badgeEl.style.cssText = 'background:rgba(59,154,108,0.18);color:#34D399';
+    }
+    badgeEl.classList.remove('hidden');
+  }
 }
 
 function startRadarAnimation() {
@@ -1201,7 +1223,16 @@ function wireRadarControls() {
 
 function showRadarError(msg) {
   const box = document.getElementById('radar-error');
-  if (box) { box.textContent = `Radar non disponibile (${msg})`; box.classList.remove('hidden'); }
+  if (!box) return;
+  box.innerHTML = `
+    <div style="width:40px;height:40px;border-radius:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;justify-content:center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="1.5">
+        <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+      </svg>
+    </div>
+    <p style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.32);margin-top:10px">Radar non disponibile</p>
+    <p style="font-size:11px;color:rgba(255,255,255,0.18);margin-top:4px">${escHtml(msg)}</p>`;
+  box.classList.remove('hidden');
 }
 
 function buildRadarMap(locationId, host, frames) {
@@ -1313,6 +1344,7 @@ async function loadLocation(locId) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 initDarkMode();
+document.addEventListener('click', hideIndicatorTooltip);
 twemoji.parse(document.querySelector('header'), TWEMOJI_OPTS);
 window.addEventListener('popstate', () => loadLocation(getActiveLoc()));
 loadLocation(getActiveLoc());

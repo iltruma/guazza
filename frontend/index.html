@@ -90,18 +90,47 @@
     </section>
 
     <!-- ② RADAR -->
-    <section id="radar-section" class="hidden relative rounded-3xl overflow-hidden border border-white/[0.06] shadow-2xl bg-[#0B0F19] h-[260px] md:h-[340px]">
+    <section id="radar-section" class="hidden relative rounded-3xl overflow-hidden border border-white/[0.06] shadow-2xl bg-[#0B0F19] h-[280px] md:h-[360px]">
+
+      <!-- Map layer -->
       <div id="radar-map" class="absolute inset-0 z-[1]"></div>
-      <div class="absolute bottom-4 left-4 right-4 z-[6] flex items-center gap-3">
-        <button id="radar-play" class="w-9 h-9 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white flex items-center justify-center hover:bg-white/20 active:scale-90 transition-all duration-150 flex-none" aria-label="Play/Pausa"></button>
-        <input id="radar-slider" type="range" class="flex-1 range range-xs range-primary" min="0" max="0" value="0" step="1" aria-label="Radar timeline">
-        <span id="radar-time" class="text-xs text-white font-mono tabular-nums bg-black/30 px-2 py-1 rounded-lg backdrop-blur-md w-[5rem] text-right shrink-0">—</span>
+
+      <!-- Top-left: identity pill with live sonar dot + frame-type badge -->
+      <div class="absolute top-3 left-3 z-[6] flex items-center gap-2.5 px-3 py-2 rounded-2xl backdrop-blur-md border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" style="background:rgba(0,0,0,0.48)">
+        <div class="relative w-2.5 h-2.5 flex-none">
+          <span class="absolute inset-0 rounded-full" style="background:#3B9A6C"></span>
+          <span class="absolute rounded-full pointer-events-none" style="inset:-4px;border:1.5px solid #3B9A6C;animation:sonar 2s ease-out infinite"></span>
+        </div>
+        <span class="text-[11px] font-semibold uppercase tracking-widest leading-none" style="color:rgba(255,255,255,0.5)">Radar</span>
+        <span id="radar-frame-badge" class="text-[9px] font-bold px-1.5 py-0.5 rounded-full hidden"></span>
       </div>
-      <div class="absolute top-3 right-3 z-[6] flex flex-col gap-1" id="radar-zoom-btns">
-        <button class="w-8 h-8 rounded-xl bg-white/10 backdrop-blur-md border border-white/10 text-white font-bold hover:bg-white/20 transition-all" id="radar-zoom-in" aria-label="Zoom in">+</button>
-        <button class="w-8 h-8 rounded-xl bg-white/10 backdrop-blur-md border border-white/10 text-white font-bold hover:bg-white/20 transition-all" id="radar-zoom-out" aria-label="Zoom out">−</button>
+
+      <!-- Top-right: zoom controls (liquid glass) -->
+      <div class="absolute top-3 right-3 z-[6] flex flex-col gap-1">
+        <button id="radar-zoom-in"
+                class="w-8 h-8 rounded-xl backdrop-blur-md border border-white/[0.08] font-bold hover:bg-white/[0.1] active:scale-90 transition-all duration-150 flex items-center justify-center text-base leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
+                style="background:rgba(0,0,0,0.48);color:rgba(255,255,255,0.55)"
+                aria-label="Zoom in">+</button>
+        <button id="radar-zoom-out"
+                class="w-8 h-8 rounded-xl backdrop-blur-md border border-white/[0.08] font-bold hover:bg-white/[0.1] active:scale-90 transition-all duration-150 flex items-center justify-center text-base leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
+                style="background:rgba(0,0,0,0.48);color:rgba(255,255,255,0.55)"
+                aria-label="Zoom out">−</button>
       </div>
-      <div id="radar-error" class="hidden absolute inset-0 z-[7] flex items-center justify-center bg-[#0B0F19]/80 text-sm text-white/60 p-4"></div>
+
+      <!-- Bottom: gradient scrim + controls bar -->
+      <div class="absolute bottom-0 inset-x-0 z-[6] px-3 pb-3 pt-12" style="background:linear-gradient(to top,rgba(11,15,25,0.78) 0%,transparent 100%)">
+        <div class="flex items-center gap-3 px-3 py-2.5 rounded-2xl backdrop-blur-md border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]" style="background:rgba(0,0,0,0.42)">
+          <button id="radar-play"
+                  class="radar-play-btn w-8 h-8 rounded-full flex-none flex items-center justify-center active:scale-90 transition-all duration-150"
+                  aria-label="Play/Pausa"></button>
+          <input id="radar-slider" type="range" class="flex-1 range range-xs range-primary" min="0" max="0" value="0" step="1" aria-label="Radar timeline">
+          <span id="radar-time" class="text-xs font-mono tabular-nums flex-none text-right" style="color:rgba(255,255,255,0.5);min-width:4.5rem">—</span>
+        </div>
+      </div>
+
+      <!-- Error overlay -->
+      <div id="radar-error" class="hidden absolute inset-0 z-[7] flex flex-col items-center justify-center gap-2 p-4 text-center" style="background:rgba(11,15,25,0.82)"></div>
+
     </section>
 
     <!-- ③ PREVISIONI: Striscia + Dettaglio -->
@@ -169,18 +198,16 @@
       </section>
     </div>
 
-    <!-- ④+⑤ GRAFICI — bento asimmetrico (daily 5fr · weekly 3fr) -->
-    <div class="grid grid-cols-1 lg:grid-cols-[5fr_3fr] gap-4 items-start">
+    <!-- ④+⑤ GRAFICI: andamento orario → settimanale, una riga per grafico -->
+    <div class="space-y-4">
 
-      <!-- ④ GRAFICO ORARIO GIORNALIERO -->
+      <!-- ④ GRAFICO ORARIO — dettaglio giorno selezionato -->
       <section id="chart-daily-section" class="hidden rounded-2xl bg-white dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] overflow-hidden anim-fade-up">
 
-        <!-- Header: accent bar + label + legend inline + model switch -->
         <div class="flex items-center justify-between px-5 pt-5 pb-3 gap-3">
           <div class="flex items-center gap-3 min-w-0 flex-1">
             <span class="w-[3px] h-5 rounded-full shrink-0" style="background:#3B9A6C"></span>
             <h3 class="text-[10px] font-semibold text-slate-400 dark:text-white/25 uppercase tracking-widest">Andamento orario</h3>
-            <!-- Legend: inline, hidden on xs -->
             <div class="hidden sm:flex items-center gap-3 ml-1 flex-wrap">
               <span class="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-white/30"><span class="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0"></span>Temp</span>
               <span class="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-white/30"><span class="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0"></span>Umidità</span>
@@ -193,16 +220,13 @@
           </div>
         </div>
 
-        <!-- Stat strip: 4 live KPIs aggregated from current chart dataset -->
-        <div id="chart-stat-strip" class="grid grid-cols-4 divide-x divide-slate-100 dark:divide-white/[0.04] border-t border-slate-100 dark:border-white/[0.04]"></div>
+        <div id="chart-stat-strip" class="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-100 dark:bg-white/[0.04] border-t border-slate-100 dark:border-white/[0.04]"></div>
 
-        <!-- Canvas -->
-        <div class="relative h-[280px] md:h-[340px] px-1 pt-3 pb-2">
+        <div class="relative h-[260px] md:h-[300px] px-1 pt-3 pb-2">
           <canvas id="meteo-chart"></canvas>
-          <div id="chart-tooltip" class="absolute pointer-events-none opacity-0 transition-opacity duration-150 bg-white/97 dark:bg-[#0A1525]/97 backdrop-blur-xl rounded-2xl border border-black/[0.06] dark:border-white/[0.08] shadow-xl px-3.5 py-3 z-20 min-w-[160px]"></div>
+          <div id="chart-tooltip" class="absolute pointer-events-none opacity-0 transition-opacity duration-150 bg-white/97 dark:bg-[#0A1525]/97 backdrop-blur-xl rounded-2xl border border-black/[0.06] dark:border-white/[0.08] shadow-xl px-3.5 py-3 z-20 min-w-[160px]" style="transition:opacity 150ms"></div>
         </div>
 
-        <!-- Mobile-only legend -->
         <div class="flex sm:hidden gap-4 px-5 pb-4 pt-2 text-xs text-slate-400 border-t border-slate-100 dark:border-white/[0.04] flex-wrap">
           <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>Temperatura</span>
           <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-500 inline-block"></span>Umidità</span>
@@ -211,28 +235,35 @@
         </div>
       </section>
 
-      <!-- ⑤ GRAFICO SETTIMANALE -->
+      <!-- ⑤ GRAFICO SETTIMANALE — panoramica 7 giorni -->
       <section id="chart-weekly-section" class="hidden rounded-2xl bg-white dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] overflow-hidden anim-fade-up">
 
         <div class="flex items-center justify-between px-5 pt-5 pb-3 gap-3">
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-3 min-w-0 flex-1">
             <span class="w-[3px] h-5 rounded-full shrink-0 bg-slate-300 dark:bg-white/15"></span>
             <h3 class="text-[10px] font-semibold text-slate-400 dark:text-white/25 uppercase tracking-widest">7 giorni</h3>
+            <div class="hidden sm:flex items-center gap-3 ml-1 flex-wrap">
+              <span class="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-white/30"><span class="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0"></span>Temp</span>
+              <span class="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-white/30"><span class="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0"></span>Umidità</span>
+              <span class="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-white/30"><span class="w-1.5 h-1.5 rounded-full bg-blue-600/70 shrink-0"></span>Precip</span>
+              <span class="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-white/30"><span class="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0"></span>Vento</span>
+            </div>
           </div>
           <div class="relative inline-flex bg-slate-100 dark:bg-white/5 rounded-full p-0.5 shrink-0" id="weekly-model-switch">
             <span id="weekly-model-pill" class="absolute top-0.5 bottom-0.5 bg-white dark:bg-white/10 rounded-full shadow-sm pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"></span>
           </div>
         </div>
 
-        <div class="relative h-[260px] lg:h-[340px] px-1 pb-3">
+        <div class="relative h-[260px] md:h-[300px] px-1 pt-3 pb-3">
           <canvas id="multiday-chart"></canvas>
+          <div id="chart-weekly-tooltip" class="absolute pointer-events-none opacity-0 transition-opacity duration-150 bg-white/97 dark:bg-[#0A1525]/97 backdrop-blur-xl rounded-2xl border border-black/[0.06] dark:border-white/[0.08] shadow-xl px-3.5 py-3 z-20 min-w-[160px]" style="transition:opacity 150ms"></div>
         </div>
 
-        <div class="flex gap-4 px-5 pb-4 text-[10px] text-slate-400 dark:text-white/30 flex-wrap border-t border-slate-100 dark:border-white/[0.04] pt-3">
-          <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0"></span>Temp</span>
-          <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0"></span>Umidità</span>
-          <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-blue-600/70 shrink-0"></span>Precip</span>
-          <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0"></span>Vento</span>
+        <div class="flex sm:hidden gap-4 px-5 pb-4 pt-2 text-xs text-slate-400 border-t border-slate-100 dark:border-white/[0.04] flex-wrap">
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>Temp</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-500 inline-block"></span>Umidità</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-600/60 inline-block"></span>Precip</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-teal-500 inline-block"></span>Vento</span>
         </div>
       </section>
 
@@ -241,6 +272,10 @@
     <div id="coverage-bar" class="hidden pt-1"></div>
 
   </main>
+
+  <!-- Tooltip globale per gli indicatori (posizionato via JS) -->
+  <div id="indicator-tooltip" class="hidden fixed z-[200] max-w-[220px] leading-snug pointer-events-none" role="tooltip"
+       style="padding:10px 13px;border-radius:12px;font-size:11px;color:rgba(255,255,255,0.75);background:rgba(7,16,31,0.93);border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 32px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.07)"></div>
 
   <script src="app.js" defer></script>
 </body>

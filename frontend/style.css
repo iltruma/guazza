@@ -203,6 +203,14 @@
 
 #radar-map { background: #0b0f19; }
 
+/* === Radar play button === */
+.radar-play-btn {
+  background: rgba(59,154,108,0.18);
+  border: 1px solid rgba(59,154,108,0.38);
+  color: #3B9A6C;
+}
+.radar-play-btn:hover { background: rgba(59,154,108,0.28); }
+
 /* === Twemoji === */
 img.emoji {
   height: 1em;
