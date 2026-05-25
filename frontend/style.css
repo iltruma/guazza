@@ -1,77 +1,146 @@
-/* === CSS Variables — Palette "Verde Bosco" === */
-:root {
-  --accent: #3B9A6C;
-  --accent-warm: #F0854A;
-  --accent-glow: rgba(59,154,108,0.28);
+/* === Typography baseline ===
+   Tailwind CDN inietta il suo <style> via JS dopo style.css → !important necessario. */
+html, body {
+  font-family: 'Inter', system-ui, sans-serif !important;
 }
 
-/* === DaisyUI primary → verde scuro toscano === */
+.font-sans {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+}
+
+/* === Mineral Dark — CSS System === */
+:root {
+  --accent:        #6366F1;
+  --accent-dim:    rgba(99,102,241,0.15);
+  --accent-glow:   rgba(99,102,241,0.25);
+  --surface-0:     #0F1117;
+  --surface-1:     #111318;
+  --surface-2:     #141620;
+  --surface-3:     #191C2A;
+  --border-1:      rgba(255,255,255,0.07);
+  --border-2:      rgba(255,255,255,0.10);
+  --text-1:        #F1F5F9;
+  --text-2:        rgba(241,245,249,0.55);
+  --text-3:        rgba(241,245,249,0.28);
+  --text-4:        rgba(241,245,249,0.16);
+}
+
+/* DaisyUI primary → ambra */
 :root, [data-theme="light"], [data-theme="dark"] {
-  --color-primary: oklch(0.57 0.13 155);
+  --color-primary:         oklch(0.59 0.23 277);
   --color-primary-content: #ffffff;
-  --p: 0.57 0.13 155;
-  --pc: 1 0 0;
+  --p: 0.59 0.23 277;
+  --pc: 0 0 0;
 }
 
 #radar-slider,
 .range-primary {
   accent-color: var(--accent);
   --range-thumb: var(--accent);
-  --range-fill: var(--accent);
+  --range-fill:  var(--accent);
 }
 
-/* === No-scrollbar utility === */
+/* === No-scrollbar === */
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
-/* === Indicator verdict classes === */
-.ind-verde  { background: rgba(16,185,129,0.08);  color: #059669; border-color: rgba(16,185,129,0.2); }
-.ind-giallo { background: rgba(245,158,11,0.08);  color: #D97706; border-color: rgba(245,158,11,0.2); }
-.ind-rosso  { background: rgba(239,68,68,0.08);   color: #DC2626; border-color: rgba(239,68,68,0.2);  }
+/* === Indicator verdict classes — semantic colors kept === */
+.ind-verde  { background: rgba(16,185,129,0.08);  color: #34D399; border-color: rgba(16,185,129,0.22); }
+.ind-giallo { background: rgba(245,158,11,0.08);  color: #FBBF24; border-color: rgba(245,158,11,0.22); }
+.ind-rosso  { background: rgba(239,68,68,0.08);   color: #F87171; border-color: rgba(239,68,68,0.22);  }
 
-.dark .ind-verde  { background: rgba(16,185,129,0.12);  color: #34D399; border-color: rgba(16,185,129,0.25); }
-.dark .ind-giallo { background: rgba(245,158,11,0.12);  color: #FBBF24; border-color: rgba(245,158,11,0.25); }
-.dark .ind-rosso  { background: rgba(239,68,68,0.12);   color: #F87171; border-color: rgba(239,68,68,0.25);  }
-
-/* === HERO: Sky Cinematico === */
-/*
-  La hero card ha sempre uno sfondo scuro "notte toscana" —
-  funziona sia in light mode (contrasto con sfondo bianco fuori)
-  che in dark mode (continuità con la pagina).
-*/
-.hero-sky {
-  background: linear-gradient(158deg, #0D2440 0%, #0A1A30 45%, #07101F 100%);
+/* === HERO: Mineral Dark — ardesia profonda, nessun glassmorphism === */
+.mineral-hero {
+  background:
+    linear-gradient(180deg, #141820 0%, #0F1117 70%, #0C1015 100%);
   box-shadow:
-    0 32px 64px -16px rgba(0,0,0,0.45),
-    0 0 0 1px rgba(255,255,255,0.04) inset;
+    0 24px 64px -20px rgba(0,0,0,0.6),
+    inset 0 0 0 1px rgba(255,255,255,0.05);
 }
 
-/* Risposta alla temperatura: overlay tint impostato da JS tramite #hero-temp-gradient */
+/* === Live pulse dot === */
+.live-pulse {
+  animation: live-pulse 2s ease-in-out infinite;
+}
 
-/* === Hero typography responsive === */
+/* === Hero: Typography === */
 .hero-temp-display {
-  font-size: clamp(3.5rem, 10vw, 7.5rem);
-  font-weight: 800;
-  letter-spacing: -0.04em;
+  font-size: clamp(3.5rem, 11vw, 7rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 0.9;
 }
 
 .hero-icon-size {
-  font-size: clamp(3rem, 8vw, 5.5rem);
+  font-size: clamp(3.5rem, 9vw, 6rem);
+  line-height: 1;
 }
 
 /* === Hero stats grid cells === */
 #hero-stats > div {
   transition: background 200ms ease;
 }
-
 #hero-stats > div:hover {
-  background: rgba(255,255,255,0.04);
+  background: var(--surface-3);
 }
 
-/* === Tabs === */
-/* Stili base — overridati da JS via innerHTML */
+/* === Day card active glow === */
+.day-card-active { position: relative; }
+.day-card-active::after {
+  content: '';
+  position: absolute;
+  inset-x: 20%;
+  bottom: -6px;
+  height: 12px;
+  background: var(--accent-glow);
+  filter: blur(8px);
+  border-radius: 50%;
+  z-index: -1;
+  opacity: 0.6;
+}
+
+/* === CI Bar animations === */
+.ci-range-90 {
+  animation: ci-expand 400ms 200ms cubic-bezier(0.4,0,0.2,1) both;
+  transform-origin: left;
+}
+.ci-range-80 {
+  animation: ci-expand 400ms 320ms cubic-bezier(0.4,0,0.2,1) both;
+  transform-origin: left;
+}
+.ci-median {
+  animation: ci-pop 400ms 520ms cubic-bezier(0.34,1.56,0.64,1) both;
+}
+
+/* === Radar play button — indigo === */
+.radar-play-btn {
+  background: rgba(99,102,241,0.12);
+  border: 1px solid rgba(99,102,241,0.3);
+  color: #6366F1;
+}
+.radar-play-btn:hover { background: rgba(99,102,241,0.22); }
+
+/* === Skeleton shimmer === */
+.skeleton {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.03) 0%,
+    rgba(255,255,255,0.07) 50%,
+    rgba(255,255,255,0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite linear;
+}
 
 /* === Keyframes === */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1;    transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.85); }
+}
+
 @keyframes slow-float {
   0%, 100% { transform: translateY(0); }
   50%       { transform: translateY(-5px); }
@@ -88,18 +157,18 @@
 }
 
 @keyframes fade-up {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes pulse-border {
-  0%, 100% { border-color: rgba(245,158,11,0.1); }
-  50%       { border-color: rgba(245,158,11,0.4); }
+  0%, 100% { border-color: rgba(99,102,241,0.1); }
+  50%       { border-color: rgba(99,102,241,0.4); }
 }
 
 @keyframes badge-bounce {
   0%   { transform: scale(0); }
-  60%  { transform: scale(1.2); }
+  60%  { transform: scale(1.15); }
   100% { transform: scale(1); }
 }
 
@@ -113,29 +182,8 @@
   to   { transform: translateY(-50%) scale(1); }
 }
 
-/* === Skeleton shimmer === */
-.skeleton {
-  background: linear-gradient(90deg,
-    rgba(148,163,184,0.12) 0%,
-    rgba(148,163,184,0.22) 50%,
-    rgba(148,163,184,0.12) 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.8s infinite linear;
-}
-
-.dark .skeleton {
-  background: linear-gradient(90deg,
-    rgba(255,255,255,0.03) 0%,
-    rgba(255,255,255,0.07) 50%,
-    rgba(255,255,255,0.03) 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.8s infinite linear;
-}
-
 /* === Animation utilities === */
-.anim-fade-up     { animation: fade-up 0.35s ease-out both; }
+.anim-fade-up     { animation: fade-up 0.3s ease-out both; }
 .hero-icon-float  { animation: slow-float 5s ease-in-out infinite; }
 .stale-pulse      { animation: pulse-border 2s ease-in-out infinite; }
 .today-badge-anim { animation: badge-bounce 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
@@ -143,41 +191,13 @@
 /* DaisyUI tooltip: context position */
 .tooltip { display: inline-flex; }
 
-/* === Hero icon hover (desktop only) === */
+/* === Hero icon hover (desktop) === */
 @media (hover: hover) {
   .hero-icon-float:hover {
     animation: none;
-    transform: scale(1.1) rotate(6deg);
-    transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
+    transform: scale(1.08) rotate(5deg);
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
   }
-}
-
-/* === Day card active glow === */
-.day-card-active { position: relative; }
-.day-card-active::after {
-  content: '';
-  position: absolute;
-  inset-x: 15%;
-  bottom: -8px;
-  height: 14px;
-  background: var(--accent-glow);
-  filter: blur(10px);
-  border-radius: 50%;
-  z-index: -1;
-  opacity: 0.7;
-}
-
-/* === CI Bar === */
-.ci-range-90 {
-  animation: ci-expand 400ms 200ms cubic-bezier(0.4,0,0.2,1) both;
-  transform-origin: left;
-}
-.ci-range-80 {
-  animation: ci-expand 400ms 320ms cubic-bezier(0.4,0,0.2,1) both;
-  transform-origin: left;
-}
-.ci-median {
-  animation: ci-pop 400ms 520ms cubic-bezier(0.34,1.56,0.64,1) both;
 }
 
 /* === Leaflet overrides === */
@@ -185,31 +205,19 @@
 .leaflet-top,
 .leaflet-bottom { z-index: 5 !important; }
 
-[data-theme="dark"] .leaflet-control-attribution,
-.dark .leaflet-control-attribution {
-  background: rgba(7,16,31,0.85);
-  color: #64748b;
+.leaflet-control-attribution {
+  background: rgba(15,17,23,0.88);
+  color: rgba(241,245,249,0.3);
 }
-[data-theme="dark"] .leaflet-control-attribution a,
-.dark .leaflet-control-attribution a { color: var(--accent); }
-[data-theme="dark"] .leaflet-bar a,
-.dark .leaflet-bar a {
-  background: #0d1e35;
-  color: #94a3b8;
+.leaflet-control-attribution a { color: var(--accent); }
+.leaflet-bar a {
+  background: #141620;
+  color: rgba(241,245,249,0.45);
   border-color: rgba(255,255,255,0.08);
 }
-[data-theme="dark"] .leaflet-bar a:hover,
-.dark .leaflet-bar a:hover { background: rgba(255,255,255,0.06); }
+.leaflet-bar a:hover { background: rgba(255,255,255,0.07); }
 
 #radar-map { background: #0b0f19; }
-
-/* === Radar play button === */
-.radar-play-btn {
-  background: rgba(59,154,108,0.18);
-  border: 1px solid rgba(59,154,108,0.38);
-  color: #3B9A6C;
-}
-.radar-play-btn:hover { background: rgba(59,154,108,0.28); }
 
 /* === Twemoji === */
 img.emoji {

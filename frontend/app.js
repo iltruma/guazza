@@ -38,15 +38,19 @@ const AQ_THRESHOLDS = {
   so2:     [70, 280],
 };
 
-const PLAY_SVG  = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
-const PAUSE_SVG = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+const PLAY_EMOJI  = '▶️';
+const PAUSE_EMOJI = '⏸️';
 
-// Icone SVG per le hero stats (stroke-based, 15×15 render)
+function playBtnHtml(playing) {
+  return `<span class="text-base leading-none">${playing ? PAUSE_EMOJI : PLAY_EMOJI}</span>`;
+}
+
+// Twemoji per le hero stats
 const STAT_ICONS = {
-  'Vento':     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11a3 3 0 100-6h-1M3 12h15a3 3 0 010 6h-2"/></svg>`,
-  'Umidità':   `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 007-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6.5 11.1 5 13 5 15a7 7 0 007 7z"/></svg>`,
-  'Pioggia':   `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 17.6A5 5 0 0018 8h-1.3A8 8 0 104 16.5M8 19v2M12 18v2M16 19v2"/></svg>`,
-  'Pressione': `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2.5"/></svg>`,
+  'Vento':     '💨',
+  'Umidità':   '💧',
+  'Pioggia':   '🌧️',
+  'Pressione': '🌡️',
 };
 
 const RV_API               = 'https://api.rainviewer.com/public/weather-maps.json';
@@ -192,7 +196,7 @@ function aqColorCls(key, value) {
   if (value == null) return null;
   const [lo, hi] = AQ_THRESHOLDS[key] ?? [0, Infinity];
   if (value < lo)  return { border: 'border-emerald-500/30', text: 'text-emerald-600 dark:text-emerald-400' };
-  if (value < hi)  return { border: 'border-amber-500/30',   text: 'text-amber-600 dark:text-amber-400'   };
+  if (value < hi)  return { border: 'border-indigo-500/30',   text: 'text-indigo-500 dark:text-indigo-400'  };
   return             { border: 'border-red-500/30',     text: 'text-red-600 dark:text-red-400'     };
 }
 
@@ -284,9 +288,10 @@ function renderTabs(activeLoc) {
   nav.innerHTML = LOCATIONS.map(l => {
     const active = l.id === activeLoc;
     const cls = active
-      ? 'px-3 py-1.5 rounded-full text-xs font-semibold text-white snap-center shrink-0 transition-all duration-200'
-      : 'px-3 py-1.5 rounded-full text-xs font-medium text-slate-500 dark:text-white/40 bg-transparent hover:bg-slate-200/70 dark:hover:bg-white/[0.06] snap-center shrink-0 transition-all duration-200 relative overflow-hidden';
-    const style = active ? 'background:rgba(59,154,108,0.85);box-shadow:0 2px 10px -2px rgba(59,154,108,0.4)' : '';
+      ? 'px-3 py-1.5 rounded text-xs font-semibold text-indigo-400 snap-center shrink-0 transition-all duration-200'
+      : 'px-3 py-1.5 rounded text-xs font-medium snap-center shrink-0 transition-all duration-200 relative overflow-hidden hover:bg-white/[0.05]'
+        + ' ' + 'text-white/35';
+    const style = active ? 'background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.40);box-shadow:0 2px 12px -2px rgba(99,102,241,0.20)' : '';
     return `<button class="${cls}" style="${style}" data-loc="${l.id}">${l.label}</button>`;
   }).join('');
 
@@ -304,7 +309,7 @@ function addRipple(btn, e) {
   const rect   = btn.getBoundingClientRect();
   const span   = document.createElement('span');
   const size   = Math.max(rect.width, rect.height) * 2;
-  span.style.cssText = `position:absolute;border-radius:50%;background:rgba(59,154,108,0.25);width:${size}px;height:${size}px;left:${e.clientX - rect.left - size/2}px;top:${e.clientY - rect.top - size/2}px;transform:scale(0);pointer-events:none;transition:transform 400ms ease-out,opacity 300ms ease-out;opacity:0.5`;
+  span.style.cssText = `position:absolute;border-radius:50%;background:rgba(99,102,241,0.18);width:${size}px;height:${size}px;left:${e.clientX - rect.left - size/2}px;top:${e.clientY - rect.top - size/2}px;transform:scale(0);pointer-events:none;transition:transform 400ms ease-out,opacity 300ms ease-out;opacity:0.5`;
   btn.appendChild(span);
   requestAnimationFrame(() => { span.style.transform = 'scale(1)'; span.style.opacity = '0'; });
   setTimeout(() => span.remove(), 500);
@@ -346,9 +351,9 @@ function renderHeaderMeta(generatedAt) {
   const ageH = (Date.now() - new Date(generatedAt).getTime()) / 3600000;
   const time = new Date(generatedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
   if (ageH >= 6) {
-    el.innerHTML = `<span class="rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-semibold border stale-pulse" style="border-color:rgba(245,158,11,0.1)">⚠ dati vecchi</span>`;
+    el.innerHTML = `<span class="rounded px-2 py-0.5 text-xs font-mono font-semibold border stale-pulse" style="background:rgba(99,102,241,0.10);color:#A5B4FC;border-color:rgba(99,102,241,0.20)">dati vecchi</span>`;
   } else {
-    el.innerHTML = `<span class="tabular-nums">Aggiornato ${time}</span>`;
+    el.innerHTML = `<span class="tabular-nums font-mono">Aggiornato ${time}</span>`;
   }
 }
 
@@ -397,9 +402,9 @@ function renderHero(data) {
   const dewpoint  = current?.dewpoint_c   != null ? `${current.dewpoint_c.toFixed(1)}°`   : null;
   const ts        = current?.ts ? new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : null;
   metaEl.innerHTML = [
-    feelsLike ? `<span>Percepita <strong class="text-slate-700 dark:text-slate-300">${feelsLike}</strong></span>` : '',
-    dewpoint  ? `<span>Rugiada <strong class="text-slate-700 dark:text-slate-300">${dewpoint}</strong></span>`   : '',
-    ts ? `<span class="text-[11px] tabular-nums">SIR · ${ts}</span>` : '',
+    feelsLike ? `<span>Percepita <strong class="text-white/70">${feelsLike}</strong></span>` : '',
+    dewpoint  ? `<span>Rugiada <strong class="text-white/70">${dewpoint}</strong></span>` : '',
+    ts ? `<span class="text-xs font-mono tabular-nums">SIR · ${ts}</span>` : '',
   ].filter(Boolean).join('');
 
   // Stats pills
@@ -432,14 +437,20 @@ function renderHeroStats(current) {
     { label: 'Pressione', value: current?.pressure_hpa  != null ? `${current.pressure_hpa.toFixed(0)} hPa` : '—' },
   ];
   const el = document.getElementById('hero-stats');
-  el.innerHTML = stats.map(s => `
-    <div class="px-4 py-3 flex flex-col gap-1 bg-[#09172A] hover:bg-[#0d1e38] transition-colors duration-200">
+  el.innerHTML = stats.map(s => {
+    const iconHtml = STAT_ICONS[s.label]
+      ? `<span class="text-sm leading-none shrink-0">${STAT_ICONS[s.label]}</span>`
+      : '';
+    return `
+    <div class="px-5 py-4 flex flex-col gap-1.5 transition-colors duration-200" style="background:#141620">
       <div class="flex items-center gap-1.5">
-        ${STAT_ICONS[s.label] ?? ''}
-        <div class="text-[9px] font-semibold text-white/30 uppercase tracking-widest">${s.label}</div>
+        ${iconHtml}
+        <div class="text-[11px] font-mono font-semibold uppercase tracking-[0.08em]" style="color:rgba(241,245,249,0.28)">${s.label}</div>
       </div>
-      <div class="text-sm font-bold text-white tabular-nums">${s.value}</div>
-    </div>`).join('');
+      <div class="text-base font-bold font-mono text-white tabular-nums leading-tight">${s.value}</div>
+    </div>`;
+  }).join('');
+  twemoji.parse(el, TWEMOJI_OPTS);
 }
 
 function renderHeroAQ(aq, _generatedAt) {
@@ -465,13 +476,13 @@ function renderHeroAQ(aq, _generatedAt) {
     if (it.value != null) {
       const [lo, hi] = AQ_THRESHOLDS[it.key] ?? [0, Infinity];
       if (it.value < lo)      { borderCls = 'border-emerald-500/30'; textCls = 'text-emerald-400'; }
-      else if (it.value < hi) { borderCls = 'border-amber-500/30';   textCls = 'text-amber-400';   }
+      else if (it.value < hi) { borderCls = 'border-indigo-500/30';  textCls = 'text-indigo-400';  }
       else                    { borderCls = 'border-red-500/35';     textCls = 'text-red-400';     }
     }
-    return `<div class="shrink-0 w-[72px] rounded-xl py-2.5 bg-white/[0.06] border ${borderCls} ${opacityCls} text-center">
-      <div class="text-[10px] font-semibold text-white/35 leading-tight">${it.label}</div>
-      <div class="text-sm font-bold ${textCls} tabular-nums mt-1 leading-tight">${display}</div>
-      <div class="text-[9px] text-white/20 mt-0.5 leading-tight">${it.unit}</div>
+    return `<div class="shrink-0 rounded-xl py-2 px-2 border ${borderCls} ${opacityCls} text-center" style="min-width:60px;background:rgba(255,255,255,0.04)">
+      <div class="text-[11px] font-mono font-semibold leading-tight" style="color:rgba(241,245,249,0.3)">${it.label}</div>
+      <div class="text-sm font-bold ${textCls} tabular-nums mt-0.5 leading-tight">${display}</div>
+      <div class="text-[11px] font-mono leading-tight" style="color:rgba(241,245,249,0.18)">${it.unit}</div>
     </div>`;
   }).join('');
 }
@@ -488,17 +499,17 @@ function renderHeroSun(locMeta, now) {
   /* Three glassmorphic pills: sunrise · sunset · moon phase */
   el.innerHTML = `
     <div class="flex items-center gap-2 flex-wrap justify-end">
-      <div class="tooltip tooltip-left flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/[0.08]" data-tip="Alba">
+      <div class="tooltip tooltip-left flex items-center gap-2 px-2.5 py-1.5 rounded border" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08)" data-tip="Alba">
         <span class="text-sm leading-none">🌅</span>
-        <span class="text-xs font-semibold text-white/65 tabular-nums">${fmtSunTime(sunTimes.sunrise)}</span>
+        <span class="text-[13px] font-mono tabular-nums" style="color:rgba(241,245,249,0.6)">${fmtSunTime(sunTimes.sunrise)}</span>
       </div>
-      <div class="tooltip tooltip-left flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/[0.08]" data-tip="Tramonto">
+      <div class="tooltip tooltip-left flex items-center gap-2 px-2.5 py-1.5 rounded border" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08)" data-tip="Tramonto">
         <span class="text-sm leading-none">🌇</span>
-        <span class="text-xs font-semibold text-white/65 tabular-nums">${fmtSunTime(sunTimes.sunset)}</span>
+        <span class="text-[13px] font-mono tabular-nums" style="color:rgba(241,245,249,0.6)">${fmtSunTime(sunTimes.sunset)}</span>
       </div>
-      <div class="tooltip tooltip-left flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/[0.08]" data-tip="${moonLabel}">
+      <div class="tooltip tooltip-left flex items-center gap-2 px-2.5 py-1.5 rounded border" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08)" data-tip="${moonLabel}">
         <span class="text-sm leading-none">${moonEmoji}</span>
-        <span class="text-xs font-medium text-white/45">${moonLabel}</span>
+        <span class="text-[13px] font-mono" style="color:rgba(241,245,249,0.4)">${moonLabel}</span>
       </div>
     </div>`;
   twemoji.parse(el, TWEMOJI_OPTS);
@@ -514,13 +525,13 @@ function renderHeroIndicators(todayDay) {
     const verdictCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
     const tip        = escHtml(ind.rule_text || ind.rule_matched || '');
     return `<div data-hero-chip${tip ? ` data-tip="${tip}"` : ''} class="shrink-0">
-      <div class="flex items-center gap-2 px-3 py-2.5 sm:gap-2.5 sm:px-3.5 sm:py-3 rounded-2xl bg-white/[0.07] border border-white/[0.1] hover:bg-white/[0.1] active:scale-95 transition-all duration-200 cursor-pointer select-none"
+      <div class="flex items-center gap-2 px-3 py-2.5 sm:gap-2.5 sm:px-3.5 sm:py-3 rounded-lg border hover:opacity-90 active:scale-95 transition-all duration-200 cursor-pointer select-none" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.09)"
            style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
         <span class="text-xl sm:text-2xl leading-none">${meta.icon}</span>
         <div class="text-left min-w-0">
-          <div class="text-[10px] font-semibold text-white/45 leading-tight">${meta.label}</div>
+          <div class="text-[11px] font-mono font-semibold leading-tight" style="color:rgba(241,245,249,0.4)">${meta.label}</div>
           <div class="flex items-center gap-1.5 mt-1">
-            <span class="w-2 h-2 rounded-full ${vc.dot} shrink-0"></span>
+            <span class="w-1.5 h-1.5 rounded-full ${vc.dot} shrink-0"></span>
             <span class="text-xs font-bold text-white/85">${verdictCap}</span>
           </div>
         </div>
@@ -546,12 +557,12 @@ function ciBar(fc, unit) {
   const p50pos   = pct(p50).toFixed(2);
   return `
     <div class="mt-4">
-      <div class="relative h-2 rounded-full bg-slate-200 dark:bg-slate-700" style="overflow:visible">
-        <div class="ci-range-90 absolute inset-0 rounded-full bg-slate-300/50 dark:bg-slate-500/30" style="transform-origin:left"></div>
-        <div class="ci-range-80 absolute top-0 h-full rounded-full" style="background:rgba(59,154,108,0.35);left:${p80l}%;width:${p80w}%;transform-origin:left"></div>
-        <div class="ci-median absolute w-3 h-3 rounded-full bg-white dark:bg-[#0D1E35]" style="border:2px solid #3B9A6C;top:50%;margin-left:-6px;left:${p50pos}%"></div>
+      <div class="relative h-1.5 rounded-full" style="overflow:visible;background:rgba(255,255,255,0.08)">
+        <div class="ci-range-90 absolute inset-0 rounded-full" style="background:rgba(255,255,255,0.10);transform-origin:left"></div>
+        <div class="ci-range-80 absolute top-0 h-full rounded-full" style="background:rgba(99,102,241,0.35);left:${p80l}%;width:${p80w}%;transform-origin:left"></div>
+        <div class="ci-median absolute w-3 h-3 rounded-full" style="background:#111318;border:2px solid #6366F1;top:50%;margin-left:-6px;left:${p50pos}%"></div>
       </div>
-      <div class="flex justify-between mt-2 text-[11px] text-slate-400 tabular-nums">
+      <div class="flex justify-between mt-2 text-xs tabular-nums font-mono" style="color:rgba(241,245,249,0.38)">
         <span>${ci90_lo.toFixed(1)}${unit}</span>
         <span class="text-slate-500 dark:text-slate-300">${p50.toFixed(1)}${unit}</span>
         <span>${ci90_hi.toFixed(1)}${unit}</span>
@@ -588,17 +599,17 @@ function renderDayStrip(days, activeDayIdx) {
     const dayLabel   = fmtDayShort(target_date);
 
     const cardStyle = active
-      ? `border:2px solid rgba(59,154,108,0.6);box-shadow:0 0 0 4px rgba(59,154,108,0.08),0 8px 24px -6px rgba(59,154,108,0.2)`
-      : '';
+      ? `background:#1A1D28;border:1px solid rgba(99,102,241,0.45);box-shadow:0 0 0 3px rgba(99,102,241,0.05),0 10px 28px -8px rgba(99,102,241,0.14)`
+      : `background:#111318;border:1px solid rgba(255,255,255,0.07)`;
     const cardCls = active
-      ? 'snap-center shrink-0 w-[100px] sm:w-[116px] rounded-2xl bg-white dark:bg-white/[0.09] px-3 py-3.5 text-center cursor-pointer transition-all duration-300'
-      : 'snap-center shrink-0 w-[100px] sm:w-[116px] rounded-2xl bg-white/70 dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06] px-3 py-3.5 text-center cursor-pointer hover:-translate-y-0.5 hover:bg-white dark:hover:bg-white/[0.08] transition-all duration-300 ease-out';
+      ? 'snap-center shrink-0 w-[120px] sm:w-[136px] rounded-xl px-4 py-5 text-center cursor-pointer transition-all duration-300 day-card-active'
+      : 'snap-center shrink-0 w-[120px] sm:w-[136px] rounded-xl px-4 py-5 text-center cursor-pointer transition-all duration-300 ease-out hover:-translate-y-1';
 
     /* Day label: "Oggi" verde accent, "Domani" normal, others dimmed */
-    const labelCls  = isToday_   ? 'text-[11px] font-bold tracking-tight today-badge-anim'
-                    : isTomorrow ? 'text-[11px] font-semibold text-slate-600 dark:text-white/65'
-                    :              'text-[11px] font-medium text-slate-400 dark:text-white/35 capitalize';
-    const labelStyle = isToday_ ? 'color:#3B9A6C' : '';
+    const labelCls  = isToday_   ? 'text-xs font-bold tracking-tight today-badge-anim font-mono'
+                    : isTomorrow ? 'text-xs font-semibold font-mono text-white/60'
+                    :              'text-xs font-medium font-mono text-white/32 capitalize';
+    const labelStyle = isToday_ ? 'color:#6366F1' : '';
 
     /* Temps: max prominent, min muted — side by side */
     const tmax = fmtTemp(fc.tmax_c?.p50);
@@ -606,11 +617,11 @@ function renderDayStrip(days, activeDayIdx) {
 
     return `<div class="${cardCls}" data-idx="${idx}" style="${cardStyle}">
       <div class="${labelCls} leading-none mb-2.5" style="${labelStyle}">${dayLabel}</div>
-      <span class="text-4xl leading-none block mb-1.5">${icon}</span>
-      <div class="text-[10px] font-medium text-slate-400 dark:text-white/30 mb-2.5 leading-tight">${condText}</div>
-      <div class="flex items-baseline justify-center gap-1.5 mb-2.5">
-        <span class="text-sm font-extrabold tabular-nums text-slate-800 dark:text-white">${tmax}</span>
-        <span class="text-[11px] font-medium tabular-nums text-slate-400 dark:text-white/35">${tmin}</span>
+      <span class="text-5xl leading-none block mb-2">${icon}</span>
+      <div class="text-xs font-mono mb-3 leading-tight" style="color:rgba(241,245,249,0.28)">${condText}</div>
+      <div class="flex items-baseline justify-center gap-2 mb-3">
+        <span class="text-base font-bold font-sans tabular-nums text-white">${tmax}</span>
+        <span class="text-xs font-sans tabular-nums" style="color:rgba(241,245,249,0.38)">${tmin}</span>
       </div>
       <div class="flex gap-1 flex-wrap justify-center">${dots}</div>
     </div>`;
@@ -655,8 +666,8 @@ function renderDayDetail(day) {
 
   const precipVal = fc.precip_mm?.p50;
   document.getElementById('detail-precip-val').innerHTML = precipVal != null && precipVal > 0.05
-    ? `${precipVal.toFixed(1)}<span class="text-xl font-medium text-slate-400 dark:text-white/30 ml-1.5">mm</span>`
-    : '<span class="text-slate-400 dark:text-white/30">—</span>';
+    ? `${precipVal.toFixed(1)}<span class="text-xl font-medium ml-1.5" style="color:rgba(241,245,249,0.30)">mm</span>`
+    : '<span style="color:rgba(241,245,249,0.30)">—</span>';
 
   document.getElementById('detail-ci-tmax').innerHTML   = ciBar(fc.tmax_c,   '°');
   document.getElementById('detail-ci-tmin').innerHTML   = ciBar(fc.tmin_c,   '°');
@@ -681,14 +692,14 @@ function renderIndicatorChips(indicators) {
     const verdCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
     const tip     = escHtml(ind.rule_text || ind.rule_matched || '');
     return `<div data-detail-chip${tip ? ` data-tip="${tip}"` : ''} class="shrink-0">
-      <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-2xl bg-slate-100 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.1] hover:bg-slate-200/60 dark:hover:bg-white/[0.1] active:scale-95 transition-all duration-200 cursor-pointer select-none"
+      <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-lg border hover:opacity-90 active:scale-95 transition-all duration-200 cursor-pointer select-none" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.09)"
            style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
         <span class="text-2xl leading-none">${meta.icon}</span>
         <div class="text-left min-w-0">
-          <div class="text-[10px] font-semibold text-slate-500 dark:text-white/45 leading-tight">${meta.label}</div>
+          <div class="text-[11px] font-mono font-semibold leading-tight" style="color:rgba(241,245,249,0.4)">${meta.label}</div>
           <div class="flex items-center gap-1.5 mt-1">
-            <span class="w-2 h-2 rounded-full ${vc.dot} shrink-0"></span>
-            <span class="text-xs font-bold text-slate-800 dark:text-white/85">${verdCap}</span>
+            <span class="w-1.5 h-1.5 rounded-full ${vc.dot} shrink-0"></span>
+            <span class="text-xs font-bold text-white/85">${verdCap}</span>
           </div>
         </div>
       </div>
@@ -713,11 +724,11 @@ function renderNwpList(day) {
   const colCls = 'grid grid-cols-[1fr_auto_auto] items-start gap-x-5';
 
   const guazzaRow = `
-    <div class="${colCls} px-5 md:px-7 py-3 mb-px" style="background:rgba(59,154,108,0.07);border-left:3px solid #3B9A6C">
-      <div class="text-sm font-bold" style="color:#3B9A6C">★ Guazza ML</div>
-      <div class="text-right text-sm font-semibold tabular-nums font-mono text-slate-700 dark:text-slate-200 whitespace-nowrap">
+    <div class="${colCls} px-7 md:px-9 py-4 mb-px" style="background:rgba(99,102,241,0.07);border-left:2px solid #6366F1">
+      <div class="text-sm font-bold font-mono" style="color:#6366F1">★ Guazza ML</div>
+      <div class="text-right text-sm font-semibold tabular-nums font-mono text-white/80 whitespace-nowrap">
         <span style="color:#60A5FA">${fmtTemp(fc.tmin_c?.p50)}</span>
-        <span class="text-slate-300 dark:text-white/20 mx-1">·</span>
+        <span style="color:rgba(241,245,249,0.20)" class="mx-1">·</span>
         <span style="color:#F97316">${fmtTemp(fc.tmax_c?.p50)}</span>
       </div>
       <div class="text-right text-sm font-semibold tabular-nums font-mono text-sky-600 dark:text-sky-400 whitespace-nowrap">${fmtPrecip(fc.precip_mm?.p50)}</div>
@@ -725,24 +736,24 @@ function renderNwpList(day) {
 
   /* Column sub-header */
   const subHeader = `
-    <div class="${colCls} px-5 md:px-7 py-2 border-t border-b border-slate-100 dark:border-white/[0.04]">
-      <div class="text-[10px] text-slate-400 dark:text-white/25 font-semibold uppercase tracking-widest">NWP</div>
-      <div class="text-right text-[10px] text-slate-400 dark:text-white/25 font-semibold whitespace-nowrap">Min · Max</div>
-      <div class="text-right text-[10px] text-slate-400 dark:text-white/25 font-semibold">Precip</div>
+    <div class="${colCls} px-7 md:px-9 py-2 border-t border-b" style="border-color:rgba(255,255,255,0.06)">
+      <div class="text-[11px] font-mono font-semibold uppercase tracking-[0.08em]" style="color:rgba(241,245,249,0.22)">NWP</div>
+      <div class="text-right text-[11px] font-mono font-semibold whitespace-nowrap" style="color:rgba(241,245,249,0.22)">Min · Max</div>
+      <div class="text-right text-[11px] font-mono font-semibold" style="color:rgba(241,245,249,0.22)">Precip</div>
     </div>`;
 
   const nwpRows = nwp.map(m => `
-    <div class="${colCls} px-5 md:px-7 py-3 border-t border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors duration-150">
+    <div class="${colCls} px-7 md:px-9 py-3.5 transition-colors duration-150 hover:bg-white/[0.03]" style="border-top:1px solid rgba(255,255,255,0.06)">
       <div>
-        <div class="text-sm font-medium text-slate-700 dark:text-slate-300 leading-tight">${escHtml(m.label)}</div>
-        <div class="text-[10px] text-slate-400 dark:text-white/25 tabular-nums mt-0.5">${fmtLastRun(m.last_run)}</div>
+        <div class="text-sm font-medium text-white/75 leading-tight">${escHtml(m.label)}</div>
+        <div class="text-[11px] font-mono tabular-nums mt-0.5" style="color:rgba(241,245,249,0.25)">${fmtLastRun(m.last_run)}</div>
       </div>
-      <div class="text-right text-sm font-semibold tabular-nums font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap self-center">
+      <div class="text-right text-sm font-semibold tabular-nums font-mono whitespace-nowrap self-center" style="color:rgba(241,245,249,0.55)">
         ${m.tmin_c != null ? m.tmin_c.toFixed(1)+'°' : '—'}
-        <span class="text-slate-300 dark:text-white/20 mx-1">·</span>
+        <span style="color:rgba(241,245,249,0.20)" class="mx-1">·</span>
         ${m.tmax_c != null ? m.tmax_c.toFixed(1)+'°' : '—'}
       </div>
-      <div class="text-right text-sm font-semibold tabular-nums font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap self-center">${m.precip_mm != null ? m.precip_mm.toFixed(1)+' mm' : '—'}</div>
+      <div class="text-right text-sm font-semibold tabular-nums font-mono whitespace-nowrap self-center" style="color:rgba(241,245,249,0.55)">${m.precip_mm != null ? m.precip_mm.toFixed(1)+' mm' : '—'}</div>
     </div>`).join('');
 
   el.innerHTML = guazzaRow + subHeader + nwpRows;
@@ -754,16 +765,16 @@ function renderCoverage(cov) {
   const el = document.getElementById('coverage-bar');
   if (!el) return;
   if (!cov || Object.values(cov).every(v => v === null)) {
-    el.innerHTML = `<div class="rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 px-4 py-3 text-sm">⚠️ Calibrazione in corso — copertura CI non ancora disponibile (primi 30gg)</div>`;
+    el.innerHTML = `<div class="rounded-lg border px-4 py-3 text-xs font-mono" style="background:rgba(99,102,241,0.08);border-color:rgba(99,102,241,0.20);color:#A5B4FC">Calibrazione in corso — copertura CI non ancora disponibile (primi 30gg)</div>`;
   } else {
     const items = [
       ['Tmin CI80', cov.tmin_ci80], ['Tmin CI90', cov.tmin_ci90],
       ['Tmax CI80', cov.tmax_ci80], ['Tmax CI90', cov.tmax_ci90],
       ['Precip CI80', cov.precip_ci80], ['Precip CI90', cov.precip_ci90],
     ].filter(([, v]) => v !== null)
-     .map(([k, v]) => `<span class="text-xs">${k}: <strong>${(v * 100).toFixed(0)}%</strong></span>`)
+     .map(([k, v]) => `<span class="text-xs font-mono">${k}: <strong>${(v * 100).toFixed(0)}%</strong></span>`)
      .join('');
-    el.innerHTML = `<div class="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 px-4 py-3 text-sm flex gap-4 flex-wrap">📊 ${items}</div>`;
+    el.innerHTML = `<div class="rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-3 text-xs font-mono flex gap-4 flex-wrap">${items}</div>`;
   }
   showEl('coverage-bar');
   twemoji.parse(el, TWEMOJI_OPTS);
@@ -799,23 +810,24 @@ function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
   else {
     const s = document.createElement('span');
     s.id = pillId;
-    s.className = 'absolute top-1 bottom-1 bg-white dark:bg-slate-700 rounded-full shadow-sm pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]';
+    s.className = 'absolute top-1 bottom-1 rounded pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]';
+    s.style.background = 'rgba(99,102,241,0.12)';
     container.appendChild(s);
   }
 
   models.forEach(m => {
     const btn = document.createElement('button');
     const active = m.source === activeSource;
-    btn.className = `relative z-10 px-3 py-1 text-xs transition-colors duration-200 ${active ? 'font-semibold' : 'font-medium text-slate-500 dark:text-slate-400'}`;
-    btn.style.color = active ? '#3B9A6C' : '';
+    btn.className = `relative z-10 px-3 py-1 text-[11px] font-mono transition-colors duration-200 ${active ? 'font-semibold' : 'font-medium'}`;
+    btn.style.color = active ? '#6366F1' : 'rgba(241,245,249,0.4)';
     btn.dataset.src = m.source;
     btn.textContent = m.label;
     container.appendChild(btn);
     btn.addEventListener('click', () => {
       container.querySelectorAll('[data-src]').forEach(b => {
         const isActive = b.dataset.src === m.source;
-        b.className = `relative z-10 px-3 py-1 text-xs transition-colors duration-200 ${isActive ? 'font-semibold' : 'font-medium text-slate-500 dark:text-slate-400'}`;
-        b.style.color = isActive ? '#3B9A6C' : '';
+        b.className = `relative z-10 px-3 py-1 text-[11px] font-mono transition-colors duration-200 ${isActive ? 'font-semibold' : 'font-medium'}`;
+        b.style.color = isActive ? '#6366F1' : 'rgba(241,245,249,0.4)';
       });
       updatePillPosition(switchId, pillId, m.source);
       onChange(m.source);
@@ -908,7 +920,7 @@ const crosshairPlugin = {
     ctx.moveTo(x, top);
     ctx.lineTo(x, bottom);
     ctx.lineWidth   = 1;
-    ctx.strokeStyle = 'rgba(59,154,108,0.25)';
+    ctx.strokeStyle = 'rgba(99,102,241,0.20)';
     ctx.setLineDash([]);
     ctx.stroke();
     // Glow circle around active temp point
@@ -941,15 +953,15 @@ function _makeTooltipHandler(elId) {
 
     const row = (dot, label, val) =>
       `<div class="flex items-center justify-between gap-5 py-[3px]">
-         <span class="flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-white/40">${dot}${label}</span>
-         <span class="text-[11px] font-bold tabular-nums text-slate-800 dark:text-white/90">${val}</span>
+         <span class="flex items-center gap-1.5 text-xs font-mono" style="color:rgba(241,245,249,0.4)">${dot}${label}</span>
+         <span class="text-xs font-bold tabular-nums font-mono text-white/90">${val}</span>
        </div>`;
     const dot = cls => `<span class="w-1.5 h-1.5 rounded-full ${cls} shrink-0"></span>`;
 
     el.innerHTML = `
-      <div class="flex items-baseline justify-between gap-3 mb-2 pb-2 border-b border-slate-100 dark:border-white/[0.07]">
-        <span class="text-[10px] text-slate-400 dark:text-white/35 font-medium capitalize">${date}</span>
-        <span class="text-sm font-bold tabular-nums text-slate-900 dark:text-white">${time}</span>
+      <div class="flex items-baseline justify-between gap-3 mb-2 pb-2 border-b" style="border-color:rgba(255,255,255,0.07)">
+        <span class="text-[11px] font-mono capitalize" style="color:rgba(241,245,249,0.35)">${date}</span>
+        <span class="text-sm font-bold tabular-nums font-mono text-white">${time}</span>
       </div>
       ${temp ? row(dot('bg-orange-500'), 'Temp', `${temp.raw.y.toFixed(1)}°C`) : ''}
       ${hum  ? row(dot('bg-sky-500'),    'Umidità', `${hum.raw.y.toFixed(0)}%`) : ''}
@@ -989,10 +1001,10 @@ function renderChartStatStrip(points) {
     { label: 'Vento max',    value: wMax,    color: '#14B8A6' },
   ];
   el.innerHTML = stats.map((s, i) => `
-    <div class="flex flex-col justify-center px-4 py-3 bg-white dark:bg-[#080F1C]"
-         style="border-left:2px solid ${s.color};animation:fade-up 0.28s ease-out ${i * 55}ms both">
-      <div class="text-[9px] font-semibold uppercase tracking-widest mb-1.5 leading-none whitespace-nowrap"
-           style="color:rgba(100,116,139,0.75)">${s.label}</div>
+    <div class="flex flex-col justify-center px-4 py-3"
+         style="background:#111318;border-left:2px solid ${s.color};animation:fade-up 0.28s ease-out ${i * 55}ms both">
+      <div class="text-[11px] font-mono font-semibold uppercase tracking-[0.06em] mb-1.5 leading-none whitespace-nowrap"
+           style="color:rgba(241,245,249,0.28)">${s.label}</div>
       <div class="text-sm font-extrabold tabular-nums leading-none" style="color:${s.color}">${s.value}</div>
     </div>`).join('');
 }
@@ -1182,10 +1194,10 @@ function showRadarFrame(i) {
   if (badgeEl) {
     if (f.kind === 'nowcast') {
       badgeEl.textContent  = 'Previsione';
-      badgeEl.style.cssText = 'background:rgba(245,158,11,0.18);color:#FBBF24';
+      badgeEl.style.cssText = 'background:rgba(99,102,241,0.15);color:#A5B4FC';
     } else {
       badgeEl.textContent  = 'Osservato';
-      badgeEl.style.cssText = 'background:rgba(59,154,108,0.18);color:#34D399';
+      badgeEl.style.cssText = 'background:rgba(16,185,129,0.15);color:#34D399';
     }
     badgeEl.classList.remove('hidden');
   }
@@ -1206,15 +1218,17 @@ function wireRadarControls() {
     slider.max = String(radarFrames.length - 1);
     slider.addEventListener('input', () => {
       radarPlaying = false;
-      if (playBtn) playBtn.innerHTML = PLAY_SVG;
+      if (playBtn) { playBtn.innerHTML = playBtnHtml(false); twemoji.parse(playBtn, TWEMOJI_OPTS); }
       showRadarFrame(parseInt(slider.value, 10));
     });
   }
   if (playBtn) {
-    playBtn.innerHTML = PLAY_SVG;
+    playBtn.innerHTML = playBtnHtml(false);
+    twemoji.parse(playBtn, TWEMOJI_OPTS);
     playBtn.addEventListener('click', () => {
       radarPlaying = !radarPlaying;
-      playBtn.innerHTML = radarPlaying ? PAUSE_SVG : PLAY_SVG;
+      playBtn.innerHTML = playBtnHtml(radarPlaying);
+      twemoji.parse(playBtn, TWEMOJI_OPTS);
     });
   }
   document.getElementById('radar-zoom-in')?.addEventListener('click',  () => radarMap?.zoomIn());
@@ -1226,12 +1240,11 @@ function showRadarError(msg) {
   if (!box) return;
   box.innerHTML = `
     <div style="width:40px;height:40px;border-radius:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;justify-content:center">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="1.5">
-        <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-      </svg>
+      <span style="font-size:20px;line-height:1">⚠️</span>
     </div>
     <p style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.32);margin-top:10px">Radar non disponibile</p>
     <p style="font-size:11px;color:rgba(255,255,255,0.18);margin-top:4px">${escHtml(msg)}</p>`;
+  twemoji.parse(box, TWEMOJI_OPTS);
   box.classList.remove('hidden');
 }
 
@@ -1252,12 +1265,9 @@ function buildRadarMap(locationId, host, frames) {
   }).addTo(radarMap);
 
   // Sonar marker using DivIcon
-  const sonarHtml = `<div style="position:relative;width:20px;height:20px">
-    <div style="position:absolute;inset:0;border-radius:50%;background:#3B9A6C;opacity:0.9"></div>
-    <div style="position:absolute;inset:-5px;border-radius:50%;border:2px solid #3B9A6C;animation:sonar 2s ease-out infinite;pointer-events:none"></div>
-  </div>`;
+  const sonarHtml = `<div style="width:8px;height:8px;border-radius:50%;background:#6366F1;box-shadow:0 0 0 2px rgba(99,102,241,0.35)"></div>`;
   L.marker([loc.lat, loc.lon], {
-    icon: L.divIcon({ className: '', html: sonarHtml, iconSize: [20, 20], iconAnchor: [10, 10] }),
+    icon: L.divIcon({ className: '', html: sonarHtml, iconSize: [8, 8], iconAnchor: [4, 4] }),
   }).addTo(radarMap);
 
   buildRadarLayers(host, frames);
@@ -1344,6 +1354,12 @@ async function loadLocation(locId) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 initDarkMode();
+
+// Allinea Chart.js al sistema tipografico — Space Mono per tutti i canvas label
+if (typeof Chart !== 'undefined') {
+  Chart.defaults.font.family = "'JetBrains Mono', ui-monospace, monospace";
+  Chart.defaults.font.size   = 11;
+}
 document.addEventListener('click', hideIndicatorTooltip);
 twemoji.parse(document.querySelector('header'), TWEMOJI_OPTS);
 window.addEventListener('popstate', () => loadLocation(getActiveLoc()));
