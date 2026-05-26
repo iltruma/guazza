@@ -6,11 +6,11 @@
   <title>Guazza — Previsioni meteo iper-locale Toscana</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>
     tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: {
-      sans: ['Space Grotesk','system-ui','sans-serif'],
-      mono: ['Space Mono','ui-monospace','monospace'],
+      sans: ['Geist','system-ui','sans-serif'],
+      mono: ['JetBrains Mono','ui-monospace','monospace'],
     } } } };
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
@@ -42,10 +42,19 @@
 
   <main id="app" class="max-w-6xl mx-auto px-4 md:px-6 py-8 flex flex-col gap-8 overflow-x-hidden">
 
-    <!-- Skeleton -->
-    <div id="skeleton-state" class="space-y-4">
-      <div class="rounded-xl bg-white/[0.04] h-72 skeleton"></div>
-      <div class="rounded-xl bg-white/[0.04] h-48 skeleton"></div>
+    <!-- Skeleton: rispecchia la silhouette reale (hero, radar, day strip, day detail, charts) -->
+    <div id="skeleton-state" class="flex flex-col gap-8" aria-hidden="true">
+      <div class="rounded-2xl bg-white/[0.04] skeleton" style="height:440px"></div>
+      <div class="rounded-2xl bg-white/[0.04] skeleton" style="height:300px"></div>
+      <div class="flex gap-2 overflow-hidden">
+        <div class="rounded-xl bg-white/[0.04] skeleton shrink-0" style="width:120px;height:110px"></div>
+        <div class="rounded-xl bg-white/[0.04] skeleton shrink-0" style="width:120px;height:110px"></div>
+        <div class="rounded-xl bg-white/[0.04] skeleton shrink-0" style="width:120px;height:110px"></div>
+        <div class="rounded-xl bg-white/[0.04] skeleton shrink-0" style="width:120px;height:110px"></div>
+        <div class="rounded-xl bg-white/[0.04] skeleton shrink-0" style="width:120px;height:110px"></div>
+      </div>
+      <div class="rounded-2xl bg-white/[0.04] skeleton" style="height:380px"></div>
+      <div class="rounded-2xl bg-white/[0.04] skeleton" style="height:340px"></div>
     </div>
 
     <!-- Error -->
@@ -128,11 +137,11 @@
       <!-- Top-right: zoom controls -->
       <div class="absolute top-3 right-3 z-[6] flex flex-col gap-1">
         <button id="radar-zoom-in"
-                class="w-8 h-8 rounded-lg border font-bold hover:opacity-80 active:scale-90 transition-all duration-150 flex items-center justify-center text-base leading-none"
+                class="w-8 h-8 rounded-lg border font-bold hover:bg-white/[0.08] hover:text-white/70 active:scale-90 transition-all duration-150 flex items-center justify-center text-base leading-none"
                 style="background:rgba(15,17,23,0.72);border-color:rgba(255,255,255,0.08);color:rgba(255,255,255,0.45);backdrop-filter:blur(8px)"
                 aria-label="Zoom in">+</button>
         <button id="radar-zoom-out"
-                class="w-8 h-8 rounded-lg border font-bold hover:opacity-80 active:scale-90 transition-all duration-150 flex items-center justify-center text-base leading-none"
+                class="w-8 h-8 rounded-lg border font-bold hover:bg-white/[0.08] hover:text-white/70 active:scale-90 transition-all duration-150 flex items-center justify-center text-base leading-none"
                 style="background:rgba(15,17,23,0.72);border-color:rgba(255,255,255,0.08);color:rgba(255,255,255,0.45);backdrop-filter:blur(8px)"
                 aria-label="Zoom out">−</button>
       </div>
@@ -210,7 +219,7 @@
           <div class="px-7 md:px-8 py-6" style="background:#111318">
             <p class="text-[11px] font-mono font-semibold mb-4 uppercase tracking-[0.1em]"
                style="color:rgba(241,245,249,0.25)">Precip</p>
-            <div id="detail-precip-val" class="text-4xl md:text-5xl font-bold font-mono tracking-tight tabular-nums leading-none text-white">—</div>
+            <div id="detail-precip-val" class="text-4xl md:text-5xl font-bold font-sans tracking-tight tabular-nums leading-none text-white">—</div>
             <div id="detail-ci-precip" class="mt-1"></div>
           </div>
         </div>
@@ -271,7 +280,7 @@
           <canvas id="meteo-chart"></canvas>
           <div id="chart-tooltip"
                class="absolute pointer-events-none opacity-0 transition-opacity duration-150 backdrop-blur-xl rounded-lg border z-20 min-w-[160px] px-3.5 py-3"
-               style="background:rgba(20,22,32,0.97);border-color:rgba(255,255,255,0.09);box-shadow:0 8px 32px rgba(0,0,0,0.4);transition:opacity 150ms"></div>
+               style="background:rgba(20,22,32,0.97);border-color:rgba(255,255,255,0.09);box-shadow:0 8px 32px rgba(8,10,24,0.5);transition:opacity 150ms"></div>
         </div>
 
         <div class="flex sm:hidden gap-4 px-6 pb-5 pt-3 text-xs font-mono flex-wrap border-t"
@@ -315,7 +324,7 @@
           <canvas id="multiday-chart"></canvas>
           <div id="chart-weekly-tooltip"
                class="absolute pointer-events-none opacity-0 transition-opacity duration-150 backdrop-blur-xl rounded-lg border z-20 min-w-[160px] px-3.5 py-3"
-               style="background:rgba(20,22,32,0.97);border-color:rgba(255,255,255,0.09);box-shadow:0 8px 32px rgba(0,0,0,0.4);transition:opacity 150ms"></div>
+               style="background:rgba(20,22,32,0.97);border-color:rgba(255,255,255,0.09);box-shadow:0 8px 32px rgba(8,10,24,0.5);transition:opacity 150ms"></div>
         </div>
 
         <div class="flex sm:hidden gap-4 px-6 pb-5 pt-3 text-xs font-mono flex-wrap border-t"
@@ -335,7 +344,7 @@
 
   <!-- Tooltip globale indicatori -->
   <div id="indicator-tooltip" class="hidden fixed z-[200] max-w-[220px] leading-snug pointer-events-none font-mono" role="tooltip"
-       style="padding:9px 12px;border-radius:8px;font-size:11px;color:rgba(241,245,249,0.75);background:rgba(15,17,23,0.96);border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 32px rgba(0,0,0,0.55)"></div>
+       style="padding:9px 12px;border-radius:8px;font-size:11px;color:rgba(241,245,249,0.75);background:rgba(15,17,23,0.96);border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 32px rgba(8,10,24,0.6)"></div>
 
   <script src="app.js" defer></script>
 </body>

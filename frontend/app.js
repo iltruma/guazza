@@ -28,14 +28,17 @@ const VERDICT_COLOR = {
   rosso:  { bg: 'bg-red-500/[0.06]',     border: 'border-red-500/20',     text: 'text-red-700 dark:text-red-400',     badge: 'bg-red-500/10 text-red-700 dark:text-red-400',     dot: 'bg-red-500',     glow: '0 0 6px 2px rgba(239,68,68,0.55)'   },
 };
 
+// Soglie qualità aria — mapping verde/giallo/rosso vs fasce ARPAT (config/arpat_levels.yaml).
+// verde: Minima+Bassa (1-2) · giallo: Media+Media-alta (3-4) · rosso: Alta+ (5-7).
+// [lo, hi]: value<lo→verde, lo≤value<hi→giallo, value≥hi→rosso.
 const AQ_THRESHOLDS = {
   pm10:    [20, 40],
   pm25:    [10, 20],
-  no2:     [40, 160],
+  no2:     [80, 160],
   o3:      [72, 144],
-  co:      [2,  8],
-  benzene: [1,  4],
-  so2:     [70, 280],
+  co:      [4,  8],
+  benzene: [2,  4],
+  so2:     [140, 280],
 };
 
 const PLAY_EMOJI  = '▶️';
@@ -196,7 +199,7 @@ function aqColorCls(key, value) {
   if (value == null) return null;
   const [lo, hi] = AQ_THRESHOLDS[key] ?? [0, Infinity];
   if (value < lo)  return { border: 'border-emerald-500/30', text: 'text-emerald-600 dark:text-emerald-400' };
-  if (value < hi)  return { border: 'border-indigo-500/30',   text: 'text-indigo-500 dark:text-indigo-400'  };
+  if (value < hi)  return { border: 'border-amber-500/30',    text: 'text-amber-600 dark:text-amber-400'    };
   return             { border: 'border-red-500/30',     text: 'text-red-600 dark:text-red-400'     };
 }
 
@@ -384,7 +387,7 @@ function renderHero(data) {
     if (mainTemp < 10)      color = `rgba(59,130,246,${0.08 * mul})`;
     else if (mainTemp < 22) color = `rgba(16,185,129,${0.06 * mul})`;
     else                    color = `rgba(249,115,22,${0.08 * mul})`;
-    gradEl.style.background = `linear-gradient(135deg, ${color} 0%, transparent 60%)`;
+    gradEl.style.background = `radial-gradient(circle at 100% 0%, ${color} 0%, transparent 55%)`;
   }
 
   // Temperature (with counter animation)
@@ -442,12 +445,12 @@ function renderHeroStats(current) {
       ? `<span class="text-sm leading-none shrink-0">${STAT_ICONS[s.label]}</span>`
       : '';
     return `
-    <div class="px-5 py-4 flex flex-col gap-1.5 transition-colors duration-200" style="background:#141620">
-      <div class="flex items-center gap-1.5">
+    <div class="px-5 py-4 flex flex-col items-center gap-1.5 transition-colors duration-200" style="background:#141620">
+      <div class="flex items-center justify-center gap-1.5">
         ${iconHtml}
         <div class="text-[11px] font-mono font-semibold uppercase tracking-[0.08em]" style="color:rgba(241,245,249,0.28)">${s.label}</div>
       </div>
-      <div class="text-base font-bold font-mono text-white tabular-nums leading-tight">${s.value}</div>
+      <div class="text-base font-bold font-mono text-white tabular-nums leading-tight text-center">${s.value}</div>
     </div>`;
   }).join('');
   twemoji.parse(el, TWEMOJI_OPTS);
@@ -476,12 +479,12 @@ function renderHeroAQ(aq, _generatedAt) {
     if (it.value != null) {
       const [lo, hi] = AQ_THRESHOLDS[it.key] ?? [0, Infinity];
       if (it.value < lo)      { borderCls = 'border-emerald-500/30'; textCls = 'text-emerald-400'; }
-      else if (it.value < hi) { borderCls = 'border-indigo-500/30';  textCls = 'text-indigo-400';  }
+      else if (it.value < hi) { borderCls = 'border-amber-500/30';   textCls = 'text-amber-400';   }
       else                    { borderCls = 'border-red-500/35';     textCls = 'text-red-400';     }
     }
     return `<div class="shrink-0 rounded-xl py-2 px-2 border ${borderCls} ${opacityCls} text-center" style="min-width:60px;background:rgba(255,255,255,0.04)">
       <div class="text-[11px] font-mono font-semibold leading-tight" style="color:rgba(241,245,249,0.3)">${it.label}</div>
-      <div class="text-sm font-bold ${textCls} tabular-nums mt-0.5 leading-tight">${display}</div>
+      <div class="text-sm font-bold font-mono ${textCls} tabular-nums mt-0.5 leading-tight">${display}</div>
       <div class="text-[11px] font-mono leading-tight" style="color:rgba(241,245,249,0.18)">${it.unit}</div>
     </div>`;
   }).join('');
@@ -509,7 +512,7 @@ function renderHeroSun(locMeta, now) {
       </div>
       <div class="tooltip tooltip-left flex items-center gap-2 px-2.5 py-1.5 rounded border" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08)" data-tip="${moonLabel}">
         <span class="text-sm leading-none">${moonEmoji}</span>
-        <span class="text-[13px] font-mono" style="color:rgba(241,245,249,0.4)">${moonLabel}</span>
+        <span class="text-[13px] font-sans" style="color:rgba(241,245,249,0.4)">${moonLabel}</span>
       </div>
     </div>`;
   twemoji.parse(el, TWEMOJI_OPTS);
@@ -525,14 +528,14 @@ function renderHeroIndicators(todayDay) {
     const verdictCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
     const tip        = escHtml(ind.rule_text || ind.rule_matched || '');
     return `<div data-hero-chip${tip ? ` data-tip="${tip}"` : ''} class="shrink-0">
-      <div class="flex items-center gap-2 px-3 py-2.5 sm:gap-2.5 sm:px-3.5 sm:py-3 rounded-lg border hover:opacity-90 active:scale-95 transition-all duration-200 cursor-pointer select-none" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.09)"
-           style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
+      <div class="flex items-center gap-2 px-3 py-2.5 sm:gap-2.5 sm:px-3.5 sm:py-3 rounded-lg border hover:opacity-90 active:scale-95 transition-all duration-200 cursor-pointer select-none"
+           style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.09);animation:fade-up 0.35s ease-out ${i * 50}ms both">
         <span class="text-xl sm:text-2xl leading-none">${meta.icon}</span>
         <div class="text-left min-w-0">
-          <div class="text-[11px] font-mono font-semibold leading-tight" style="color:rgba(241,245,249,0.4)">${meta.label}</div>
+          <div class="text-[11px] font-sans font-medium leading-tight" style="color:rgba(241,245,249,0.45)">${meta.label}</div>
           <div class="flex items-center gap-1.5 mt-1">
             <span class="w-1.5 h-1.5 rounded-full ${vc.dot} shrink-0"></span>
-            <span class="text-xs font-bold text-white/85">${verdictCap}</span>
+            <span class="text-xs font-mono font-bold uppercase tracking-[0.06em] ${vc.text}">${verdictCap}</span>
           </div>
         </div>
       </div>
@@ -618,7 +621,7 @@ function renderDayStrip(days, activeDayIdx) {
     return `<div class="${cardCls}" data-idx="${idx}" style="${cardStyle}">
       <div class="${labelCls} leading-none mb-2.5" style="${labelStyle}">${dayLabel}</div>
       <span class="text-5xl leading-none block mb-2">${icon}</span>
-      <div class="text-xs font-mono mb-3 leading-tight" style="color:rgba(241,245,249,0.28)">${condText}</div>
+      <div class="text-xs font-sans mb-3 leading-tight" style="color:rgba(241,245,249,0.28)">${condText}</div>
       <div class="flex items-baseline justify-center gap-2 mb-3">
         <span class="text-base font-bold font-sans tabular-nums text-white">${tmax}</span>
         <span class="text-xs font-sans tabular-nums" style="color:rgba(241,245,249,0.38)">${tmin}</span>
@@ -696,10 +699,10 @@ function renderIndicatorChips(indicators) {
            style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
         <span class="text-2xl leading-none">${meta.icon}</span>
         <div class="text-left min-w-0">
-          <div class="text-[11px] font-mono font-semibold leading-tight" style="color:rgba(241,245,249,0.4)">${meta.label}</div>
+          <div class="text-[11px] font-sans font-medium leading-tight" style="color:rgba(241,245,249,0.45)">${meta.label}</div>
           <div class="flex items-center gap-1.5 mt-1">
             <span class="w-1.5 h-1.5 rounded-full ${vc.dot} shrink-0"></span>
-            <span class="text-xs font-bold text-white/85">${verdCap}</span>
+            <span class="text-xs font-mono font-bold uppercase tracking-[0.06em] ${vc.text}">${verdCap}</span>
           </div>
         </div>
       </div>
@@ -725,7 +728,7 @@ function renderNwpList(day) {
 
   const guazzaRow = `
     <div class="${colCls} px-7 md:px-9 py-4 mb-px" style="background:rgba(99,102,241,0.07);border-left:2px solid #6366F1">
-      <div class="text-sm font-bold font-mono" style="color:#6366F1">★ Guazza ML</div>
+      <div class="text-sm font-bold font-sans" style="color:#6366F1">★ Guazza ML</div>
       <div class="text-right text-sm font-semibold tabular-nums font-mono text-white/80 whitespace-nowrap">
         <span style="color:#60A5FA">${fmtTemp(fc.tmin_c?.p50)}</span>
         <span style="color:rgba(241,245,249,0.20)" class="mx-1">·</span>
@@ -818,7 +821,7 @@ function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
   models.forEach(m => {
     const btn = document.createElement('button');
     const active = m.source === activeSource;
-    btn.className = `relative z-10 px-3 py-1 text-[11px] font-mono transition-colors duration-200 ${active ? 'font-semibold' : 'font-medium'}`;
+    btn.className = `relative z-10 px-3 py-1 text-[11px] font-mono transition-colors duration-200 ${active ? 'font-semibold' : 'font-medium hover:text-white/70'}`;
     btn.style.color = active ? '#6366F1' : 'rgba(241,245,249,0.4)';
     btn.dataset.src = m.source;
     btn.textContent = m.label;
@@ -826,7 +829,7 @@ function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
     btn.addEventListener('click', () => {
       container.querySelectorAll('[data-src]').forEach(b => {
         const isActive = b.dataset.src === m.source;
-        b.className = `relative z-10 px-3 py-1 text-[11px] font-mono transition-colors duration-200 ${isActive ? 'font-semibold' : 'font-medium'}`;
+        b.className = `relative z-10 px-3 py-1 text-[11px] font-mono transition-colors duration-200 ${isActive ? 'font-semibold' : 'font-medium hover:text-white/70'}`;
         b.style.color = isActive ? '#6366F1' : 'rgba(241,245,249,0.4)';
       });
       updatePillPosition(switchId, pillId, m.source);
@@ -1001,11 +1004,11 @@ function renderChartStatStrip(points) {
     { label: 'Vento max',    value: wMax,    color: '#14B8A6' },
   ];
   el.innerHTML = stats.map((s, i) => `
-    <div class="flex flex-col justify-center px-4 py-3"
-         style="background:#111318;border-left:2px solid ${s.color};animation:fade-up 0.28s ease-out ${i * 55}ms both">
-      <div class="text-[11px] font-mono font-semibold uppercase tracking-[0.06em] mb-1.5 leading-none whitespace-nowrap"
+    <div class="flex flex-col items-center justify-center px-4 py-3"
+         style="background:#111318;animation:fade-up 0.28s ease-out ${i * 55}ms both">
+      <div class="text-[11px] font-mono font-semibold uppercase tracking-[0.06em] mb-1.5 leading-none whitespace-nowrap text-center"
            style="color:rgba(241,245,249,0.28)">${s.label}</div>
-      <div class="text-sm font-extrabold tabular-nums leading-none" style="color:${s.color}">${s.value}</div>
+      <div class="text-sm font-extrabold tabular-nums leading-none text-center" style="color:${s.color}">${s.value}</div>
     </div>`).join('');
 }
 
