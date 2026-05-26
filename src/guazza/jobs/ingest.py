@@ -227,7 +227,7 @@ def _ingest_sir_historical_range(
 
     results: list[tuple[str, str, list[dict[str, Any]]]] = []
     _tty = sys.stderr.isatty()
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor:
         futures = {
             executor.submit(_fetch_one, sid, idst, loc_id): (sid, idst)
             for sid, idst, loc_id in combos
