@@ -161,7 +161,7 @@ Flag aggiuntivi in `historical` e `daily`:
 🟡 **Punto aperto — lead_time_h range 1-11h** (atteso fino a 168h):
 il backfill Open-Meteo ha salvato solo il run più recente per valid time, non la storia dei run.
 In produzione il fetch giornaliero accumulerà run a distanze crescenti. Da verificare dopo
-il primo mese di operatività sul VPS (Sprint 8).
+il primo mese di operatività sul server locale (Sprint 8).
 
 **Fix same-day (2026-05-17)**: il SQL di `build_features_daily` gestisce correttamente
 `lead_time_days=0` (backfill storico: ts_run e ts_valid sullo stesso giorno). Questi record
@@ -377,7 +377,7 @@ Il server `www.sir.toscana.it` serializza le connessioni lato server (~3s per re
 **Dipendenza**: nessuna — lavoro continuo prima del deploy
 
 Iterazioni di affinamento su logiche e frontend per portare il sistema a uno
-stato "production-ready" in locale prima di affrontare il deploy VPS. Scope
+stato "production-ready" in locale prima di affrontare il deploy. Scope
 aperto, definito turno per turno: bug fix, raffinamenti UX, micro-feature.
 Criterio di uscita: tutto gira pulito in locale per ≥1 settimana senza
 interventi.
@@ -413,15 +413,16 @@ interventi.
 - **Pressione atmosferica**: `pressure_hpa` (surface pressure Open-Meteo) esposta in
   `get_current_conditions()` e mostrata come 4a cella nella stats grid (grid-cols-4).
 
-### Sprint 8 — Deploy VPS
+### Sprint 8 — Deploy locale (Dell Optiplex Micro 3050 + Cloudflare Tunnel)
 **Dipendenza**: Sprint 7 chiuso, sistema stabile in locale
 
-- Provisioning Hetzner CX22, Ubuntu 24.04 LTS
+- Setup Ubuntu 24.04 LTS sul Dell Optiplex Micro 3050
+- **Cloudflare Tunnel** (`cloudflared`): espone nginx locale su guazza.it senza IP pubblico né port forwarding; SSL terminato da Cloudflare
 - Backfill storico (`historical`) per caricare SIR + Open-Meteo 2022→oggi
 - Crontab con i 4 job ingestion + `qc run` + job `predict`
-- Configurazione `.env` produzione (Netatmo, OpenAQ, Healthchecks.io), `load_dotenv` per lettura DB_PATH e HEALTHCHECKS_URL
+- Configurazione `.env` produzione (Netatmo, Healthchecks.io), `load_dotenv` per lettura DB_PATH e HEALTHCHECKS_URL
 - **Backup Cloudflare R2**: job cron periodico per backup `.duckdb` + Parquet su Cloudflare R2 (10GB free tier, egress gratis) via `rclone` o `boto3`
-- GitHub Actions → deploy SSH
+- GitHub Actions → deploy SSH (via tunnel o rete locale)
 
 ### Sprint 9 — Model monitoring
 **Dipendenza**: Deploy VPS completato (Sprint 8)
