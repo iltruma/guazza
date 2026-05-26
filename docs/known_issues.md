@@ -5,6 +5,48 @@
 
 ---
 
+## KI-019 — SIR download.php: rate-limit per IP ~4s/req dopo la 1ª chiamata
+
+**Severità**: informativa (limite architetturale, non aggirabile)
+**Stato**: documentato, nessuna azione correttiva possibile
+
+Il server `www.sir.toscana.it/archivio/download.php` applica un throttling
+deterministico per IP: la **prima** richiesta da un IP "fresco" risponde in
+~150 ms; le **successive** (entro una finestra di N minuti) vengono ritardate
+a ~4 s di TTFB indipendentemente da User-Agent, TLS handshake, cookie PHP,
+HTTP version o headers usati.
+
+### Diagnostica eseguita (2026-05-26)
+
+Verificato che nessun client-side workaround riduce il TTFB:
+- `httpx` con UA Chrome/Firefox/curl/wget → 4 s
+- `curl-cffi` con `impersonate=chrome|firefox|safari17_0` → 4 s
+- `subprocess curl` (binary di sistema) → 4 s (eccetto 1ª chiamata)
+- `urllib` con UA `curl/8.5.0` → 4 s
+- HTTP/2, gzip, Referer, Sec-Fetch-*, cookie PHPSESSID reale → nessun effetto
+
+Il browser ottiene 72 ms nell'HAR perché è la 1ª chiamata dopo un cooldown:
+ripetendo immediatamente la richiesta, anche il browser sale a ~4 s.
+
+### Implicazioni
+
+- **Daily SIR job**: ~28 combo (station × sensor) × ~4 s = **~120 s wall-clock irriducibili**.
+- `ThreadPoolExecutor(max_workers > 1)` **non aiuta**: il server serializza per IP
+  e potrebbe applicare throttle più aggressivo. `max_workers=1` è la scelta
+  corretta (impostato in `_ingest_sir_historical_range` il 2026-05-26).
+- Nessun motivo di sostituire `httpx` con `curl-cffi` o subprocess curl.
+
+### Vie teoriche di bypass (non implementate)
+
+1. Distribuire le richieste su più IP (proxy rotanti) — fuori scope, etica
+   discutibile, probabile violazione ToS SIR.
+2. Spacing artificiale fra richieste >>10 min — peggiora wall-clock, non
+   migliora.
+
+Convivere con il limite è la scelta giusta.
+
+---
+
 ## KI-017 — OpenAQ: copertura ridotta vs ARPAT diretto (AR-ENELSB-SANGIOVANNI, FI-LAVAGNINI)
 
 **Severità**: informativa
