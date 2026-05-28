@@ -567,7 +567,7 @@ img.emoji {
 
 .g-aq-cell__label {
   font-family: var(--ff-mono);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -639,7 +639,7 @@ img.emoji {
   grid-column: 2;
   grid-row: 2;
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.01em;
 }
@@ -740,9 +740,9 @@ img.emoji {
 
 .g-strip__temps {
   display: flex;
-  align-items: baseline;
-  gap: 5px;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
 
 .g-strip__tmax {
@@ -787,6 +787,26 @@ img.emoji {
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
+
+.g-strip__dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.g-strip__dot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-2);
+  flex-shrink: 0;
+}
+.g-strip__dot--verde  { background: #22c55e; }
+.g-strip__dot--giallo { background: #f59e0b; }
+.g-strip__dot--rosso  { background: #ef4444; }
 
 /* =============================================================
    DAY DETAIL
@@ -1130,8 +1150,9 @@ img.emoji {
 
 .g-detail__right-header {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
   gap: 10px;
   padding: 14px 20px 12px;
   border-bottom: 1px solid var(--border-1);

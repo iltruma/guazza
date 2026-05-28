@@ -498,7 +498,7 @@ function renderHeroSun(locMeta, now) {
   el.innerHTML = `
     <div class="g-sun-pill" title="Alba"><span>🌅</span><span>${fmtSunTime(sunTimes.sunrise)}</span></div>
     <div class="g-sun-pill" title="Tramonto"><span>🌇</span><span>${fmtSunTime(sunTimes.sunset)}</span></div>
-    <div class="g-sun-pill" title="${escHtml(moonLabel)}"><span>${moonEmoji}</span><span class="font-sans">${escHtml(moonLabel)}</span></div>`;
+    <div class="g-sun-pill" title="${escHtml(moonLabel)}"><span>${moonEmoji}</span><span>${escHtml(moonLabel)}</span></div>`;
   twemoji.parse(el, TWEMOJI_OPTS);
 }
 
@@ -549,6 +549,13 @@ function renderDayStrip(days, activeDayIdx) {
 
     const labelCls = isToday_ ? 'g-strip__label g-strip__label--today today-badge-anim' : 'g-strip__label';
 
+    const dotsHtml = indicators && Object.keys(indicators).length
+      ? `<div class="g-strip__dots">${Object.entries(indicators).map(([, ind]) => {
+          const v = ind.verdict ?? 'unknown';
+          return `<span class="g-strip__dot g-strip__dot--${v}"></span>`;
+        }).join('')}</div>`
+      : '';
+
     return `<button class="g-strip__card${active ? ' g-strip__card--active' : ''}" data-idx="${idx}" aria-pressed="${active}">
       <span class="${labelCls}">${dayLabel}</span>
       <span class="g-strip__icon">${icon}</span>
@@ -560,6 +567,7 @@ function renderDayStrip(days, activeDayIdx) {
         <span class="g-strip__precip-fill" style="width:${precipPct}%"></span>
       </div>
       <span class="g-strip__precip-val">${precipDisplay}</span>
+      ${dotsHtml}
     </button>`;
   }).join('');
 
