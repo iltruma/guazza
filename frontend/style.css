@@ -164,9 +164,9 @@ img.emoji {
   display: inline-block;
   padding: 2px 8px;
   border-radius: var(--r-md);
-  background: var(--accent-soft);
-  border: 1px solid rgba(107,127,212,0.20);
-  color: var(--accent);
+  background: var(--giallo-bg);
+  border: 1px solid var(--giallo-bd);
+  color: var(--giallo);
   font-size: 11px;
   font-family: var(--ff-mono);
   font-weight: 600;
@@ -386,7 +386,7 @@ img.emoji {
 
 .g-hero__condition-text > span:first-child {
   font-family: var(--ff-sans);
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 500;
   color: var(--text-1);
   line-height: 1.2;
@@ -394,7 +394,7 @@ img.emoji {
 
 .g-hero__condition-meta {
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
@@ -420,10 +420,10 @@ img.emoji {
   }
 }
 
-/* Stats: 4 col su mobile, 2×2 su desktop */
+/* Stats: 2×2 su mobile, inline su desktop */
 .g-hero__stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 1px;
   background: var(--border-1);
   border-top: 1px solid var(--border-1);
@@ -431,8 +431,9 @@ img.emoji {
 
 @media (min-width: 480px) {
   .g-hero__stats {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     border-top: none;
+    gap: 1px;
     flex-shrink: 0;
     border-radius: var(--r-md);
     overflow: hidden;
@@ -667,6 +668,8 @@ img.emoji {
   scroll-snap-type: x mandatory;
   padding: 4px 2px 8px;
   scrollbar-width: none;
+  min-width: 0;
+  width: 100%;
 }
 .g-strip::-webkit-scrollbar { display: none; }
 
@@ -1112,6 +1115,13 @@ img.emoji {
 }
 .g-nwp__row--guazza:hover td { background: var(--surface-3); }
 
+.g-nwp__row--active td {
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
+.g-nwp__row--active:hover td { background: var(--accent-soft); }
+.g-nwp__row--guazza.g-nwp__row--active td { background: var(--accent-dim); }
+
 .g-nwp__name { font-family: var(--ff-sans); font-size: 13px; }
 .g-nwp__name--guazza { color: var(--accent); }
 .g-nwp__run {
@@ -1157,10 +1167,9 @@ img.emoji {
 
 .g-detail__right-header {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
   padding: 14px 20px 12px;
   border-bottom: 1px solid var(--border-1);
 }

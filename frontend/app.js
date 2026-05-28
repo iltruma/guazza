@@ -47,7 +47,6 @@ const RADAR_ZOOM           = 7;
 let currentData         = null;
 let selectedDayIdx      = 0;
 let selectedModel       = 'guazza';
-let selectedWeeklyModel = 'guazza';
 let meteoChart          = null;
 let multiDayChart       = null;
 let radarMap     = null;
@@ -391,7 +390,7 @@ function renderHero(data) {
   if (condEl) {
     const meta = [
       current?.feels_like_c != null ? `percepita ${current.feels_like_c.toFixed(1)}°` : null,
-      current?.ts ? `SIR ${new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : null,
+      current?.ts ? `dati SIR ${new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : null,
     ].filter(Boolean).join(' · ');
     condEl.innerHTML = `<span>${escHtml(condText)}</span>${meta ? `<span class="g-hero__condition-meta">${escHtml(meta)}</span>` : ''}`;
   }
@@ -684,6 +683,25 @@ function computeNwpDelta(modelVal, guazzaVal, kind) {
     : { text: `${sign}${fmt}`, cls: 'g-delta--dry' };
 }
 
+function nwpDailyStats(source, targetDate) {
+  const mdl = (currentData?.nwp_models_hourly || []).find(x => x.source === source);
+  if (!mdl) return { hum: null, wind: null };
+  const [y, mo, d] = targetDate.split('-').map(Number);
+  const dayStart = new Date(y, mo - 1, d, 0, 0, 0);
+  const dayEnd   = new Date(y, mo - 1, d, 23, 59, 59);
+  const pts = (mdl.data || []).filter(pt => {
+    const ts = new Date(pt.ts.replace('Z', ''));
+    return ts >= dayStart && ts <= dayEnd;
+  });
+  if (!pts.length) return { hum: null, wind: null };
+  const hums  = pts.map(p => p.humidity_pct).filter(v => v != null);
+  const winds = pts.map(p => p.wind_speed_ms).filter(v => v != null);
+  return {
+    hum:  hums.length  ? hums.reduce((a, b) => a + b, 0) / hums.length : null,
+    wind: winds.length ? Math.max(...winds) : null,
+  };
+}
+
 function renderNwpList(day) {
   const el  = document.getElementById('nwp-list');
   const nwp = day.nwp_comparison;
@@ -698,15 +716,25 @@ function renderNwpList(day) {
     <th>Modello</th>
     <th>T min</th>
     <th>T max</th>
-    <th>Precip</th>
+    <th>Precip TOT</th>
+    <th>Um. Media</th>
+    <th>Vento Max</th>
     <th>Run</th>
   </tr></thead>`;
 
-  const guazzaRow = `<tr class="g-nwp__row g-nwp__row--guazza">
+  const gHourly = day.hourly || [];
+  const gHums   = gHourly.map(h => h.humidity_pct).filter(v => v != null);
+  const gWinds  = gHourly.map(h => h.wind_speed_ms).filter(v => v != null);
+  const gHum    = gHums.length  ? gHums.reduce((a, b) => a + b, 0) / gHums.length : null;
+  const gWind   = gWinds.length ? Math.max(...gWinds) : null;
+
+  const guazzaRow = `<tr class="g-nwp__row g-nwp__row--guazza" data-source="guazza">
     <td><span class="g-nwp__name g-nwp__name--guazza">★ Guazza ML</span></td>
     <td>${gTmin != null ? gTmin.toFixed(1)+'°' : '—'}</td>
     <td>${gTmax != null ? gTmax.toFixed(1)+'°' : '—'}</td>
     <td>${gPrec != null ? gPrec.toFixed(1)+' mm' : '—'}</td>
+    <td>${gHum  != null ? gHum.toFixed(0)+'%'                   : '—'}</td>
+    <td>${gWind != null ? (gWind * 3.6).toFixed(0)+' km/h'      : '—'}</td>
     <td style="color:var(--text-3);font-size:10px">${currentData?.generated_at
       ? new Date(currentData.generated_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})
       : '—'}</td>
@@ -716,7 +744,10 @@ function renderNwpList(day) {
     const dTmin = computeNwpDelta(m.tmin_c, gTmin, 'temp');
     const dTmax = computeNwpDelta(m.tmax_c, gTmax, 'temp');
     const dPrec = computeNwpDelta(m.precip_mm, gPrec, 'precip');
-    return `<tr class="g-nwp__row">
+    const st    = nwpDailyStats(m.source, day.target_date);
+    const hum   = st.hum  != null ? st.hum.toFixed(0)+'%'                  : '—';
+    const wind  = st.wind != null ? (st.wind * 3.6).toFixed(0)+' km/h'     : '—';
+    return `<tr class="g-nwp__row" data-source="${escHtml(m.source)}">
       <td>
         <span class="g-nwp__name">${escHtml(m.label)}</span>
         <span class="g-nwp__run">${fmtLastRun(m.last_run)}</span>
@@ -724,11 +755,20 @@ function renderNwpList(day) {
       <td class="g-nwp__val">${m.tmin_c != null ? m.tmin_c.toFixed(1)+'°' : '—'}${dTmin.text ? `<span class="g-delta ${dTmin.cls}">${dTmin.text}</span>` : ''}</td>
       <td class="g-nwp__val">${m.tmax_c != null ? m.tmax_c.toFixed(1)+'°' : '—'}${dTmax.text ? `<span class="g-delta ${dTmax.cls}">${dTmax.text}</span>` : ''}</td>
       <td class="g-nwp__val">${m.precip_mm != null ? m.precip_mm.toFixed(1)+' mm' : '—'}${dPrec.text ? `<span class="g-delta ${dPrec.cls}">${dPrec.text}</span>` : ''}</td>
+      <td class="g-nwp__val">${hum}</td>
+      <td class="g-nwp__val">${wind}</td>
       <td style="color:var(--text-3);font-size:10px">${m.last_run ? new Date(m.last_run).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}) : '—'}</td>
     </tr>`;
   }).join('');
 
   el.innerHTML = `<table class="g-nwp__table">${thead}<tbody>${guazzaRow}${nwpRows}</tbody></table>`;
+  highlightNwpRow(selectedModel);
+}
+
+function highlightNwpRow(source) {
+  document.querySelectorAll('#nwp-list .g-nwp__row[data-source]').forEach(row => {
+    row.classList.toggle('g-nwp__row--active', row.dataset.source === source);
+  });
 }
 
 // ── Coverage ──────────────────────────────────────────────────────────────────
@@ -753,19 +793,32 @@ function renderCoverage(cov) {
 
 // ── Model switches (segmented control) ───────────────────────────────────────
 
-function initModelSwitch(data) {
-  _buildModelSwitch(data, 'model-switch', 'model-pill', selectedModel, src => {
-    selectedModel = src;
-    const td = currentData.days[selectedDayIdx]?.target_date;
-    if (td) updateChartModel(currentData, selectedModel, td);
+function setActiveModel(src) {
+  selectedModel = src;
+
+  // sync entrambi i switch UI
+  ['model-switch', 'weekly-model-switch'].forEach(switchId => {
+    const pillId = switchId === 'model-switch' ? 'model-pill' : 'weekly-model-pill';
+    const container = document.getElementById(switchId);
+    if (!container) return;
+    container.querySelectorAll('[data-src]').forEach(b => {
+      b.className = `g-model-switch__btn${b.dataset.src === src ? ' g-model-switch__btn--active' : ''}`;
+    });
+    updatePillPosition(switchId, pillId, src);
   });
+
+  const td = currentData?.days[selectedDayIdx]?.target_date;
+  if (td) updateChartModel(currentData, selectedModel, td);
+  updateWeeklyChart(currentData, selectedModel);
+  highlightNwpRow(src);
+}
+
+function initModelSwitch(data) {
+  _buildModelSwitch(data, 'model-switch', 'model-pill', selectedModel, setActiveModel);
 }
 
 function initWeeklyModelSwitch(data) {
-  _buildModelSwitch(data, 'weekly-model-switch', 'weekly-model-pill', selectedWeeklyModel, src => {
-    selectedWeeklyModel = src;
-    updateWeeklyChart(currentData, selectedWeeklyModel);
-  });
+  _buildModelSwitch(data, 'weekly-model-switch', 'weekly-model-pill', selectedModel, setActiveModel);
 }
 
 function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
@@ -943,35 +996,6 @@ function _makeTooltipHandler(elId) {
 const externalTooltipHandler       = _makeTooltipHandler('chart-tooltip');
 const externalTooltipHandlerWeekly = _makeTooltipHandler('chart-weekly-tooltip');
 
-function renderChartStatStrip(points) {
-  const el = document.getElementById('chart-stat-strip');
-  if (!el) return;
-  if (!points.length) { el.innerHTML = ''; return; }
-
-  const temps  = points.map(p => p.temp_c).filter(v => v != null);
-  const hums   = points.map(p => p.humidity_pct).filter(v => v != null);
-  const precip = points.reduce((s, p) => s + (p.precip_mm ?? 0), 0);
-  const winds  = points.map(p => p.wind_speed_ms).filter(v => v != null);
-
-  const tRange  = temps.length  ? `${Math.min(...temps).toFixed(1)}–${Math.max(...temps).toFixed(1)}°` : '—';
-  const hAvg    = hums.length   ? `${(hums.reduce((a,b)=>a+b,0)/hums.length).toFixed(0)}%` : '—';
-  const precipS = precip > 0.05 ? `${precip.toFixed(1)} mm` : '—';
-  const wMax    = winds.length  ? `${(Math.max(...winds) * 3.6).toFixed(0)} km/h` : '—';
-
-  const stats = [
-    { label: 'Range temp',  value: tRange,  color: '#F97316' },
-    { label: 'Umid. media', value: hAvg,    color: '#0EA5E9' },
-    { label: 'Precip tot.', value: precipS, color: '#2563EB' },
-    { label: 'Vento max',   value: wMax,    color: '#14B8A6' },
-  ];
-  el.innerHTML = stats.map((s, i) => `
-    <div class="g-stat-strip__cell" style="animation-delay:${i * 55}ms">
-      <span class="g-stat-strip__label">
-        <span class="g-chart-legend__dot" style="background:${s.color}"></span>${s.label}
-      </span>
-      <span class="g-stat-strip__value" style="color:${s.color}">${s.value}</span>
-    </div>`).join('');
-}
 
 function _buildChartDatasets(canvas, points, p) {
   const { data: precipData, bg: precipBg } = precipDatasets(points);
@@ -1058,7 +1082,6 @@ function initChart(data, model, targetDate) {
     data: { datasets: _buildChartDatasets(canvas, points, p) },
     options: _baseChartOptions(p, xMin, xMax, 'hour'),
   });
-  renderChartStatStrip(points);
 }
 
 function updateChartModel(data, model, targetDate) {
@@ -1069,7 +1092,6 @@ function updateChartModel(data, model, targetDate) {
   const ds = _buildChartDatasets(canvas, points, p);
   meteoChart.data.datasets.forEach((d, i) => { d.data = ds[i].data; if (i === 2) d.backgroundColor = ds[i].backgroundColor; });
   meteoChart.update();
-  renderChartStatStrip(points);
 }
 
 function initWeeklyChart(data, model) {
@@ -1275,7 +1297,7 @@ function render(data) {
     initModelSwitch(data);
     initWeeklyModelSwitch(data);
     if (targetDate) initChart(data, selectedModel, targetDate);
-    initWeeklyChart(data, selectedWeeklyModel);
+    initWeeklyChart(data, selectedModel);
   }
 
   renderCoverage(data.coverage_empirical_30d);
@@ -1290,8 +1312,7 @@ function render(data) {
 async function loadLocation(locId) {
   renderTabs(locId);
   selectedDayIdx      = 0;
-  selectedModel       = 'guazza';
-  selectedWeeklyModel = 'guazza';
+  selectedModel = 'guazza';
 
   const fs = document.getElementById('forecast-section');
   if (fs) { fs.classList.add('hidden'); fs.style.display = 'none'; }

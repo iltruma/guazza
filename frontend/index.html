@@ -184,9 +184,18 @@
               <div id="model-switch" class="g-model-switch">
                 <span id="model-pill" class="g-model-switch__pill"></span>
               </div>
+              <div class="g-chart-legend">
+                <span class="g-chart-legend__item">
+                  <span class="g-chart-legend__dot" style="background:#F97316"></span>Temp
+                </span>
+                <span class="g-chart-legend__item">
+                  <span class="g-chart-legend__dot" style="background:#0EA5E9"></span>Umidità
+                </span>
+                <span class="g-chart-legend__item">
+                  <span class="g-chart-legend__dot" style="background:#2563EB;opacity:0.7"></span>Precip
+                </span>
+              </div>
             </div>
-
-            <div id="chart-stat-strip" class="g-stat-strip"></div>
 
             <div class="g-chart-wrap">
               <canvas id="meteo-chart"></canvas>
@@ -212,20 +221,22 @@
     <!-- ③ GRAFICO SETTIMANALE -->
     <section id="chart-weekly-section" class="g-card hidden">
       <div class="g-card__header">
-        <div class="g-chart-legend">
-          <span class="g-section__kicker" style="padding:0;font-size:10px">7 giorni</span>
-          <span class="g-chart-legend__item">
-            <span class="g-chart-legend__dot" style="background:#F97316"></span>Temp
-          </span>
-          <span class="g-chart-legend__item">
-            <span class="g-chart-legend__dot" style="background:#0EA5E9"></span>Umidità
-          </span>
-          <span class="g-chart-legend__item">
-            <span class="g-chart-legend__dot" style="background:#2563EB;opacity:0.7"></span>Precip
-          </span>
-        </div>
-        <div id="weekly-model-switch" class="g-model-switch">
-          <span id="weekly-model-pill" class="g-model-switch__pill"></span>
+        <span class="g-section__kicker" style="padding:0;font-size:10px">7 giorni</span>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+          <div id="weekly-model-switch" class="g-model-switch">
+            <span id="weekly-model-pill" class="g-model-switch__pill"></span>
+          </div>
+          <div class="g-chart-legend">
+            <span class="g-chart-legend__item">
+              <span class="g-chart-legend__dot" style="background:#F97316"></span>Temp
+            </span>
+            <span class="g-chart-legend__item">
+              <span class="g-chart-legend__dot" style="background:#0EA5E9"></span>Umidità
+            </span>
+            <span class="g-chart-legend__item">
+              <span class="g-chart-legend__dot" style="background:#2563EB;opacity:0.7"></span>Precip
+            </span>
+          </div>
         </div>
       </div>
       <div class="g-chart-wrap">
