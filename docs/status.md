@@ -399,6 +399,16 @@ interventi.
 - **Stile dark**: override CSS per Leaflet attribution e zoom bar
 - **max zoom 7**: limite RainViewer (non Leaflet) — tile non disponibili a zoom 8+
 
+#### Intraday correction D+0 — da fare (opzione B)
+
+Correzione aritmetica delle ore rimanenti per D+0, senza nuovo modello:
+
+- In `compute_hourly_profile`: per le ore già trascorse usare SIR osservato (già in DB);
+  calcolare `somma_osservata` dalle righe `observations` con `granularity='realtime'` del giorno corrente
+- `remaining = max(0, E[precip] - somma_osservata)`; riscalare il profilo NWP sulle sole ore future con questo anchor
+- Se `remaining == 0` e `somma_osservata > E[precip]`: mostrare le ore future a 0 (ha già piovuto più del previsto)
+- Nessuna modifica al modello ML né alle feature; solo `output.py` + `jobs/predict.py`
+
 #### Raffinamenti frontend (2026-05-20 → 2026-05-22)
 
 - **Twemoji** (`twemoji@14.0.2`, jsDelivr): emoji Unicode renderizzate come SVG per
@@ -424,12 +434,23 @@ interventi.
 - **Backup Cloudflare R2**: job cron periodico per backup `.duckdb` + Parquet su Cloudflare R2 (10GB free tier, egress gratis) via `rclone` o `boto3`
 - GitHub Actions → deploy SSH (via tunnel o rete locale)
 
-### Sprint 9 — Model monitoring
+### Sprint 9 — Model monitoring + nowcasting
 **Dipendenza**: Deploy VPS completato (Sprint 8)
 
 - Job cron che calcola `coverage_empirical_30d` rolling e la confronta con target (80% per CI80, 90% per CI90)
 - Alert se coverage scende sotto soglia: log `ERROR` + ping `Healthchecks.io` fail
 - Requisito obbligatorio D-004
+
+#### Nowcasting orario — da pianificare (opzione C)
+
+Predizione oraria 0-6h con aggiornamento ogni 15-30 min. Architetturalmente separato dal modello day-ahead:
+
+- **Feature set diverso**: osservazioni SIR realtime correnti + trend ultime 3h + NWP più recente (run 0-6h)
+- **Target**: precip_mm, temp_c orarie per le prossime 1-6h (orizzonte fisso, no lead_time_h variabile)
+- **Modello separato**: training set su coppie (obs_t, features_t-1..t-3) → obs_t+1..t+6
+- **Cadenza cron**: ogni 15-30 min (subito dopo `realtime` ingest)
+- **Output JSON**: campo `nowcast` nell'output per location, striscia oraria 0-6h
+- **Dipendenza dati**: almeno 6-12 mesi di `realtime` in produzione per training set sufficiente → non prima di Sprint 11+
 
 ### Sprint 10 — Calibrazione soglie DLE post-deploy
 **Dipendenza**: 30-60 giorni di operatività in produzione (Sprint 8+9)
