@@ -41,11 +41,11 @@ const AQ_THRESHOLDS = {
   so2:     [140, 280],
 };
 
-const PLAY_EMOJI  = '▶️';
-const PAUSE_EMOJI = '⏸️';
+const PLAY_SVG  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="6,3 20,12 6,21"/></svg>';
+const PAUSE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
 
 function playBtnHtml(playing) {
-  return `<span class="text-base leading-none">${playing ? PAUSE_EMOJI : PLAY_EMOJI}</span>`;
+  return playing ? PAUSE_SVG : PLAY_SVG;
 }
 
 // Twemoji per le hero stats
@@ -58,8 +58,8 @@ const STAT_ICONS = {
 
 const RV_API               = 'https://api.rainviewer.com/public/weather-maps.json';
 const RV_TTL_MS            = 5 * 60 * 1000;
-const RADAR_PAST_FRAMES    = 7;
-const RADAR_NOWCAST_FRAMES = 6;
+const RADAR_PAST_FRAMES    = 24;
+const RADAR_NOWCAST_FRAMES = 12;
 const RADAR_ZOOM           = 7;
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ function weatherIcon(precipP50, tmaxP50, temporaleVerdict, nebbiaVerdict) {
 
 function weatherIconForDay(day) {
   return weatherIcon(
-    day.forecasts.precip_mm?.p50 ?? 0,
+    (day.forecasts.precip_mm?.mean ?? day.forecasts.precip_mm?.p50) ?? 0,
     day.forecasts.tmax_c?.p50   ?? null,
     day.indicators.temporale?.verdict,
     day.indicators.nebbia?.verdict,
@@ -497,7 +497,7 @@ function renderHeroSun(locMeta, now) {
   const moonPhase = SunCalc.getMoonIllumination(now).phase;
   const idx       = Math.round(moonPhase * 8) % 8;
   const moonEmoji = ['🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘'][idx];
-  const moonLabel = ['Luna nuova','Luna crescente','Primo quarto','Gibbosa crescente','Luna piena','Gibbosa calante','Ultimo quarto','Luna calante'][idx];
+  const moonLabel = ['LUNA NUOVA','LUNA CRESCENTE','PRIMO QUARTO','GIBBOSA CRESCENTE','LUNA PIENA','GIBBOSA CALANTE','ULTIMO QUARTO','LUNA CALANTE'][idx];
 
   /* Three glassmorphic pills: sunrise · sunset · moon phase */
   el.innerHTML = `
@@ -550,24 +550,25 @@ function renderHeroIndicators(todayDay) {
 
 function ciBar(fc, unit) {
   if (!fc) return '';
-  const { p50, ci80_lo, ci80_hi, ci90_lo, ci90_hi } = fc;
-  if (p50 == null || ci90_lo == null || ci90_hi == null) return '';
+  const { p50, mean, ci80_lo, ci80_hi, ci90_lo, ci90_hi } = fc;
+  const anchor = mean ?? p50;
+  if (anchor == null || ci90_lo == null || ci90_hi == null) return '';
   const range = ci90_hi - ci90_lo;
   if (range <= 0) return '';
   const pct      = v => Math.max(0, Math.min(100, ((v - ci90_lo) / range) * 100));
   const p80l     = (ci80_lo != null ? pct(ci80_lo) : 0).toFixed(2);
   const p80w     = (ci80_lo != null && ci80_hi != null ? pct(ci80_hi) - pct(ci80_lo) : 100).toFixed(2);
-  const p50pos   = pct(p50).toFixed(2);
+  const anchorPos = pct(anchor).toFixed(2);
   return `
     <div class="mt-4">
       <div class="relative h-1.5 rounded-full" style="overflow:visible;background:rgba(255,255,255,0.08)">
         <div class="ci-range-90 absolute inset-0 rounded-full" style="background:rgba(255,255,255,0.10);transform-origin:left"></div>
         <div class="ci-range-80 absolute top-0 h-full rounded-full" style="background:rgba(99,102,241,0.35);left:${p80l}%;width:${p80w}%;transform-origin:left"></div>
-        <div class="ci-median absolute w-3 h-3 rounded-full" style="background:#111318;border:2px solid #6366F1;top:50%;margin-left:-6px;left:${p50pos}%"></div>
+        <div class="ci-median absolute w-3 h-3 rounded-full" style="background:#111318;border:2px solid #6366F1;top:50%;margin-left:-6px;left:${anchorPos}%"></div>
       </div>
       <div class="flex justify-between mt-2 text-xs tabular-nums font-mono" style="color:rgba(241,245,249,0.38)">
         <span>${ci90_lo.toFixed(1)}${unit}</span>
-        <span class="text-slate-500 dark:text-slate-300">${p50.toFixed(1)}${unit}</span>
+        <span class="text-slate-500 dark:text-slate-300">${anchor.toFixed(1)}${unit}</span>
         <span>${ci90_hi.toFixed(1)}${unit}</span>
       </div>
     </div>`;
@@ -583,7 +584,7 @@ function renderDayStrip(days, activeDayIdx) {
     const diff    = diffDays(target_date);
     const icon    = weatherIconForDay(day);
     const condText = weatherConditionText(
-      fc.precip_mm?.p50 ?? 0,
+      (fc.precip_mm?.mean ?? fc.precip_mm?.p50) ?? 0,
       fc.tmax_c?.p50   ?? null,
       indicators.temporale?.verdict,
       indicators.nebbia?.verdict,
@@ -659,6 +660,11 @@ function renderDayDetail(day) {
   document.getElementById('detail-title').textContent = fmtDayLabel(target_date);
   document.getElementById('detail-date').textContent  = fmtDate(target_date);
   document.getElementById('detail-lead').textContent  = `+${lead_time_h}h`;
+  const emessaEl = document.getElementById('detail-emessa');
+  if (emessaEl && currentData?.generated_at) {
+    const t = new Date(currentData.generated_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    emessaEl.textContent = `prev. emessa ${t}`;
+  }
 
   /* Tmax: warm orange, no arrow — number speaks for itself */
   document.getElementById('detail-tmax').innerHTML =
@@ -667,7 +673,7 @@ function renderDayDetail(day) {
   document.getElementById('detail-tmin').innerHTML =
     `<span style="color:#60A5FA">${fmtTemp(fc.tmin_c?.p50)}</span>`;
 
-  const precipVal = fc.precip_mm?.p50;
+  const precipVal = fc.precip_mm?.mean ?? fc.precip_mm?.p50;
   document.getElementById('detail-precip-val').innerHTML = precipVal != null && precipVal > 0.05
     ? `${precipVal.toFixed(1)}<span class="text-xl font-medium ml-1.5" style="color:rgba(241,245,249,0.30)">mm</span>`
     : '<span style="color:rgba(241,245,249,0.30)">—</span>';
@@ -734,7 +740,7 @@ function renderNwpList(day) {
         <span style="color:rgba(241,245,249,0.20)" class="mx-1">·</span>
         <span style="color:#F97316">${fmtTemp(fc.tmax_c?.p50)}</span>
       </div>
-      <div class="text-right text-sm font-semibold tabular-nums font-mono text-sky-600 dark:text-sky-400 whitespace-nowrap">${fmtPrecip(fc.precip_mm?.p50)}</div>
+      <div class="text-right text-sm font-semibold tabular-nums font-mono text-sky-600 dark:text-sky-400 whitespace-nowrap">${fmtPrecip(fc.precip_mm?.mean ?? fc.precip_mm?.p50)}</div>
     </div>`;
 
   /* Column sub-header */
@@ -1221,17 +1227,15 @@ function wireRadarControls() {
     slider.max = String(radarFrames.length - 1);
     slider.addEventListener('input', () => {
       radarPlaying = false;
-      if (playBtn) { playBtn.innerHTML = playBtnHtml(false); twemoji.parse(playBtn, TWEMOJI_OPTS); }
+      if (playBtn) { playBtn.innerHTML = playBtnHtml(false); }
       showRadarFrame(parseInt(slider.value, 10));
     });
   }
   if (playBtn) {
     playBtn.innerHTML = playBtnHtml(false);
-    twemoji.parse(playBtn, TWEMOJI_OPTS);
     playBtn.addEventListener('click', () => {
       radarPlaying = !radarPlaying;
       playBtn.innerHTML = playBtnHtml(radarPlaying);
-      twemoji.parse(playBtn, TWEMOJI_OPTS);
     });
   }
   document.getElementById('radar-zoom-in')?.addEventListener('click',  () => radarMap?.zoomIn());
