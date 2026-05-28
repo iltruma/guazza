@@ -1246,7 +1246,7 @@ function buildRadarMap(locationId, host, frames) {
   }).addTo(radarMap);
 
   L.control.attribution({
-    position: 'topright'
+    position: 'bottomright'
   }).addTo(radarMap);
 
   const sonarHtml = `<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px rgba(59,164,194,0.35)"></div>`;
