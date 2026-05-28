@@ -674,13 +674,11 @@ function computeNwpDelta(modelVal, guazzaVal, kind) {
   const sign  = delta >= 0 ? '+' : '';
   const fmt   = delta.toFixed(1);
   if (kind === 'temp') {
-    if (absD < 0.5) return { text: `${sign}${fmt}°`, cls: 'g-delta--muted' };
     return delta > 0
       ? { text: `${sign}${fmt}°`, cls: 'g-delta--warm' }
       : { text: `${sign}${fmt}°`, cls: 'g-delta--cold' };
   }
   // precip
-  if (absD < 0.3) return { text: `${sign}${fmt}`, cls: 'g-delta--muted' };
   return delta > 0
     ? { text: `${sign}${fmt}`, cls: 'g-delta--wet' }
     : { text: `${sign}${fmt}`, cls: 'g-delta--dry' };
