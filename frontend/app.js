@@ -1180,7 +1180,7 @@ function showRadarFrame(i) {
       badgeEl.textContent   = 'Previsione';
       badgeEl.style.cssText = 'background:rgba(59,164,194,0.15);color:#3BA4C2';
     } else {
-      badgeEl.textContent   = 'Osservato';
+      badgeEl.textContent   = 'LIVE';
       badgeEl.style.cssText = 'background:rgba(52,211,153,0.15);color:#34D399';
     }
     badgeEl.classList.remove('hidden');
@@ -1238,11 +1238,15 @@ function buildRadarMap(locationId, host, frames) {
   radarMap = L.map('radar-map', {
     center: [loc.lat, loc.lon], zoom: 11,
     minZoom: 3, maxZoom: 12, zoomControl: false,
-    attributionControl: true, scrollWheelZoom: false,
+    attributionControl: false, scrollWheelZoom: false,
   });
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     minZoom: 3, maxZoom: 12, zIndex: 1,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>, &copy; <a href="https://carto.com">CARTO</a>',
+  }).addTo(radarMap);
+
+  L.control.attribution({
+    position: 'topright'
   }).addTo(radarMap);
 
   const sonarHtml = `<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px rgba(59,164,194,0.35)"></div>`;
