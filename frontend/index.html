@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="it" data-theme="dark" class="dark" style="scroll-behavior:smooth">
+<html lang="it" style="scroll-behavior:smooth">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,14 +7,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script>
-    tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: {
-      sans: ['Geist','system-ui','sans-serif'],
-      mono: ['JetBrains Mono','ui-monospace','monospace'],
-    } } } };
-  </script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js" defer></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
@@ -24,330 +16,233 @@
   <link rel="stylesheet" href="style.css">
 </head>
 
-<body class="bg-[#0F1117] text-[#F1F5F9] font-sans antialiased min-h-screen">
+<body>
 
-  <!-- HEADER: sticky, minimal border — no full glassmorphism on outer container -->
-  <header class="sticky top-0 z-50 border-b" style="background:rgba(15,17,23,0.92);border-color:rgba(255,255,255,0.07);backdrop-filter:blur(20px)">
-    <div class="max-w-6xl mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-4">
-      <div class="flex items-center gap-2.5 shrink-0">
-        <span class="text-xl leading-none shrink-0">🌧️</span>
-        <span class="text-sm font-bold tracking-tight text-white">Guazza</span>
+  <header class="g-header" id="g-header">
+    <div class="g-header__top">
+      <div class="g-header__brand">
+        <span>🌧️</span>
+        <span>Guazza</span>
       </div>
-      <div id="header-meta" class="flex items-center gap-2 text-xs font-mono text-white/30 tabular-nums"></div>
+      <div id="header-meta" class="g-header__meta"></div>
     </div>
-    <div class="max-w-6xl mx-auto px-4 md:px-6 pb-2.5">
-      <nav id="tabs" class="flex gap-1 overflow-x-auto no-scrollbar snap-x" aria-label="Location"></nav>
+    <div class="g-tabs-wrap">
+      <nav id="tabs" class="g-tabs no-scrollbar" aria-label="Location"></nav>
     </div>
   </header>
 
-  <main id="app" class="max-w-6xl mx-auto px-4 md:px-6 py-8 flex flex-col gap-8 overflow-x-hidden">
+  <main id="app" class="g-main">
 
-    <!-- Skeleton: rispecchia la silhouette reale (hero, radar, day strip, day detail, charts) -->
-    <div id="skeleton-state" class="flex flex-col gap-8" aria-hidden="true">
-      <div class="rounded-2xl bg-white/[0.04] skeleton" style="height:440px"></div>
-      <div class="rounded-2xl bg-white/[0.04] skeleton" style="height:300px"></div>
-      <div class="flex gap-2 overflow-hidden">
-        <div class="rounded-xl bg-white/[0.04] skeleton shrink-0" style="width:120px;height:110px"></div>
-        <div class="rounded-xl bg-white/[0.04] skeleton shrink-0" style="width:120px;height:110px"></div>
-        <div class="rounded-xl bg-white/[0.04] skeleton shrink-0" style="width:120px;height:110px"></div>
-        <div class="rounded-xl bg-white/[0.04] skeleton shrink-0" style="width:120px;height:110px"></div>
-        <div class="rounded-xl bg-white/[0.04] skeleton shrink-0" style="width:120px;height:110px"></div>
+    <!-- Skeleton -->
+    <div id="skeleton-state" class="g-skeleton" aria-hidden="true">
+      <div class="g-skeleton__block" style="height:116px"></div>
+      <div class="g-skeleton__strip">
+        <div class="g-skeleton__strip-card"></div>
+        <div class="g-skeleton__strip-card"></div>
+        <div class="g-skeleton__strip-card"></div>
+        <div class="g-skeleton__strip-card"></div>
+        <div class="g-skeleton__strip-card"></div>
       </div>
-      <div class="rounded-2xl bg-white/[0.04] skeleton" style="height:380px"></div>
-      <div class="rounded-2xl bg-white/[0.04] skeleton" style="height:340px"></div>
+      <div class="g-skeleton__block" style="height:480px"></div>
+      <div class="g-skeleton__block" style="height:300px"></div>
     </div>
 
     <!-- Error -->
-    <div id="error-state" class="hidden">
-      <div class="rounded-lg bg-red-500/10 border border-red-500/20 p-5 text-red-400 font-mono text-sm">
-        <p class="font-semibold" id="error-msg">Errore nel caricamento</p>
-        <p class="text-xs mt-1 opacity-60">Assicurati che il server stia servendo i JSON da /data/</p>
-      </div>
+    <div id="error-state" class="g-error hidden">
+      <p class="g-error__msg" id="error-msg">Errore nel caricamento</p>
+      <p class="g-error__hint">Assicurati che il server stia servendo i JSON da /data/</p>
     </div>
 
-    <!-- ① HERO: Condizioni Attuali — Mineral Dark, cinematic scale -->
-    <section id="hero-card" class="hidden relative rounded-2xl overflow-hidden mineral-hero anim-fade-up"
-             style="min-height:440px">
+    <!-- ① HERO -->
+    <section id="hero-card" class="g-hero hidden anim-fade-up">
+      <div class="g-hero__inner">
 
-      <!-- JS temperature tint overlay -->
-      <div id="hero-temp-gradient" class="absolute inset-0 pointer-events-none z-0 opacity-20"></div>
-      <!-- Accent top line: ambra -->
-      <div class="absolute top-0 inset-x-0 h-[2px] z-10"
-           style="background:linear-gradient(90deg,transparent,rgba(99,102,241,0.5),transparent)"></div>
-
-      <div class="relative z-10 flex flex-col h-full" style="min-height:440px">
-
-        <!-- Live badge row -->
-        <div class="px-8 md:px-12 pt-7 pb-0 flex items-center gap-2">
-          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 live-pulse shrink-0"></span>
-          <span class="text-[11px] font-mono font-semibold tracking-[0.18em] uppercase" style="color:rgba(99,102,241,0.85)">Live</span>
-        </div>
-
-        <!-- Temperature + icon — main event, flexes to fill available space -->
-        <div class="flex-1 flex items-center justify-between px-8 md:px-12 py-6 gap-6">
-          <div class="min-w-0">
-            <div id="hero-temp" class="hero-temp-display font-sans text-white">—</div>
-            <div id="hero-meta" class="mt-4 flex flex-wrap gap-4 text-[13px] text-white/40 font-mono tabular-nums"></div>
+        <div class="g-hero__identity">
+          <div class="g-hero__loc" id="hero-loc-name">
+            <span class="g-hero__loc-pulse"></span>
+            <span>—</span>
           </div>
-          <div id="hero-icon" class="hero-icon-size hero-icon-float cursor-default select-none shrink-0"></div>
+          <div class="g-hero__body">
+            <div class="g-hero__temp-side">
+              <div class="g-hero__temp-row">
+                <span id="hero-icon" class="g-hero__icon"></span>
+                <span id="hero-temp" class="font-sans">—</span>
+              </div>
+              <div id="hero-condition" class="g-hero__condition-text"></div>
+            </div>
+            <div class="g-hero__stats" id="hero-stats"></div>
+          </div>
         </div>
 
-        <!-- Stats bento: 4 cells, taller -->
-        <div id="hero-stats" class="grid grid-cols-2 md:grid-cols-4 gap-px border-t"
-             style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.06)"></div>
+        <!-- indicators inline (scroll, no wrap) -->
+        <div class="g-hero__indicators" id="hero-indicators"></div>
 
-        <!-- Indicatori DLE -->
-        <div class="px-8 md:px-12 py-5 border-t" style="border-color:rgba(255,255,255,0.06)">
-          <div id="hero-indicators" class="flex flex-wrap gap-2.5"></div>
-        </div>
+        <!-- alba · tramonto · fase lunare -->
+        <div class="g-hero__sun" id="hero-sun"></div>
 
-      </div>
-
-      <!-- Footer: qualità aria + sole/luna -->
-      <div class="relative z-10 px-8 md:px-12 py-4 flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center border-t"
-           style="border-color:rgba(255,255,255,0.06)">
-        <div class="min-w-0">
-          <div class="text-[11px] font-mono font-semibold mb-2 uppercase tracking-[0.12em]"
-               id="hero-aq-label" style="color:rgba(241,245,249,0.18)">Qualità aria</div>
-          <div id="hero-aq" class="flex flex-wrap gap-1.5"></div>
-        </div>
-        <div id="hero-sun" class="shrink-0"></div>
       </div>
     </section>
 
-    <!-- ② RADAR -->
-    <section id="radar-section" class="hidden relative rounded-2xl overflow-hidden border h-[300px] md:h-[400px]"
-             style="background:#0F1117;border-color:rgba(255,255,255,0.07)">
-
-      <div id="radar-map" class="absolute inset-0 z-[1]"></div>
-
-      <!-- Top-left: identity pill -->
-      <div class="absolute top-3 left-3 z-[6] flex items-center gap-2.5 px-3 py-1.5 rounded-lg border"
-           style="background:rgba(15,17,23,0.72);border-color:rgba(255,255,255,0.08);backdrop-filter:blur(12px)">
-        <div class="relative w-2 h-2 flex-none">
-          <span class="absolute inset-0 rounded-full bg-indigo-500"></span>
-          <span class="absolute rounded-full pointer-events-none"
-                style="inset:-4px;border:1.5px solid rgba(99,102,241,0.7);animation:sonar 2s ease-out infinite"></span>
-        </div>
-        <span class="text-xs font-mono font-semibold uppercase tracking-[0.12em]"
-              style="color:rgba(255,255,255,0.45)">Radar</span>
-        <span id="radar-frame-badge" class="text-[9px] font-bold px-1.5 py-0.5 rounded hidden"></span>
+    <!-- ② QUALITÀ DELL'ARIA -->
+    <section id="aq-section" class="g-aq-section hidden">
+      <div class="g-aq-section__head">
+        <span class="g-section__kicker" style="padding:0">Qualità dell'aria</span>
+        <span class="g-aq-section__source">ARPAT</span>
       </div>
-
-      <!-- Top-right: zoom controls -->
-      <div class="absolute top-3 right-3 z-[6] flex flex-col gap-1">
-        <button id="radar-zoom-in"
-                class="w-8 h-8 rounded-lg border font-bold hover:bg-white/[0.08] hover:text-white/70 active:scale-90 transition-all duration-150 flex items-center justify-center text-base leading-none"
-                style="background:rgba(15,17,23,0.72);border-color:rgba(255,255,255,0.08);color:rgba(255,255,255,0.45);backdrop-filter:blur(8px)"
-                aria-label="Zoom in">+</button>
-        <button id="radar-zoom-out"
-                class="w-8 h-8 rounded-lg border font-bold hover:bg-white/[0.08] hover:text-white/70 active:scale-90 transition-all duration-150 flex items-center justify-center text-base leading-none"
-                style="background:rgba(15,17,23,0.72);border-color:rgba(255,255,255,0.08);color:rgba(255,255,255,0.45);backdrop-filter:blur(8px)"
-                aria-label="Zoom out">−</button>
-      </div>
-
-      <!-- Bottom: gradient scrim + controls bar -->
-      <div class="absolute bottom-0 inset-x-0 z-[6] px-3 pb-3 pt-10"
-           style="background:linear-gradient(to top,rgba(11,15,25,0.78) 0%,transparent 100%)">
-        <div class="flex items-center gap-3 px-3 py-2 rounded-lg border"
-             style="background:rgba(15,17,23,0.58);border-color:rgba(255,255,255,0.07);backdrop-filter:blur(8px)">
-          <button id="radar-play"
-                  class="radar-play-btn w-8 h-8 rounded-lg flex-none flex items-center justify-center active:scale-90 transition-all duration-150"
-                  aria-label="Play/Pausa"></button>
-          <input id="radar-slider" type="range" class="flex-1 range range-xs range-primary" min="0" max="0" value="0" step="1" aria-label="Radar timeline">
-          <span id="radar-time" class="text-xs font-mono tabular-nums flex-none text-right flex-none"
-                style="color:rgba(255,255,255,0.45);min-width:4.5rem">—</span>
-        </div>
-      </div>
-
-      <!-- Error overlay -->
-      <div id="radar-error" class="hidden absolute inset-0 z-[7] flex flex-col items-center justify-center gap-2 p-4 text-center"
-           style="background:rgba(15,17,23,0.85)"></div>
-
+      <div class="g-aq-grid" id="aq-grid"></div>
     </section>
 
-    <!-- ③ PREVISIONI: Striscia + Dettaglio -->
-    <div id="forecast-section" class="hidden flex flex-col gap-4">
-      <div class="flex items-center px-1">
-        <h2 class="text-[11px] font-mono font-semibold uppercase tracking-[0.14em]"
-            style="color:rgba(241,245,249,0.30)">Prossimi giorni</h2>
+    <!-- ③ RADAR (sempre aperto) -->
+    <section id="radar-section" class="g-radar-section">
+      <div id="radar-container" class="g-radar__container">
+
+        <div id="radar-map"></div>
+
+        <!-- Badge top-left -->
+        <div class="g-radar__badge-pill">
+          <div class="g-radar__sonar">
+            <span class="g-radar__sonar-dot"></span>
+            <span class="g-radar__sonar-ring"></span>
+          </div>
+          <span class="g-radar__label">Radar</span>
+          <span id="radar-frame-badge" class="g-radar__frame-badge hidden"></span>
+        </div>
+
+        <!-- Zoom buttons top-right -->
+        <div class="g-radar__zoom">
+          <button id="radar-zoom-in"  class="g-radar__zoom-btn" aria-label="Zoom in">+</button>
+          <button id="radar-zoom-out" class="g-radar__zoom-btn" aria-label="Zoom out">−</button>
+        </div>
+
+        <!-- Controls bottom -->
+        <div class="g-radar__controls">
+          <div class="g-radar__controls-inner">
+            <button id="radar-play" class="g-radar__play" aria-label="Play/Pausa"></button>
+            <input id="radar-slider" type="range" min="0" max="0" value="0" step="1" aria-label="Radar timeline">
+            <span id="radar-time" class="g-radar__time">—</span>
+          </div>
+        </div>
+
+        <!-- Error overlay -->
+        <div id="radar-error" class="g-radar__error hidden"></div>
+
       </div>
-      <div id="day-strip" class="flex gap-2 overflow-x-auto snap-x snap-mandatory py-1 px-1 no-scrollbar"></div>
+    </section>
 
-      <section id="day-detail" class="rounded-2xl border overflow-hidden anim-fade-up"
-               style="background:#111318;border-color:rgba(255,255,255,0.07)">
+    <!-- ③ PREVISIONI: striscia + dettaglio a 2 colonne -->
+    <div id="forecast-section" class="hidden" style="display:none;flex-direction:column;gap:8px">
 
-        <!-- Header: day title + lead time + icon -->
-        <div class="px-7 md:px-9 pt-7 pb-5 flex items-start justify-between gap-4">
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 mb-3">
-              <span id="detail-lead"
-                    class="text-[11px] font-mono font-semibold px-2 py-0.5 rounded border"
-                    style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.09);color:rgba(241,245,249,0.35)"></span>
-              <span id="detail-date"
-                    class="text-xs font-mono"
-                    style="color:rgba(241,245,249,0.28)"></span>
-              <span id="detail-emessa"
-                    class="text-[11px] font-mono"
-                    style="color:rgba(241,245,249,0.20)"></span>
+      <div id="day-strip" class="g-strip no-scrollbar"></div>
+
+      <section id="day-detail" class="g-detail">
+
+        <!-- Top: head + metriche + indicatori (full width) -->
+        <div class="g-detail__top">
+
+          <header class="g-detail__head">
+            <div class="g-detail__head-meta">
+              <span id="detail-lead" class="g-detail__lead"></span>
+              <span id="detail-date" class="g-detail__date"></span>
+              <span id="detail-emessa" class="g-detail__emessa"></span>
             </div>
-            <h3 id="detail-title"
-                class="text-4xl md:text-5xl font-bold font-sans tracking-tight text-white leading-none"></h3>
+            <div class="g-detail__title-row">
+              <span id="detail-icon" class="g-detail__icon"></span>
+              <h2 id="detail-title" class="g-detail__title"></h2>
+            </div>
+          </header>
+
+          <!-- Metric bento: 3 colonne -->
+          <div class="g-detail__metrics">
+            <div class="g-metric">
+              <span class="g-metric__label">T max</span>
+              <div id="detail-tmax" class="g-metric__value">—</div>
+              <div id="detail-ci-tmax"></div>
+            </div>
+            <div class="g-metric">
+              <span class="g-metric__label">T min</span>
+              <div id="detail-tmin" class="g-metric__value g-metric__value--secondary">—</div>
+              <div id="detail-ci-tmin"></div>
+            </div>
+            <div class="g-metric">
+              <span class="g-metric__label">Precip</span>
+              <div id="detail-precip-val" class="g-metric__value">—</div>
+              <div id="detail-ci-precip"></div>
+            </div>
           </div>
-          <span id="detail-icon" class="text-6xl md:text-7xl leading-none shrink-0 hero-icon-float mt-1"></span>
+
+          <!-- Indicatori DLE -->
+          <div id="detail-indicators" class="g-detail__indicators"></div>
+
         </div>
 
-        <!-- Metric bento: 3 equal columns — tmax | tmin | precip -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-px border-t"
-             style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.07)">
+        <!-- Bottom: grafico orario + NWP modelli (stack verticale) -->
+        <div class="g-detail__bottom">
 
-          <!-- T max -->
-          <div class="px-7 md:px-8 py-6" style="background:#111318">
-            <p class="text-[11px] font-mono font-semibold mb-4 uppercase tracking-[0.1em]"
-               style="color:rgba(241,245,249,0.25)">T max</p>
-            <div id="detail-tmax" class="text-4xl md:text-5xl font-bold font-sans tracking-tight tabular-nums leading-none">—</div>
-            <div id="detail-ci-tmax" class="mt-1"></div>
+          <div class="g-detail__chart-col" id="chart-daily-section">
+
+            <div class="g-detail__right-header">
+              <div id="model-switch" class="g-model-switch">
+                <span id="model-pill" class="g-model-switch__pill"></span>
+              </div>
+            </div>
+
+            <div id="chart-stat-strip" class="g-stat-strip"></div>
+
+            <div class="g-chart-wrap">
+              <canvas id="meteo-chart"></canvas>
+              <div id="chart-tooltip" class="g-chart-tooltip"></div>
+            </div>
+
           </div>
 
-          <!-- T min -->
-          <div class="px-7 md:px-8 py-6" style="background:#111318">
-            <p class="text-[11px] font-mono font-semibold mb-4 uppercase tracking-[0.1em]"
-               style="color:rgba(241,245,249,0.25)">T min</p>
-            <div id="detail-tmin" class="text-4xl md:text-5xl font-bold font-sans tracking-tight tabular-nums leading-none"
-                 style="color:rgba(241,245,249,0.5)">—</div>
-            <div id="detail-ci-tmin" class="mt-1"></div>
+          <div class="g-detail__nwp-col">
+            <div class="g-nwp">
+              <span class="g-section__kicker">Confronto modelli</span>
+              <div class="g-nwp__wrap">
+                <div id="nwp-list"></div>
+              </div>
+            </div>
           </div>
 
-          <!-- Precipitazione -->
-          <div class="px-7 md:px-8 py-6" style="background:#111318">
-            <p class="text-[11px] font-mono font-semibold mb-4 uppercase tracking-[0.1em]"
-               style="color:rgba(241,245,249,0.25)">Precip</p>
-            <div id="detail-precip-val" class="text-4xl md:text-5xl font-bold font-sans tracking-tight tabular-nums leading-none text-white">—</div>
-            <div id="detail-ci-precip" class="mt-1"></div>
-          </div>
-        </div>
-
-        <!-- Indicatori -->
-        <div class="px-7 md:px-9 py-5 border-t" style="border-color:rgba(255,255,255,0.07)">
-          <div id="detail-indicators" class="flex flex-wrap gap-2.5"></div>
-        </div>
-
-        <!-- Confronto modelli NWP -->
-        <div class="border-t" style="border-color:rgba(255,255,255,0.07)">
-          <div class="px-7 md:px-9 pt-5 pb-2">
-            <h4 class="text-[11px] font-mono font-semibold uppercase tracking-[0.14em]"
-                style="color:rgba(241,245,249,0.18)">Confronto modelli</h4>
-          </div>
-          <div id="nwp-list" class="pb-3"></div>
         </div>
 
       </section>
     </div>
 
-    <!-- ④+⑤ GRAFICI -->
-    <div class="flex flex-col gap-6">
-
-      <!-- ④ GRAFICO ORARIO -->
-      <section id="chart-daily-section" class="hidden rounded-2xl border overflow-hidden anim-fade-up"
-               style="background:#111318;border-color:rgba(255,255,255,0.07)">
-
-        <div class="flex items-center justify-between px-6 pt-5 pb-4 gap-3 border-b"
-             style="border-color:rgba(255,255,255,0.06)">
-          <div class="flex items-center gap-3 min-w-0 flex-1">
-            <h3 class="text-[11px] font-mono font-semibold uppercase tracking-[0.12em]"
-                style="color:rgba(241,245,249,0.25)">Andamento orario</h3>
-            <div class="hidden sm:flex items-center gap-3 ml-1 flex-wrap">
-              <span class="flex items-center gap-1.5 text-[11px] font-mono" style="color:rgba(241,245,249,0.25)">
-                <span class="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0"></span>Temp</span>
-              <span class="flex items-center gap-1.5 text-[11px] font-mono" style="color:rgba(241,245,249,0.25)">
-                <span class="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0"></span>Umidità</span>
-              <span class="flex items-center gap-1.5 text-[11px] font-mono" style="color:rgba(241,245,249,0.25)">
-                <span class="w-1.5 h-1.5 rounded-full bg-blue-600/70 shrink-0"></span>Precip</span>
-              <span class="flex items-center gap-1.5 text-[11px] font-mono" style="color:rgba(241,245,249,0.25)">
-                <span class="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0"></span>Vento</span>
-            </div>
-          </div>
-          <!-- Model switch: flat segmented control -->
-          <div class="relative inline-flex border rounded p-0.5 shrink-0"
-               id="model-switch"
-               style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08)">
-            <span id="model-pill" class="absolute top-1 bottom-1 rounded pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-                  style="background:rgba(99,102,241,0.12)"></span>
-          </div>
+    <!-- ③ GRAFICO SETTIMANALE -->
+    <section id="chart-weekly-section" class="g-card hidden">
+      <div class="g-card__header">
+        <div class="g-chart-legend">
+          <span class="g-section__kicker" style="padding:0;font-size:10px">7 giorni</span>
+          <span class="g-chart-legend__item">
+            <span class="g-chart-legend__dot" style="background:#F97316"></span>Temp
+          </span>
+          <span class="g-chart-legend__item">
+            <span class="g-chart-legend__dot" style="background:#0EA5E9"></span>Umidità
+          </span>
+          <span class="g-chart-legend__item">
+            <span class="g-chart-legend__dot" style="background:#2563EB;opacity:0.7"></span>Precip
+          </span>
         </div>
-
-        <div id="chart-stat-strip" class="grid grid-cols-2 sm:grid-cols-4 gap-px border-b"
-             style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.06)"></div>
-
-        <div class="relative h-[280px] md:h-[340px] px-1 pt-3 pb-2">
-          <canvas id="meteo-chart"></canvas>
-          <div id="chart-tooltip"
-               class="absolute pointer-events-none opacity-0 transition-opacity duration-150 backdrop-blur-xl rounded-lg border z-20 min-w-[160px] px-3.5 py-3"
-               style="background:rgba(20,22,32,0.97);border-color:rgba(255,255,255,0.09);box-shadow:0 8px 32px rgba(8,10,24,0.5);transition:opacity 150ms"></div>
+        <div id="weekly-model-switch" class="g-model-switch">
+          <span id="weekly-model-pill" class="g-model-switch__pill"></span>
         </div>
+      </div>
+      <div class="g-chart-wrap">
+        <canvas id="multiday-chart"></canvas>
+        <div id="chart-weekly-tooltip" class="g-chart-tooltip"></div>
+      </div>
+    </section>
 
-        <div class="flex sm:hidden gap-4 px-6 pb-5 pt-3 text-xs font-mono flex-wrap border-t"
-             style="color:rgba(241,245,249,0.28);border-color:rgba(255,255,255,0.06)">
-          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>Temperatura</span>
-          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-500 inline-block"></span>Umidità</span>
-          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-600/60 inline-block"></span>Precip</span>
-          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-teal-500 inline-block"></span>Vento</span>
-        </div>
-      </section>
-
-      <!-- ⑤ GRAFICO SETTIMANALE -->
-      <section id="chart-weekly-section" class="hidden rounded-2xl border overflow-hidden anim-fade-up"
-               style="background:#111318;border-color:rgba(255,255,255,0.07)">
-
-        <div class="flex items-center justify-between px-6 pt-5 pb-4 gap-3 border-b"
-             style="border-color:rgba(255,255,255,0.06)">
-          <div class="flex items-center gap-3 min-w-0 flex-1">
-            <h3 class="text-[11px] font-mono font-semibold uppercase tracking-[0.12em]"
-                style="color:rgba(241,245,249,0.25)">7 giorni</h3>
-            <div class="hidden sm:flex items-center gap-3 ml-1 flex-wrap">
-              <span class="flex items-center gap-1.5 text-[11px] font-mono" style="color:rgba(241,245,249,0.25)">
-                <span class="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0"></span>Temp</span>
-              <span class="flex items-center gap-1.5 text-[11px] font-mono" style="color:rgba(241,245,249,0.25)">
-                <span class="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0"></span>Umidità</span>
-              <span class="flex items-center gap-1.5 text-[11px] font-mono" style="color:rgba(241,245,249,0.25)">
-                <span class="w-1.5 h-1.5 rounded-full bg-blue-600/70 shrink-0"></span>Precip</span>
-              <span class="flex items-center gap-1.5 text-[11px] font-mono" style="color:rgba(241,245,249,0.25)">
-                <span class="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0"></span>Vento</span>
-            </div>
-          </div>
-          <div class="relative inline-flex border rounded p-0.5 shrink-0"
-               id="weekly-model-switch"
-               style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08)">
-            <span id="weekly-model-pill" class="absolute top-1 bottom-1 rounded pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-                  style="background:rgba(99,102,241,0.12)"></span>
-          </div>
-        </div>
-
-        <div class="relative h-[280px] md:h-[340px] px-1 pt-3 pb-3">
-          <canvas id="multiday-chart"></canvas>
-          <div id="chart-weekly-tooltip"
-               class="absolute pointer-events-none opacity-0 transition-opacity duration-150 backdrop-blur-xl rounded-lg border z-20 min-w-[160px] px-3.5 py-3"
-               style="background:rgba(20,22,32,0.97);border-color:rgba(255,255,255,0.09);box-shadow:0 8px 32px rgba(8,10,24,0.5);transition:opacity 150ms"></div>
-        </div>
-
-        <div class="flex sm:hidden gap-4 px-6 pb-5 pt-3 text-xs font-mono flex-wrap border-t"
-             style="color:rgba(241,245,249,0.28);border-color:rgba(255,255,255,0.06)">
-          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>Temp</span>
-          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-500 inline-block"></span>Umidità</span>
-          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-600/60 inline-block"></span>Precip</span>
-          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-teal-500 inline-block"></span>Vento</span>
-        </div>
-      </section>
-
+    <!-- ④ COVERAGE BAR -->
+    <div id="coverage-bar" class="g-coverage hidden">
+      <div id="coverage-numbers"></div>
     </div>
-
-    <div id="coverage-bar" class="hidden pt-1"></div>
 
   </main>
 
   <!-- Tooltip globale indicatori -->
-  <div id="indicator-tooltip" class="hidden fixed z-[200] max-w-[220px] leading-snug pointer-events-none font-mono" role="tooltip"
-       style="padding:9px 12px;border-radius:8px;font-size:11px;color:rgba(241,245,249,0.75);background:rgba(15,17,23,0.96);border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 32px rgba(8,10,24,0.6)"></div>
+  <div id="indicator-tooltip" class="hidden" role="tooltip"></div>
 
   <script src="app.js" defer></script>
 </body>

@@ -1,6 +1,6 @@
 'use strict';
 
-// Dev: ln -s ../data/output frontend/data  then: cd frontend && python3 -m http.server 8080
+// Dev: ln -s ../data/output frontend2/data  then: cd frontend2 && python3 -m http.server 8081
 const DATA_URL = loc => `/data/${loc}.json`;
 const TWEMOJI_OPTS = { folder: 'svg', ext: '.svg' };
 
@@ -22,14 +22,7 @@ const INDICATOR_META = {
   annaffia: { label: 'Annaffia',  icon: '💧' },
 };
 
-const VERDICT_COLOR = {
-  verde:  { bg: 'bg-emerald-500/[0.06]', border: 'border-emerald-500/20', text: 'text-emerald-700 dark:text-emerald-400', badge: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', dot: 'bg-emerald-500', glow: '0 0 6px 2px rgba(16,185,129,0.55)'  },
-  giallo: { bg: 'bg-amber-500/[0.06]',   border: 'border-amber-500/20',   text: 'text-amber-700 dark:text-amber-400',   badge: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',   dot: 'bg-amber-500',   glow: '0 0 6px 2px rgba(245,158,11,0.55)'  },
-  rosso:  { bg: 'bg-red-500/[0.06]',     border: 'border-red-500/20',     text: 'text-red-700 dark:text-red-400',     badge: 'bg-red-500/10 text-red-700 dark:text-red-400',     dot: 'bg-red-500',     glow: '0 0 6px 2px rgba(239,68,68,0.55)'   },
-};
-
-// Soglie qualità aria — mapping verde/giallo/rosso vs fasce ARPAT (config/arpat_levels.yaml).
-// verde: Minima+Bassa (1-2) · giallo: Media+Media-alta (3-4) · rosso: Alta+ (5-7).
+// Soglie qualità aria — mapping verde/giallo/rosso vs fasce ARPAT.
 // [lo, hi]: value<lo→verde, lo≤value<hi→giallo, value≥hi→rosso.
 const AQ_THRESHOLDS = {
   pm10:    [20, 40],
@@ -43,18 +36,6 @@ const AQ_THRESHOLDS = {
 
 const PLAY_SVG  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="6,3 20,12 6,21"/></svg>';
 const PAUSE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
-
-function playBtnHtml(playing) {
-  return playing ? PAUSE_SVG : PLAY_SVG;
-}
-
-// Twemoji per le hero stats
-const STAT_ICONS = {
-  'Vento':     '💨',
-  'Umidità':   '💧',
-  'Pioggia':   '🌧️',
-  'Pressione': '🌡️',
-};
 
 const RV_API               = 'https://api.rainviewer.com/public/weather-maps.json';
 const RV_TTL_MS            = 5 * 60 * 1000;
@@ -84,8 +65,19 @@ function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function showEl(id)  { document.getElementById(id)?.classList.remove('hidden'); }
-function hideEl(id)  { document.getElementById(id)?.classList.add('hidden'); }
+function showEl(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('hidden');
+  el.style.removeProperty('display');
+}
+
+function hideEl(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.add('hidden');
+  el.style.display = 'none';
+}
 
 function showSkeleton() { showEl('skeleton-state'); }
 function hideSkeleton() { hideEl('skeleton-state'); hideEl('error-state'); }
@@ -195,12 +187,12 @@ function fmtLastRun(iso) {
   return d.toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-function aqColorCls(key, value) {
+function aqVerdictForValue(key, value) {
   if (value == null) return null;
   const [lo, hi] = AQ_THRESHOLDS[key] ?? [0, Infinity];
-  if (value < lo)  return { border: 'border-emerald-500/30', text: 'text-emerald-600 dark:text-emerald-400' };
-  if (value < hi)  return { border: 'border-amber-500/30',    text: 'text-amber-600 dark:text-amber-400'    };
-  return             { border: 'border-red-500/30',     text: 'text-red-600 dark:text-red-400'     };
+  if (value < lo) return 'verde';
+  if (value < hi) return 'giallo';
+  return 'rosso';
 }
 
 // ── Indicator tooltip ─────────────────────────────────────────────────────────
@@ -214,7 +206,6 @@ function showIndicatorTooltip(anchorEl, text) {
   tip.style.left = '0px';
   tip.style.top  = '0px';
   tip.classList.remove('hidden');
-  // Misura dopo che il browser ha fatto layout e posiziona correttamente
   requestAnimationFrame(() => {
     const r  = anchorEl.getBoundingClientRect();
     const tw = tip.offsetWidth;
@@ -267,7 +258,6 @@ function diffDays(isoDate) {
 // ── Dark mode ─────────────────────────────────────────────────────────────────
 
 function initDarkMode() {
-  // Tema scuro fisso — nessuna preference OS
   document.documentElement.dataset.theme = 'dark';
   document.documentElement.classList.add('dark');
 }
@@ -290,12 +280,7 @@ function renderTabs(activeLoc) {
   const nav = document.getElementById('tabs');
   nav.innerHTML = LOCATIONS.map(l => {
     const active = l.id === activeLoc;
-    const cls = active
-      ? 'px-3 py-1.5 rounded text-xs font-semibold text-indigo-400 snap-center shrink-0 transition-all duration-200'
-      : 'px-3 py-1.5 rounded text-xs font-medium snap-center shrink-0 transition-all duration-200 relative overflow-hidden hover:bg-white/[0.05]'
-        + ' ' + 'text-white/35';
-    const style = active ? 'background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.40);box-shadow:0 2px 12px -2px rgba(99,102,241,0.20)' : '';
-    return `<button class="${cls}" style="${style}" data-loc="${l.id}">${l.label}</button>`;
+    return `<button class="g-tab${active ? ' g-tab--active' : ''}" data-loc="${l.id}">${escHtml(l.label)}</button>`;
   }).join('');
 
   nav.querySelectorAll('[data-loc]').forEach(btn => {
@@ -309,10 +294,12 @@ function renderTabs(activeLoc) {
 }
 
 function addRipple(btn, e) {
-  const rect   = btn.getBoundingClientRect();
-  const span   = document.createElement('span');
-  const size   = Math.max(rect.width, rect.height) * 2;
-  span.style.cssText = `position:absolute;border-radius:50%;background:rgba(99,102,241,0.18);width:${size}px;height:${size}px;left:${e.clientX - rect.left - size/2}px;top:${e.clientY - rect.top - size/2}px;transform:scale(0);pointer-events:none;transition:transform 400ms ease-out,opacity 300ms ease-out;opacity:0.5`;
+  const rect = btn.getBoundingClientRect();
+  const span = document.createElement('span');
+  const size = Math.max(rect.width, rect.height) * 2;
+  span.style.cssText = `position:absolute;border-radius:50%;background:rgba(59,164,194,0.15);width:${size}px;height:${size}px;left:${e.clientX - rect.left - size/2}px;top:${e.clientY - rect.top - size/2}px;transform:scale(0);pointer-events:none;transition:transform 400ms ease-out,opacity 300ms ease-out;opacity:0.5;overflow:hidden`;
+  btn.style.overflow = 'hidden';
+  btn.style.position = 'relative';
   btn.appendChild(span);
   requestAnimationFrame(() => { span.style.transform = 'scale(1)'; span.style.opacity = '0'; });
   setTimeout(() => span.remove(), 500);
@@ -349,48 +336,32 @@ function updatePillPosition(switchId, pillId, activeSource) {
 // ── Header meta ───────────────────────────────────────────────────────────────
 
 function renderHeaderMeta(generatedAt) {
-  const el   = document.getElementById('header-meta');
+  const el = document.getElementById('header-meta');
   if (!el) return;
   const ageH = (Date.now() - new Date(generatedAt).getTime()) / 3600000;
   const time = new Date(generatedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
   if (ageH >= 6) {
-    el.innerHTML = `<span class="rounded px-2 py-0.5 text-xs font-mono font-semibold border stale-pulse" style="background:rgba(99,102,241,0.10);color:#A5B4FC;border-color:rgba(99,102,241,0.20)">dati vecchi</span>`;
+    el.innerHTML = `<span class="g-stale-pill">dati vecchi</span>`;
   } else {
     el.innerHTML = `<span class="tabular-nums font-mono">Aggiornato ${time}</span>`;
   }
 }
 
-// ── Hero card ─────────────────────────────────────────────────────────────────
+// ── Hero ──────────────────────────────────────────────────────────────────────
 
 function renderHero(data) {
   const current  = data.current;
   const todayDay = data.days.find(d => isToday(d.target_date));
   const locMeta  = LOCATIONS.find(l => l.id === data.location_id);
-  const now      = new Date();
 
-  // Icon
-  let icon;
-  if (current?.temp_c != null) icon = weatherIconFromCurrent(current);
-  else if (todayDay)           icon = weatherIconForDay(todayDay);
-  else                         icon = '⛅';
-  const iconEl = document.getElementById('hero-icon');
-  iconEl.textContent = icon;
-  twemoji.parse(iconEl, TWEMOJI_OPTS);
-
-  // Temperature gradient background
-  const mainTemp = current?.temp_c ?? todayDay?.forecasts?.tmax_c?.p50 ?? null;
-  const gradEl   = document.getElementById('hero-temp-gradient');
-  if (gradEl && mainTemp != null) {
-    const dark = document.documentElement.dataset.theme === 'dark';
-    const mul  = dark ? 2.5 : 1;
-    let color;
-    if (mainTemp < 10)      color = `rgba(59,130,246,${0.08 * mul})`;
-    else if (mainTemp < 22) color = `rgba(16,185,129,${0.06 * mul})`;
-    else                    color = `rgba(249,115,22,${0.08 * mul})`;
-    gradEl.style.background = `radial-gradient(circle at 100% 0%, ${color} 0%, transparent 55%)`;
+  // Location name
+  const locNameEl = document.getElementById('hero-loc-name');
+  if (locNameEl) {
+    locNameEl.innerHTML = `<span class="g-hero__loc-pulse"></span><span>${escHtml(locMeta?.label ?? data.location_id)}</span>`;
   }
 
-  // Temperature (with counter animation)
+  // Temperature
+  const mainTemp = current?.temp_c ?? todayDay?.forecasts?.tmax_c?.p50 ?? null;
   const tempEl = document.getElementById('hero-temp');
   if (mainTemp != null) {
     tempEl.textContent = `${mainTemp.toFixed(1)}°`;
@@ -399,64 +370,95 @@ function renderHero(data) {
     tempEl.textContent = '—';
   }
 
-  // Meta row (percepita + rugiada)
-  const metaEl = document.getElementById('hero-meta');
-  const feelsLike = current?.feels_like_c != null ? `${current.feels_like_c.toFixed(1)}°` : null;
-  const dewpoint  = current?.dewpoint_c   != null ? `${current.dewpoint_c.toFixed(1)}°`   : null;
-  const ts        = current?.ts ? new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : null;
-  metaEl.innerHTML = [
-    feelsLike ? `<span>Percepita <strong class="text-white/70">${feelsLike}</strong></span>` : '',
-    dewpoint  ? `<span>Rugiada <strong class="text-white/70">${dewpoint}</strong></span>` : '',
-    ts ? `<span class="text-xs font-mono tabular-nums">SIR · ${ts}</span>` : '',
-  ].filter(Boolean).join('');
+  // Icon
+  const iconEl = document.getElementById('hero-icon');
+  let icon;
+  if (current?.temp_c != null) icon = weatherIconFromCurrent(current);
+  else if (todayDay)           icon = weatherIconForDay(todayDay);
+  else                         icon = '⛅';
+  if (iconEl) { iconEl.textContent = icon; twemoji.parse(iconEl, TWEMOJI_OPTS); }
 
-  // Stats pills
-  renderHeroStats(current);
+  // Condition + percepita
+  const condEl = document.getElementById('hero-condition');
+  const condText = todayDay
+    ? weatherConditionText(
+        (todayDay.forecasts.precip_mm?.mean ?? todayDay.forecasts.precip_mm?.p50) ?? 0,
+        todayDay.forecasts.tmax_c?.p50 ?? null,
+        todayDay.indicators.temporale?.verdict,
+        todayDay.indicators.nebbia?.verdict,
+      )
+    : (current ? (weatherIconFromCurrent(current) === '☀️' ? 'Soleggiato' : 'Variabile') : '');
+  if (condEl) {
+    const meta = [
+      current?.feels_like_c != null ? `percepita ${current.feels_like_c.toFixed(1)}°` : null,
+      current?.ts ? `SIR ${new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : null,
+    ].filter(Boolean).join(' · ');
+    condEl.innerHTML = `<span>${escHtml(condText)}</span>${meta ? `<span class="g-hero__condition-meta">${escHtml(meta)}</span>` : ''}`;
+  }
 
-  // Air quality
-  renderHeroAQ(data.air_quality, data.generated_at);
+  // Stats inline
+  renderHeroStatsInline(current);
 
-  // Sun/moon
-  renderHeroSun(locMeta, now);
-
-  // Today indicators
+  // DLE indicators (today)
   renderHeroIndicators(todayDay);
 
-  // Show hero card
   const heroCard = document.getElementById('hero-card');
   heroCard.classList.remove('hidden');
+  heroCard.style.removeProperty('display');
   heroCard.classList.remove('anim-fade-up');
   void heroCard.offsetWidth;
   heroCard.classList.add('anim-fade-up');
   twemoji.parse(heroCard, TWEMOJI_OPTS);
 }
 
-function renderHeroStats(current) {
+function renderHeroStatsInline(current) {
+  const el = document.getElementById('hero-stats');
+  if (!el) return;
   const windDir = windDirLabel(current?.wind_dir_deg);
   const stats = [
-    { label: 'Vento',     value: current?.wind_speed_ms != null ? `${fmtWind(current.wind_speed_ms)}${windDir ? ` ${windDir.label}` : ''}` : '—' },
-    { label: 'Umidità',   value: current?.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%`    : '—' },
-    { label: 'Pioggia',   value: current?.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm`    : '—' },
-    { label: 'Pressione', value: current?.pressure_hpa  != null ? `${current.pressure_hpa.toFixed(0)} hPa` : '—' },
+    { icon: '💨', lbl: 'Vento',     val: current?.wind_speed_ms != null ? `${fmtWind(current.wind_speed_ms)}${windDir ? ` ${windDir.label}` : ''}` : '—' },
+    { icon: '💧', lbl: 'Umidità',   val: current?.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%` : '—' },
+    { icon: '🌧️', lbl: 'Pioggia',   val: current?.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm` : '—' },
+    { icon: '🌡️', lbl: 'Pressione', val: current?.pressure_hpa  != null ? `${current.pressure_hpa.toFixed(0)} hPa` : '—' },
   ];
-  const el = document.getElementById('hero-stats');
-  el.innerHTML = stats.map(s => {
-    const iconHtml = STAT_ICONS[s.label]
-      ? `<span class="text-sm leading-none shrink-0">${STAT_ICONS[s.label]}</span>`
-      : '';
-    return `
-    <div class="px-5 py-4 flex flex-col items-center gap-1.5 transition-colors duration-200" style="background:#141620">
-      <div class="flex items-center justify-center gap-1.5">
-        ${iconHtml}
-        <div class="text-[11px] font-mono font-semibold uppercase tracking-[0.08em]" style="color:rgba(241,245,249,0.28)">${s.label}</div>
-      </div>
-      <div class="text-base font-bold font-mono text-white tabular-nums leading-tight text-center">${s.value}</div>
-    </div>`;
-  }).join('');
+  el.innerHTML = stats.map(s => `
+    <div class="g-hero__stat">
+      <span class="g-hero__stat-icon">${s.icon}</span>
+      <span class="g-hero__stat-lbl">${s.lbl}</span>
+      <span class="g-hero__stat-val">${escHtml(s.val)}</span>
+    </div>`).join('');
   twemoji.parse(el, TWEMOJI_OPTS);
 }
 
-function renderHeroAQ(aq, _generatedAt) {
+function renderHeroIndicators(todayDay) {
+  const el = document.getElementById('hero-indicators');
+  if (!el) return;
+  if (!todayDay) { el.innerHTML = ''; return; }
+
+  el.innerHTML = Object.entries(todayDay.indicators).map(([id, ind], i) => {
+    const meta    = INDICATOR_META[id] ?? { label: id, icon: '?' };
+    const verdict = ind.verdict ?? 'giallo';
+    const verdCap = verdict.charAt(0).toUpperCase() + verdict.slice(1);
+    const tip     = escHtml(ind.rule_text || ind.rule_matched || '');
+    return `<button class="g-pill g-pill--${verdict}"${tip ? ` data-hero-chip data-tip="${tip}"` : ' data-hero-chip'}
+                    style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
+      <span class="g-pill__icon">${meta.icon}</span>
+      <span class="g-pill__label">${meta.label}</span>
+      <span class="g-pill__verdict">${verdCap}</span>
+    </button>`;
+  }).join('');
+
+  _wireChipTooltip(el, '[data-hero-chip]');
+  twemoji.parse(el, TWEMOJI_OPTS);
+}
+
+// ── AQ (targets #aq-section / #aq-grid) ──────────────────────────────────────
+
+function renderAQ(aq) {
+  const section = document.getElementById('aq-section');
+  const grid    = document.getElementById('aq-grid');
+  if (!section || !grid) return;
+
   const items = [
     { key: 'pm10',    label: 'PM10',  value: aq?.pm10_ugm3    ?? null, unit: 'µg/m³', dec: 0 },
     { key: 'pm25',    label: 'PM2.5', value: aq?.pm25_ugm3    ?? null, unit: 'µg/m³', dec: 0 },
@@ -466,87 +468,41 @@ function renderHeroAQ(aq, _generatedAt) {
     { key: 'benzene', label: 'C₆H₆', value: aq?.benzene_ugm3 ?? null, unit: 'µg/m³', dec: 1 },
     { key: 'so2',     label: 'SO₂',   value: aq?.so2_ugm3     ?? null, unit: 'µg/m³', dec: 0 },
   ];
-  const el = document.getElementById('hero-aq');
-  /*
-   * Hero è sempre su sfondo scuro (.hero-sky) — usiamo colori espliciti
-   * senza `dark:` prefix, che dipende dall'OS preference non dal background locale.
-   */
-  el.innerHTML = items.map(it => {
+
+  grid.innerHTML = items.map(it => {
     const display = it.value != null ? it.value.toFixed(it.dec) : '—';
-    const opacityCls = it.value == null ? 'opacity-30' : '';
-    let borderCls = 'border-white/10';
-    let textCls   = 'text-white/35';
-    if (it.value != null) {
-      const [lo, hi] = AQ_THRESHOLDS[it.key] ?? [0, Infinity];
-      if (it.value < lo)      { borderCls = 'border-emerald-500/30'; textCls = 'text-emerald-400'; }
-      else if (it.value < hi) { borderCls = 'border-amber-500/30';   textCls = 'text-amber-400';   }
-      else                    { borderCls = 'border-red-500/35';     textCls = 'text-red-400';     }
-    }
-    return `<div class="shrink-0 rounded-xl py-2 px-2 border ${borderCls} ${opacityCls} text-center" style="min-width:60px;background:rgba(255,255,255,0.04)">
-      <div class="text-[11px] font-mono font-semibold leading-tight" style="color:rgba(241,245,249,0.3)">${it.label}</div>
-      <div class="text-sm font-bold font-mono ${textCls} tabular-nums mt-0.5 leading-tight">${display}</div>
-      <div class="text-[11px] font-mono leading-tight" style="color:rgba(241,245,249,0.18)">${it.unit}</div>
+    const verdict = aqVerdictForValue(it.key, it.value);
+    const valCls  = verdict ? `g-aq-cell__val--${verdict}` : 'g-aq-cell__val--null';
+    return `<div class="g-aq-cell">
+      <span class="g-aq-cell__label">${it.label}</span>
+      <span class="g-aq-cell__val ${valCls}">${display}</span>
+      <span class="g-aq-cell__unit">${it.unit}</span>
     </div>`;
   }).join('');
+  section.classList.remove('hidden');
+  section.style.removeProperty('display');
 }
+
+// ── Sun/moon (targets #hero-sun inside coverage bar) ─────────────────────────
 
 function renderHeroSun(locMeta, now) {
   const el = document.getElementById('hero-sun');
+  if (!el) return;
   if (!locMeta || typeof SunCalc === 'undefined') { el.innerHTML = ''; return; }
   const sunTimes  = SunCalc.getTimes(now, locMeta.lat, locMeta.lon);
   const moonPhase = SunCalc.getMoonIllumination(now).phase;
   const idx       = Math.round(moonPhase * 8) % 8;
   const moonEmoji = ['🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘'][idx];
-  const moonLabel = ['LUNA NUOVA','LUNA CRESCENTE','PRIMO QUARTO','GIBBOSA CRESCENTE','LUNA PIENA','GIBBOSA CALANTE','ULTIMO QUARTO','LUNA CALANTE'][idx];
+  const moonLabel = ['Luna nuova','Luna crescente','Primo quarto','Gibbosa crescente','Luna piena','Gibbosa calante','Ultimo quarto','Luna calante'][idx];
 
-  /* Three glassmorphic pills: sunrise · sunset · moon phase */
   el.innerHTML = `
-    <div class="flex items-center gap-2 flex-wrap justify-end">
-      <div class="tooltip tooltip-left flex items-center gap-2 px-2.5 py-1.5 rounded border" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08)" data-tip="Alba">
-        <span class="text-sm leading-none">🌅</span>
-        <span class="text-[13px] font-mono tabular-nums" style="color:rgba(241,245,249,0.6)">${fmtSunTime(sunTimes.sunrise)}</span>
-      </div>
-      <div class="tooltip tooltip-left flex items-center gap-2 px-2.5 py-1.5 rounded border" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08)" data-tip="Tramonto">
-        <span class="text-sm leading-none">🌇</span>
-        <span class="text-[13px] font-mono tabular-nums" style="color:rgba(241,245,249,0.6)">${fmtSunTime(sunTimes.sunset)}</span>
-      </div>
-      <div class="tooltip tooltip-left flex items-center gap-2 px-2.5 py-1.5 rounded border" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.08)" data-tip="${moonLabel}">
-        <span class="text-sm leading-none">${moonEmoji}</span>
-        <span class="text-[13px] font-sans" style="color:rgba(241,245,249,0.4)">${moonLabel}</span>
-      </div>
-    </div>`;
+    <div class="g-sun-pill" title="Alba"><span>🌅</span><span>${fmtSunTime(sunTimes.sunrise)}</span></div>
+    <div class="g-sun-pill" title="Tramonto"><span>🌇</span><span>${fmtSunTime(sunTimes.sunset)}</span></div>
+    <div class="g-sun-pill" title="${escHtml(moonLabel)}"><span>${moonEmoji}</span><span class="font-sans">${escHtml(moonLabel)}</span></div>`;
   twemoji.parse(el, TWEMOJI_OPTS);
 }
 
-function renderHeroIndicators(todayDay) {
-  const el = document.getElementById('hero-indicators');
-  if (!todayDay) { el.innerHTML = ''; return; }
-
-  el.innerHTML = Object.entries(todayDay.indicators).map(([id, ind], i) => {
-    const meta       = INDICATOR_META[id] ?? { label: id, icon: '?' };
-    const vc         = VERDICT_COLOR[ind.verdict] ?? VERDICT_COLOR.giallo;
-    const verdictCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
-    const tip        = escHtml(ind.rule_text || ind.rule_matched || '');
-    return `<div data-hero-chip${tip ? ` data-tip="${tip}"` : ''} class="shrink-0">
-      <div class="flex items-center gap-2 px-3 py-2.5 sm:gap-2.5 sm:px-3.5 sm:py-3 rounded-lg border hover:opacity-90 active:scale-95 transition-all duration-200 cursor-pointer select-none"
-           style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.09);animation:fade-up 0.35s ease-out ${i * 50}ms both">
-        <span class="text-xl sm:text-2xl leading-none">${meta.icon}</span>
-        <div class="text-left min-w-0">
-          <div class="text-[11px] font-sans font-medium leading-tight" style="color:rgba(241,245,249,0.45)">${meta.label}</div>
-          <div class="flex items-center gap-1.5 mt-1">
-            <span class="w-1.5 h-1.5 rounded-full ${vc.dot} shrink-0"></span>
-            <span class="text-xs font-mono font-bold uppercase tracking-[0.06em] ${vc.text}">${verdictCap}</span>
-          </div>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-
-  _wireChipTooltip(el, '[data-hero-chip]');
-  twemoji.parse(el, TWEMOJI_OPTS);
-}
-
-// ── CI bar ────────────────────────────────────────────────────────────────────
+// ── CI bar with label ─────────────────────────────────────────────────────────
 
 function ciBar(fc, unit) {
   if (!fc) return '';
@@ -555,21 +511,21 @@ function ciBar(fc, unit) {
   if (anchor == null || ci90_lo == null || ci90_hi == null) return '';
   const range = ci90_hi - ci90_lo;
   if (range <= 0) return '';
-  const pct      = v => Math.max(0, Math.min(100, ((v - ci90_lo) / range) * 100));
-  const p80l     = (ci80_lo != null ? pct(ci80_lo) : 0).toFixed(2);
-  const p80w     = (ci80_lo != null && ci80_hi != null ? pct(ci80_hi) - pct(ci80_lo) : 100).toFixed(2);
+  const pct = v => Math.max(0, Math.min(100, ((v - ci90_lo) / range) * 100));
+  const p80l    = (ci80_lo != null ? pct(ci80_lo) : 0).toFixed(2);
+  const p80w    = (ci80_lo != null && ci80_hi != null ? pct(ci80_hi) - pct(ci80_lo) : 100).toFixed(2);
   const anchorPos = pct(anchor).toFixed(2);
   return `
-    <div class="mt-4">
-      <div class="relative h-1.5 rounded-full" style="overflow:visible;background:rgba(255,255,255,0.08)">
-        <div class="ci-range-90 absolute inset-0 rounded-full" style="background:rgba(255,255,255,0.10);transform-origin:left"></div>
-        <div class="ci-range-80 absolute top-0 h-full rounded-full" style="background:rgba(99,102,241,0.35);left:${p80l}%;width:${p80w}%;transform-origin:left"></div>
-        <div class="ci-median absolute w-3 h-3 rounded-full" style="background:#111318;border:2px solid #6366F1;top:50%;margin-left:-6px;left:${anchorPos}%"></div>
+    <div class="g-ci-bar">
+      <div class="g-ci-bar__track">
+        <div class="g-ci-bar__range-90"></div>
+        <div class="g-ci-bar__range-80" style="left:${p80l}%;width:${p80w}%"></div>
+        <div class="g-ci-bar__median" style="left:${anchorPos}%"></div>
       </div>
-      <div class="flex justify-between mt-2 text-xs tabular-nums font-mono" style="color:rgba(241,245,249,0.38)">
-        <span>${ci90_lo.toFixed(1)}${unit}</span>
-        <span class="text-slate-500 dark:text-slate-300">${anchor.toFixed(1)}${unit}</span>
-        <span>${ci90_hi.toFixed(1)}${unit}</span>
+      <div class="g-ci-bar__labels">
+        <span class="g-ci-bar__lo">${ci90_lo.toFixed(1)}${unit}</span>
+        <span class="g-ci-bar__note">CI 80%</span>
+        <span class="g-ci-bar__hi">${ci90_hi.toFixed(1)}${unit}</span>
       </div>
     </div>`;
 }
@@ -580,63 +536,37 @@ function renderDayStrip(days, activeDayIdx) {
   const el = document.getElementById('day-strip');
   el.innerHTML = days.map((day, idx) => {
     const { target_date, forecasts: fc, indicators } = day;
-    const active  = idx === activeDayIdx;
-    const diff    = diffDays(target_date);
-    const icon    = weatherIconForDay(day);
-    const condText = weatherConditionText(
-      (fc.precip_mm?.mean ?? fc.precip_mm?.p50) ?? 0,
-      fc.tmax_c?.p50   ?? null,
-      indicators.temporale?.verdict,
-      indicators.nebbia?.verdict,
-    );
+    const active = idx === activeDayIdx;
+    const diff   = diffDays(target_date);
+    const icon   = weatherIconForDay(day);
+    const tmax   = fmtTemp(fc.tmax_c?.p50);
+    const tmin   = fmtTemp(fc.tmin_c?.p50);
+    const precipVal = (fc.precip_mm?.mean ?? fc.precip_mm?.p50) ?? 0;
+    const precipPct = Math.min(100, (precipVal / 20) * 100).toFixed(1);
+    const precipDisplay = precipVal > 0.05 ? `${precipVal.toFixed(1)} mm` : '—';
+    const dayLabel  = fmtDayShort(target_date);
+    const isToday_  = diff === 0;
 
-    /* Verdict dots row */
-    const dots = Object.entries(indicators).map(([id, ind]) => {
-      const vc = VERDICT_COLOR[ind.verdict];
-      return vc
-        ? `<span class="w-2 h-2 rounded-full shrink-0 ${vc.dot}" title="${INDICATOR_META[id]?.label ?? id}: ${ind.verdict}"></span>`
-        : `<span class="w-2 h-2 rounded-full shrink-0 bg-slate-200 dark:bg-white/10"></span>`;
-    }).join('');
+    const labelCls = isToday_ ? 'g-strip__label g-strip__label--today today-badge-anim' : 'g-strip__label';
 
-    const isToday_   = diff === 0;
-    const isTomorrow = diff === 1;
-    const dayLabel   = fmtDayShort(target_date);
-
-    const cardStyle = active
-      ? `background:#1A1D28;border:1px solid rgba(99,102,241,0.45);box-shadow:0 0 0 3px rgba(99,102,241,0.05),0 10px 28px -8px rgba(99,102,241,0.14)`
-      : `background:#111318;border:1px solid rgba(255,255,255,0.07)`;
-    const cardCls = active
-      ? 'snap-center shrink-0 w-[120px] sm:w-[136px] rounded-xl px-4 py-5 text-center cursor-pointer transition-all duration-300 day-card-active'
-      : 'snap-center shrink-0 w-[120px] sm:w-[136px] rounded-xl px-4 py-5 text-center cursor-pointer transition-all duration-300 ease-out hover:-translate-y-1';
-
-    /* Day label: "Oggi" verde accent, "Domani" normal, others dimmed */
-    const labelCls  = isToday_   ? 'text-xs font-bold tracking-tight today-badge-anim font-mono'
-                    : isTomorrow ? 'text-xs font-semibold font-mono text-white/60'
-                    :              'text-xs font-medium font-mono text-white/32 capitalize';
-    const labelStyle = isToday_ ? 'color:#6366F1' : '';
-
-    /* Temps: max prominent, min muted — side by side */
-    const tmax = fmtTemp(fc.tmax_c?.p50);
-    const tmin = fmtTemp(fc.tmin_c?.p50);
-
-    return `<div class="${cardCls}" data-idx="${idx}" style="${cardStyle}">
-      <div class="${labelCls} leading-none mb-2.5" style="${labelStyle}">${dayLabel}</div>
-      <span class="text-5xl leading-none block mb-2">${icon}</span>
-      <div class="text-xs font-sans mb-3 leading-tight" style="color:rgba(241,245,249,0.28)">${condText}</div>
-      <div class="flex items-baseline justify-center gap-2 mb-3">
-        <span class="text-base font-bold font-sans tabular-nums text-white">${tmax}</span>
-        <span class="text-xs font-sans tabular-nums" style="color:rgba(241,245,249,0.38)">${tmin}</span>
+    return `<button class="g-strip__card${active ? ' g-strip__card--active' : ''}" data-idx="${idx}" aria-pressed="${active}">
+      <span class="${labelCls}">${dayLabel}</span>
+      <span class="g-strip__icon">${icon}</span>
+      <div class="g-strip__temps">
+        <span class="g-strip__tmax">${tmax}</span>
+        <span class="g-strip__tmin">${tmin}</span>
       </div>
-      <div class="flex gap-1 flex-wrap justify-center">${dots}</div>
-    </div>`;
+      <div class="g-strip__precip-bar">
+        <span class="g-strip__precip-fill" style="width:${precipPct}%"></span>
+      </div>
+      <span class="g-strip__precip-val">${precipDisplay}</span>
+    </button>`;
   }).join('');
 
   el.querySelectorAll('[data-idx]').forEach(card => {
     card.addEventListener('click', () => {
       const idx = parseInt(card.dataset.idx, 10);
       if (idx === selectedDayIdx) return;
-      card.style.transform = 'translateY(-2px) scale(0.97)';
-      setTimeout(() => card.style.transform = '', 100);
       selectedDayIdx = idx;
       renderDayStrip(currentData.days, selectedDayIdx);
       renderDayDetail(currentData.days[selectedDayIdx]);
@@ -656,35 +586,49 @@ function renderDayDetail(day) {
   const { forecasts: fc, indicators, target_date, lead_time_h } = day;
   const icon = weatherIconForDay(day);
 
-  document.getElementById('detail-icon').textContent  = icon;
-  document.getElementById('detail-title').textContent = fmtDayLabel(target_date);
-  document.getElementById('detail-date').textContent  = fmtDate(target_date);
-  document.getElementById('detail-lead').textContent  = `+${lead_time_h}h`;
+  // Head
+  const iconEl = document.getElementById('detail-icon');
+  if (iconEl) { iconEl.textContent = icon; twemoji.parse(iconEl, TWEMOJI_OPTS); }
+  const titleEl = document.getElementById('detail-title');
+  if (titleEl) titleEl.textContent = fmtDayLabel(target_date);
+  const dateEl = document.getElementById('detail-date');
+  if (dateEl) dateEl.textContent = fmtDate(target_date);
+  const leadEl = document.getElementById('detail-lead');
+  if (leadEl) leadEl.textContent = `+${lead_time_h}h`;
   const emessaEl = document.getElementById('detail-emessa');
   if (emessaEl && currentData?.generated_at) {
     const t = new Date(currentData.generated_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     emessaEl.textContent = `prev. emessa ${t}`;
   }
 
-  /* Tmax: warm orange, no arrow — number speaks for itself */
-  document.getElementById('detail-tmax').innerHTML =
-    `<span style="color:#F97316">${fmtTemp(fc.tmax_c?.p50)}</span>`;
-  /* Tmin: cool blue-slate */
-  document.getElementById('detail-tmin').innerHTML =
-    `<span style="color:#60A5FA">${fmtTemp(fc.tmin_c?.p50)}</span>`;
+  // Metrics
+  const tmaxEl = document.getElementById('detail-tmax');
+  if (tmaxEl) tmaxEl.textContent = fmtTemp(fc.tmax_c?.p50);
+
+  const tminEl = document.getElementById('detail-tmin');
+  if (tminEl) tminEl.textContent = fmtTemp(fc.tmin_c?.p50);
 
   const precipVal = fc.precip_mm?.mean ?? fc.precip_mm?.p50;
-  document.getElementById('detail-precip-val').innerHTML = precipVal != null && precipVal > 0.05
-    ? `${precipVal.toFixed(1)}<span class="text-xl font-medium ml-1.5" style="color:rgba(241,245,249,0.30)">mm</span>`
-    : '<span style="color:rgba(241,245,249,0.30)">—</span>';
+  const precipEl = document.getElementById('detail-precip-val');
+  if (precipEl) {
+    precipEl.textContent = precipVal != null && precipVal > 0.05
+      ? `${precipVal.toFixed(1)} mm`
+      : '—';
+  }
 
-  document.getElementById('detail-ci-tmax').innerHTML   = ciBar(fc.tmax_c,   '°');
-  document.getElementById('detail-ci-tmin').innerHTML   = ciBar(fc.tmin_c,   '°');
-  document.getElementById('detail-ci-precip').innerHTML = ciBar(fc.precip_mm, ' mm');
+  // CI bars
+  const ciTmax = document.getElementById('detail-ci-tmax');
+  if (ciTmax) ciTmax.innerHTML = ciBar(fc.tmax_c, '°');
+  const ciTmin = document.getElementById('detail-ci-tmin');
+  if (ciTmin) ciTmin.innerHTML = ciBar(fc.tmin_c, '°');
+  const ciPrecip = document.getElementById('detail-ci-precip');
+  if (ciPrecip) ciPrecip.innerHTML = ciBar(fc.precip_mm, ' mm');
 
+  // Indicators + NWP
   renderIndicatorChips(indicators);
   renderNwpList(day);
 
+  // Re-animate
   const detailEl = document.getElementById('day-detail');
   detailEl.classList.remove('anim-fade-up');
   void detailEl.offsetWidth;
@@ -695,28 +639,43 @@ function renderDayDetail(day) {
 
 function renderIndicatorChips(indicators) {
   const el = document.getElementById('detail-indicators');
+  if (!el) return;
   el.innerHTML = Object.entries(indicators).map(([id, ind], i) => {
     const meta    = INDICATOR_META[id] ?? { label: id, icon: '?' };
-    const vc      = VERDICT_COLOR[ind.verdict] ?? VERDICT_COLOR.giallo;
-    const verdCap = ind.verdict.charAt(0).toUpperCase() + ind.verdict.slice(1);
+    const verdict = ind.verdict ?? 'giallo';
+    const verdCap = verdict.charAt(0).toUpperCase() + verdict.slice(1);
     const tip     = escHtml(ind.rule_text || ind.rule_matched || '');
-    return `<div data-detail-chip${tip ? ` data-tip="${tip}"` : ''} class="shrink-0">
-      <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-lg border hover:opacity-90 active:scale-95 transition-all duration-200 cursor-pointer select-none" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.09)"
-           style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
-        <span class="text-2xl leading-none">${meta.icon}</span>
-        <div class="text-left min-w-0">
-          <div class="text-[11px] font-sans font-medium leading-tight" style="color:rgba(241,245,249,0.45)">${meta.label}</div>
-          <div class="flex items-center gap-1.5 mt-1">
-            <span class="w-1.5 h-1.5 rounded-full ${vc.dot} shrink-0"></span>
-            <span class="text-xs font-mono font-bold uppercase tracking-[0.06em] ${vc.text}">${verdCap}</span>
-          </div>
-        </div>
-      </div>
-    </div>`;
+    return `<button class="g-pill g-pill--${verdict}"${tip ? ` data-detail-chip data-tip="${tip}"` : ' data-detail-chip'}
+                    style="animation:fade-up 0.35s ease-out ${i * 50}ms both">
+      <span class="g-pill__icon">${meta.icon}</span>
+      <span class="g-pill__label">${meta.label}</span>
+      <span class="g-pill__verdict">${verdCap}</span>
+    </button>`;
   }).join('');
 
   _wireChipTooltip(el, '[data-detail-chip]');
   twemoji.parse(el, TWEMOJI_OPTS);
+}
+
+// ── NWP table with deltas ─────────────────────────────────────────────────────
+
+function computeNwpDelta(modelVal, guazzaVal, kind) {
+  if (modelVal == null || guazzaVal == null) return { text: '', cls: '' };
+  const delta = modelVal - guazzaVal;
+  const absD  = Math.abs(delta);
+  const sign  = delta >= 0 ? '+' : '';
+  const fmt   = delta.toFixed(1);
+  if (kind === 'temp') {
+    if (absD < 0.5) return { text: `${sign}${fmt}°`, cls: 'g-delta--muted' };
+    return delta > 0
+      ? { text: `${sign}${fmt}°`, cls: 'g-delta--warm' }
+      : { text: `${sign}${fmt}°`, cls: 'g-delta--cold' };
+  }
+  // precip
+  if (absD < 0.3) return { text: `${sign}${fmt}`, cls: 'g-delta--muted' };
+  return delta > 0
+    ? { text: `${sign}${fmt}`, cls: 'g-delta--wet' }
+    : { text: `${sign}${fmt}`, cls: 'g-delta--dry' };
 }
 
 function renderNwpList(day) {
@@ -725,68 +684,65 @@ function renderNwpList(day) {
   const fc  = day.forecasts;
   if (!nwp || !nwp.length) { el.innerHTML = ''; return; }
 
-  /*
-   * Layout: 3 colonne [nome-modello | min · max | precip]
-   * Guazza pinnato in cima con accent border-left.
-   * last_run come riga secondaria sotto il nome del modello.
-   */
-  const colCls = 'grid grid-cols-[1fr_auto_auto] items-start gap-x-5';
+  const gTmin = fc.tmin_c?.p50;
+  const gTmax = fc.tmax_c?.p50;
+  const gPrec = fc.precip_mm?.mean ?? fc.precip_mm?.p50;
 
-  const guazzaRow = `
-    <div class="${colCls} px-7 md:px-9 py-4 mb-px" style="background:rgba(99,102,241,0.07);border-left:2px solid #6366F1">
-      <div class="text-sm font-bold font-sans" style="color:#6366F1">★ Guazza ML</div>
-      <div class="text-right text-sm font-semibold tabular-nums font-mono text-white/80 whitespace-nowrap">
-        <span style="color:#60A5FA">${fmtTemp(fc.tmin_c?.p50)}</span>
-        <span style="color:rgba(241,245,249,0.20)" class="mx-1">·</span>
-        <span style="color:#F97316">${fmtTemp(fc.tmax_c?.p50)}</span>
-      </div>
-      <div class="text-right text-sm font-semibold tabular-nums font-mono text-sky-600 dark:text-sky-400 whitespace-nowrap">${fmtPrecip(fc.precip_mm?.mean ?? fc.precip_mm?.p50)}</div>
-    </div>`;
+  const thead = `<thead><tr>
+    <th>Modello</th>
+    <th>T min</th>
+    <th>T max</th>
+    <th>Precip</th>
+    <th>Run</th>
+  </tr></thead>`;
 
-  /* Column sub-header */
-  const subHeader = `
-    <div class="${colCls} px-7 md:px-9 py-2 border-t border-b" style="border-color:rgba(255,255,255,0.06)">
-      <div class="text-[11px] font-mono font-semibold uppercase tracking-[0.08em]" style="color:rgba(241,245,249,0.22)">NWP</div>
-      <div class="text-right text-[11px] font-mono font-semibold whitespace-nowrap" style="color:rgba(241,245,249,0.22)">Min · Max</div>
-      <div class="text-right text-[11px] font-mono font-semibold" style="color:rgba(241,245,249,0.22)">Precip</div>
-    </div>`;
+  const guazzaRow = `<tr class="g-nwp__row g-nwp__row--guazza">
+    <td><span class="g-nwp__name g-nwp__name--guazza">★ Guazza ML</span></td>
+    <td>${gTmin != null ? gTmin.toFixed(1)+'°' : '—'}</td>
+    <td>${gTmax != null ? gTmax.toFixed(1)+'°' : '—'}</td>
+    <td>${gPrec != null ? gPrec.toFixed(1)+' mm' : '—'}</td>
+    <td style="color:var(--text-3);font-size:10px">${currentData?.generated_at
+      ? new Date(currentData.generated_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})
+      : '—'}</td>
+  </tr>`;
 
-  const nwpRows = nwp.map(m => `
-    <div class="${colCls} px-7 md:px-9 py-3.5 transition-colors duration-150 hover:bg-white/[0.03]" style="border-top:1px solid rgba(255,255,255,0.06)">
-      <div>
-        <div class="text-sm font-medium text-white/75 leading-tight">${escHtml(m.label)}</div>
-        <div class="text-[11px] font-mono tabular-nums mt-0.5" style="color:rgba(241,245,249,0.25)">${fmtLastRun(m.last_run)}</div>
-      </div>
-      <div class="text-right text-sm font-semibold tabular-nums font-mono whitespace-nowrap self-center" style="color:rgba(241,245,249,0.55)">
-        ${m.tmin_c != null ? m.tmin_c.toFixed(1)+'°' : '—'}
-        <span style="color:rgba(241,245,249,0.20)" class="mx-1">·</span>
-        ${m.tmax_c != null ? m.tmax_c.toFixed(1)+'°' : '—'}
-      </div>
-      <div class="text-right text-sm font-semibold tabular-nums font-mono whitespace-nowrap self-center" style="color:rgba(241,245,249,0.55)">${m.precip_mm != null ? m.precip_mm.toFixed(1)+' mm' : '—'}</div>
-    </div>`).join('');
+  const nwpRows = nwp.map(m => {
+    const dTmin = computeNwpDelta(m.tmin_c, gTmin, 'temp');
+    const dTmax = computeNwpDelta(m.tmax_c, gTmax, 'temp');
+    const dPrec = computeNwpDelta(m.precip_mm, gPrec, 'precip');
+    return `<tr class="g-nwp__row">
+      <td>
+        <span class="g-nwp__name">${escHtml(m.label)}</span>
+        <span class="g-nwp__run">${fmtLastRun(m.last_run)}</span>
+      </td>
+      <td class="g-nwp__val">${m.tmin_c != null ? m.tmin_c.toFixed(1)+'°' : '—'}${dTmin.text ? `<span class="g-delta ${dTmin.cls}">${dTmin.text}</span>` : ''}</td>
+      <td class="g-nwp__val">${m.tmax_c != null ? m.tmax_c.toFixed(1)+'°' : '—'}${dTmax.text ? `<span class="g-delta ${dTmax.cls}">${dTmax.text}</span>` : ''}</td>
+      <td class="g-nwp__val">${m.precip_mm != null ? m.precip_mm.toFixed(1)+' mm' : '—'}${dPrec.text ? `<span class="g-delta ${dPrec.cls}">${dPrec.text}</span>` : ''}</td>
+      <td style="color:var(--text-3);font-size:10px">${m.last_run ? new Date(m.last_run).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+    </tr>`;
+  }).join('');
 
-  el.innerHTML = guazzaRow + subHeader + nwpRows;
+  el.innerHTML = `<table class="g-nwp__table">${thead}<tbody>${guazzaRow}${nwpRows}</tbody></table>`;
 }
 
-// ── Coverage badge ────────────────────────────────────────────────────────────
+// ── Coverage ──────────────────────────────────────────────────────────────────
 
 function renderCoverage(cov) {
-  const el = document.getElementById('coverage-bar');
+  const el = document.getElementById('coverage-numbers');
   if (!el) return;
   if (!cov || Object.values(cov).every(v => v === null)) {
-    el.innerHTML = `<div class="rounded-lg border px-4 py-3 text-xs font-mono" style="background:rgba(99,102,241,0.08);border-color:rgba(99,102,241,0.20);color:#A5B4FC">Calibrazione in corso — copertura CI non ancora disponibile (primi 30gg)</div>`;
+    el.innerHTML = `<span class="g-coverage__calibrating">Calibrazione in corso — copertura CI non ancora disponibile (primi 30gg)</span>`;
   } else {
     const items = [
       ['Tmin CI80', cov.tmin_ci80], ['Tmin CI90', cov.tmin_ci90],
       ['Tmax CI80', cov.tmax_ci80], ['Tmax CI90', cov.tmax_ci90],
       ['Precip CI80', cov.precip_ci80], ['Precip CI90', cov.precip_ci90],
     ].filter(([, v]) => v !== null)
-     .map(([k, v]) => `<span class="text-xs font-mono">${k}: <strong>${(v * 100).toFixed(0)}%</strong></span>`)
+     .map(([k, v]) => `<span>${k}: <strong>${(v * 100).toFixed(0)}%</strong></span>`)
      .join('');
-    el.innerHTML = `<div class="rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-3 text-xs font-mono flex gap-4 flex-wrap">${items}</div>`;
+    el.innerHTML = `<div class="g-coverage__numbers">${items}</div>`;
   }
   showEl('coverage-bar');
-  twemoji.parse(el, TWEMOJI_OPTS);
 }
 
 // ── Model switches (segmented control) ───────────────────────────────────────
@@ -812,31 +768,28 @@ function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
   const models = [{ source: 'guazza', label: '★ Guazza ML' }];
   (data.nwp_models_hourly || []).forEach(m => models.push({ source: m.source, label: m.label }));
 
-  // Keep the pill span, rebuild buttons
   const pillEl = document.getElementById(pillId);
   container.innerHTML = '';
-  if (pillEl) container.appendChild(pillEl);
-  else {
+  if (pillEl) {
+    container.appendChild(pillEl);
+  } else {
     const s = document.createElement('span');
     s.id = pillId;
-    s.className = 'absolute top-1 bottom-1 rounded pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]';
-    s.style.background = 'rgba(99,102,241,0.12)';
+    s.className = 'g-model-switch__pill';
     container.appendChild(s);
   }
 
   models.forEach(m => {
     const btn = document.createElement('button');
     const active = m.source === activeSource;
-    btn.className = `relative z-10 px-3 py-1 text-[11px] font-mono transition-colors duration-200 ${active ? 'font-semibold' : 'font-medium hover:text-white/70'}`;
-    btn.style.color = active ? '#6366F1' : 'rgba(241,245,249,0.4)';
+    btn.className = `g-model-switch__btn${active ? ' g-model-switch__btn--active' : ''}`;
     btn.dataset.src = m.source;
     btn.textContent = m.label;
     container.appendChild(btn);
     btn.addEventListener('click', () => {
       container.querySelectorAll('[data-src]').forEach(b => {
         const isActive = b.dataset.src === m.source;
-        b.className = `relative z-10 px-3 py-1 text-[11px] font-mono transition-colors duration-200 ${isActive ? 'font-semibold' : 'font-medium hover:text-white/70'}`;
-        b.style.color = isActive ? '#6366F1' : 'rgba(241,245,249,0.4)';
+        b.className = `g-model-switch__btn${isActive ? ' g-model-switch__btn--active' : ''}`;
       });
       updatePillPosition(switchId, pillId, m.source);
       onChange(m.source);
@@ -849,9 +802,8 @@ function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
 // ── Chart ─────────────────────────────────────────────────────────────────────
 
 function chartPalette() {
-  const dark = document.documentElement.dataset.theme === 'dark';
   return {
-    grid:  dark ? 'rgba(148,163,184,0.08)' : 'rgba(148,163,184,0.06)',
+    grid:  'rgba(148,163,184,0.08)',
     label: '#94A3B8',
     temp:  '#F97316',
     hum:   '#0EA5E9',
@@ -921,18 +873,17 @@ const crosshairPlugin = {
   afterDraw(chart) {
     const active = chart.tooltip?._active ?? [];
     if (!active.length) return;
-    const ctx  = chart.ctx;
-    const x    = active[0].element.x;
+    const ctx = chart.ctx;
+    const x   = active[0].element.x;
     const { top, bottom } = chart.chartArea;
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(x, top);
     ctx.lineTo(x, bottom);
     ctx.lineWidth   = 1;
-    ctx.strokeStyle = 'rgba(99,102,241,0.20)';
+    ctx.strokeStyle = 'rgba(59,164,194,0.20)';
     ctx.setLineDash([]);
     ctx.stroke();
-    // Glow circle around active temp point
     const tempPt = active.find(a => a.datasetIndex === 0);
     if (tempPt) {
       ctx.beginPath();
@@ -960,22 +911,21 @@ function _makeTooltipHandler(elId) {
     const prec = items.find(i => i.datasetIndex === 2);
     const wind = items.find(i => i.datasetIndex === 3);
 
-    const row = (dot, label, val) =>
-      `<div class="flex items-center justify-between gap-5 py-[3px]">
-         <span class="flex items-center gap-1.5 text-xs font-mono" style="color:rgba(241,245,249,0.4)">${dot}${label}</span>
-         <span class="text-xs font-bold tabular-nums font-mono text-white/90">${val}</span>
+    const row = (dotColor, label, val) =>
+      `<div style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:3px 0">
+         <span style="display:flex;align-items:center;gap:6px;font-size:11px;font-family:var(--ff-mono);color:var(--text-3)"><span style="width:6px;height:6px;border-radius:50%;background:${dotColor};flex-shrink:0;display:inline-block"></span>${label}</span>
+         <span style="font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--ff-mono);color:var(--text-1)">${val}</span>
        </div>`;
-    const dot = cls => `<span class="w-1.5 h-1.5 rounded-full ${cls} shrink-0"></span>`;
 
     el.innerHTML = `
-      <div class="flex items-baseline justify-between gap-3 mb-2 pb-2 border-b" style="border-color:rgba(255,255,255,0.07)">
-        <span class="text-[11px] font-mono capitalize" style="color:rgba(241,245,249,0.35)">${date}</span>
-        <span class="text-sm font-bold tabular-nums font-mono text-white">${time}</span>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border-1)">
+        <span style="font-size:10px;font-family:var(--ff-mono);text-transform:capitalize;color:var(--text-3)">${date}</span>
+        <span style="font-size:13px;font-weight:700;font-family:var(--ff-mono);font-variant-numeric:tabular-nums;color:var(--text-1)">${time}</span>
       </div>
-      ${temp ? row(dot('bg-orange-500'), 'Temp', `${temp.raw.y.toFixed(1)}°C`) : ''}
-      ${hum  ? row(dot('bg-sky-500'),    'Umidità', `${hum.raw.y.toFixed(0)}%`) : ''}
-      ${prec && prec.raw.y > 0.05 ? row(dot('bg-blue-500'), 'Precip', `${prec.raw.y.toFixed(1)} mm`) : ''}
-      ${wind ? row(dot('bg-teal-500'),   'Vento', `${wind.raw.y.toFixed(0)} km/h`) : ''}`;
+      ${temp ? row('#F97316', 'Temp',    `${temp.raw.y.toFixed(1)}°C`)   : ''}
+      ${hum  ? row('#0EA5E9', 'Umidità', `${hum.raw.y.toFixed(0)}%`)     : ''}
+      ${prec && prec.raw.y > 0.05 ? row('#2563EB', 'Precip', `${prec.raw.y.toFixed(1)} mm`) : ''}
+      ${wind ? row('#14B8A6', 'Vento',   `${wind.raw.y.toFixed(0)} km/h`) : ''}`;
 
     const cRect = chart.canvas.parentElement.getBoundingClientRect();
     el.style.opacity = '1';
@@ -987,7 +937,6 @@ function _makeTooltipHandler(elId) {
 const externalTooltipHandler       = _makeTooltipHandler('chart-tooltip');
 const externalTooltipHandlerWeekly = _makeTooltipHandler('chart-weekly-tooltip');
 
-// Populates the 4-cell stat strip above the daily chart canvas
 function renderChartStatStrip(points) {
   const el = document.getElementById('chart-stat-strip');
   if (!el) return;
@@ -1004,17 +953,17 @@ function renderChartStatStrip(points) {
   const wMax    = winds.length  ? `${(Math.max(...winds) * 3.6).toFixed(0)} km/h` : '—';
 
   const stats = [
-    { label: 'Range temp',   value: tRange,  color: '#F97316' },
-    { label: 'Umid. media',  value: hAvg,    color: '#0EA5E9' },
-    { label: 'Precip tot.',  value: precipS, color: '#2563EB' },
-    { label: 'Vento max',    value: wMax,    color: '#14B8A6' },
+    { label: 'Range temp',  value: tRange,  color: '#F97316' },
+    { label: 'Umid. media', value: hAvg,    color: '#0EA5E9' },
+    { label: 'Precip tot.', value: precipS, color: '#2563EB' },
+    { label: 'Vento max',   value: wMax,    color: '#14B8A6' },
   ];
   el.innerHTML = stats.map((s, i) => `
-    <div class="flex flex-col items-center justify-center px-4 py-3"
-         style="background:#111318;animation:fade-up 0.28s ease-out ${i * 55}ms both">
-      <div class="text-[11px] font-mono font-semibold uppercase tracking-[0.06em] mb-1.5 leading-none whitespace-nowrap text-center"
-           style="color:rgba(241,245,249,0.28)">${s.label}</div>
-      <div class="text-sm font-extrabold tabular-nums leading-none text-center" style="color:${s.color}">${s.value}</div>
+    <div class="g-stat-strip__cell" style="animation-delay:${i * 55}ms">
+      <span class="g-stat-strip__label">
+        <span class="g-chart-legend__dot" style="background:${s.color}"></span>${s.label}
+      </span>
+      <span class="g-stat-strip__value" style="color:${s.color}">${s.value}</span>
     </div>`).join('');
 }
 
@@ -1054,7 +1003,7 @@ function _buildChartDatasets(canvas, points, p) {
   ];
 }
 
-function _baseChartOptions(p, xMin, xMax, unit, labelFn) {
+function _baseChartOptions(p, xMin, xMax, unit) {
   return {
     responsive: true, maintainAspectRatio: false,
     hover: { mode: 'index', intersect: false },
@@ -1151,9 +1100,9 @@ function updateWeeklyChart(data, model) {
 function destroyRadar() {
   if (radarTimer) { clearInterval(radarTimer); radarTimer = null; }
   if (radarMap)   { radarMap.remove(); radarMap = null; }
-  radarLayers = [];
-  radarFrames = [];
-  radarIdx    = 0;
+  radarLayers  = [];
+  radarFrames  = [];
+  radarIdx     = 0;
   radarPlaying = false;
 }
 
@@ -1198,15 +1147,14 @@ function showRadarFrame(i) {
   const sliderEl = document.getElementById('radar-slider');
   if (timeEl)   timeEl.textContent = lbl;
   if (sliderEl) sliderEl.value = String(i);
-  // Frame-type badge: verde = osservato, amber = previsione
   const badgeEl = document.getElementById('radar-frame-badge');
   if (badgeEl) {
     if (f.kind === 'nowcast') {
-      badgeEl.textContent  = 'Previsione';
-      badgeEl.style.cssText = 'background:rgba(99,102,241,0.15);color:#A5B4FC';
+      badgeEl.textContent   = 'Previsione';
+      badgeEl.style.cssText = 'background:rgba(59,164,194,0.15);color:#3BA4C2';
     } else {
-      badgeEl.textContent  = 'Osservato';
-      badgeEl.style.cssText = 'background:rgba(16,185,129,0.15);color:#34D399';
+      badgeEl.textContent   = 'Osservato';
+      badgeEl.style.cssText = 'background:rgba(52,211,153,0.15);color:#34D399';
     }
     badgeEl.classList.remove('hidden');
   }
@@ -1227,15 +1175,15 @@ function wireRadarControls() {
     slider.max = String(radarFrames.length - 1);
     slider.addEventListener('input', () => {
       radarPlaying = false;
-      if (playBtn) { playBtn.innerHTML = playBtnHtml(false); }
+      if (playBtn) playBtn.innerHTML = PLAY_SVG;
       showRadarFrame(parseInt(slider.value, 10));
     });
   }
   if (playBtn) {
-    playBtn.innerHTML = playBtnHtml(false);
+    playBtn.innerHTML = PLAY_SVG;
     playBtn.addEventListener('click', () => {
       radarPlaying = !radarPlaying;
-      playBtn.innerHTML = playBtnHtml(radarPlaying);
+      playBtn.innerHTML = radarPlaying ? PAUSE_SVG : PLAY_SVG;
     });
   }
   document.getElementById('radar-zoom-in')?.addEventListener('click',  () => radarMap?.zoomIn());
@@ -1246,11 +1194,11 @@ function showRadarError(msg) {
   const box = document.getElementById('radar-error');
   if (!box) return;
   box.innerHTML = `
-    <div style="width:40px;height:40px;border-radius:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;justify-content:center">
+    <div style="width:40px;height:40px;border-radius:12px;background:rgba(255,255,255,0.04);border:1px solid var(--border-1);display:flex;align-items:center;justify-content:center">
       <span style="font-size:20px;line-height:1">⚠️</span>
     </div>
-    <p style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.32);margin-top:10px">Radar non disponibile</p>
-    <p style="font-size:11px;color:rgba(255,255,255,0.18);margin-top:4px">${escHtml(msg)}</p>`;
+    <p style="font-size:13px;font-weight:600;color:var(--text-3);margin-top:10px">Radar non disponibile</p>
+    <p style="font-size:11px;color:var(--text-3);opacity:0.6;margin-top:4px">${escHtml(msg)}</p>`;
   twemoji.parse(box, TWEMOJI_OPTS);
   box.classList.remove('hidden');
 }
@@ -1265,14 +1213,12 @@ function buildRadarMap(locationId, host, frames) {
     minZoom: 3, maxZoom: 7, zoomControl: false,
     attributionControl: true, scrollWheelZoom: false,
   });
-  // Always dark basemap for radar contrast
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     minZoom: 3, maxZoom: 12, zIndex: 1,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>, &copy; <a href="https://carto.com">CARTO</a>',
   }).addTo(radarMap);
 
-  // Sonar marker using DivIcon
-  const sonarHtml = `<div style="width:8px;height:8px;border-radius:50%;background:#6366F1;box-shadow:0 0 0 2px rgba(99,102,241,0.35)"></div>`;
+  const sonarHtml = `<div style="width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px rgba(59,164,194,0.35)"></div>`;
   L.marker([loc.lat, loc.lon], {
     icon: L.divIcon({ className: '', html: sonarHtml, iconSize: [8, 8], iconAnchor: [4, 4] }),
   }).addTo(radarMap);
@@ -1293,6 +1239,7 @@ function initRadar(locationId) {
     .catch(err => showRadarError(err.message));
 }
 
+
 // ── Main render ───────────────────────────────────────────────────────────────
 
 function render(data) {
@@ -1309,24 +1256,27 @@ function render(data) {
 
   renderHeaderMeta(data.generated_at);
   renderHero(data);
-
-  showEl('radar-section');
-  initRadar(data.location_id);
+  renderAQ(data.air_quality);
 
   if (data.days.length > 0) {
     renderDayStrip(data.days, selectedDayIdx);
     renderDayDetail(day);
-    showEl('forecast-section');
+
+    const fs = document.getElementById('forecast-section');
+    if (fs) { fs.classList.remove('hidden'); fs.style.display = 'flex'; }
+
+    showEl('chart-weekly-section');
+    initModelSwitch(data);
+    initWeeklyModelSwitch(data);
+    if (targetDate) initChart(data, selectedModel, targetDate);
+    initWeeklyChart(data, selectedWeeklyModel);
   }
 
-  showEl('chart-daily-section');
-  showEl('chart-weekly-section');
-  initModelSwitch(data);
-  initWeeklyModelSwitch(data);
-  if (targetDate) initChart(data, selectedModel, targetDate);
-  initWeeklyChart(data, selectedWeeklyModel);
-
   renderCoverage(data.coverage_empirical_30d);
+  renderHeroSun(LOCATIONS.find(l => l.id === data.location_id), new Date());
+  initRadar(data.location_id);
+
+  twemoji.parse(document.querySelector('.g-header'), TWEMOJI_OPTS);
 }
 
 // ── Data loading ──────────────────────────────────────────────────────────────
@@ -1337,8 +1287,9 @@ async function loadLocation(locId) {
   selectedModel       = 'guazza';
   selectedWeeklyModel = 'guazza';
 
-  // Hide content, show skeleton
-  ['hero-card','radar-section','forecast-section','chart-daily-section','chart-weekly-section','coverage-bar','error-state'].forEach(hideEl);
+  const fs = document.getElementById('forecast-section');
+  if (fs) { fs.classList.add('hidden'); fs.style.display = 'none'; }
+  ['hero-card','aq-section','chart-weekly-section','coverage-bar','error-state'].forEach(hideEl);
   showSkeleton();
 
   if (meteoChart)    { meteoChart.destroy();    meteoChart    = null; }
@@ -1362,12 +1313,12 @@ async function loadLocation(locId) {
 
 initDarkMode();
 
-// Allinea Chart.js al sistema tipografico — Space Mono per tutti i canvas label
 if (typeof Chart !== 'undefined') {
   Chart.defaults.font.family = "'JetBrains Mono', ui-monospace, monospace";
   Chart.defaults.font.size   = 11;
 }
+
 document.addEventListener('click', hideIndicatorTooltip);
-twemoji.parse(document.querySelector('header'), TWEMOJI_OPTS);
 window.addEventListener('popstate', () => loadLocation(getActiveLoc()));
+
 loadLocation(getActiveLoc());
