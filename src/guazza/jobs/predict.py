@@ -32,6 +32,7 @@ from guazza._logging import setup_logging
 from guazza.indicators import evaluate_all, load_indicators, log_results
 from guazza.models import load_artifacts, predict
 from guazza.output import (
+    _expected_precip,
     build_signals,
     build_signals_today,
     compute_coverage_30d,
@@ -161,7 +162,7 @@ def cmd_run(
                         db, location_id, str(target_date_obj),
                         tmin_p50=pred["tmin_c"].get("p50"),
                         tmax_p50=pred["tmax_c"].get("p50"),
-                        precip_p50=pred["precip_mm"].get("p50"),
+                        precip_anchor=_expected_precip(pred["precip_mm"]),
                     )
 
                     nwp_comparison = get_nwp_model_comparison(

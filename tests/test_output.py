@@ -13,6 +13,7 @@ import pytest
 from guazza.indicators import IndicatorResult
 from guazza.output import (
     _dewpoint,
+    _expected_precip,
     _prob_exceeds,
     build_signals,
     build_signals_today,
@@ -120,6 +121,50 @@ def test_prob_exceeds_interpolated() -> None:
     q = {"p05": 0.0, "p10": 2.0, "p50": 5.0, "p90": 9.0, "p95": 10.0}
     p = _prob_exceeds(q, 2.0)
     assert math.isclose(p, 0.90, abs_tol=0.01)
+
+
+# ── _expected_precip ─────────────────────────────────────────────────────────
+
+def test_expected_precip_uniform() -> None:
+    # Distribuzione uniforme su [0, 4]: E[X] = 2.0
+    q = {"p05": 0.2, "p10": 0.4, "p50": 2.0, "p90": 3.6, "p95": 3.8}
+    ev = _expected_precip(q)
+    assert ev is not None
+    assert math.isclose(ev, 2.0, abs_tol=0.05)
+
+
+def test_expected_precip_zero_inflated() -> None:
+    # Caso tipico: mediana 0, coda pesante a destra → E[X] > p50
+    q = {"p05": 0.0, "p10": 0.0, "p50": 0.0, "p90": 3.0, "p95": 5.0}
+    ev = _expected_precip(q)
+    assert ev is not None
+    assert ev > 0.0  # E[X] > mediana
+    # Con estremi rettangolari: contributo principale da [0.9, 1.0] ≈ 0.1 * 4.0 = 0.4
+    assert ev > 0.3
+
+
+def test_expected_precip_always_ge_zero() -> None:
+    # Quantile regression può dare valori leggermente negativi: clamp a 0
+    q = {"p05": -0.1, "p10": -0.05, "p50": 0.0, "p90": 0.0, "p95": 0.0}
+    ev = _expected_precip(q)
+    assert ev is not None
+    assert ev >= 0.0
+
+
+def test_expected_precip_missing_quantile() -> None:
+    # Quantile mancante → None
+    q = {"p05": 0.0, "p10": 0.0, "p50": 0.5}  # mancano p90 e p95
+    assert _expected_precip(q) is None
+
+
+def test_expected_precip_in_fmt_precip(sample_pred: dict) -> None:
+    # Il campo "mean" deve essere presente nel JSON output e > p50 per distribuzione skewed
+    from guazza.output import write_location_json
+    # Usa il sample_pred con precip skewed: p05=0, p10=0, p50=0.5, p90=3.0, p95=5.0
+    q = sample_pred["precip_mm"]
+    ev = _expected_precip(q)
+    assert ev is not None
+    assert ev > q["p50"]  # distribuzione right-skewed → E[X] > mediana
 
 
 def test_prob_exceeds_empty() -> None:

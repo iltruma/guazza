@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -27,6 +28,30 @@ import pandas as pd
 if TYPE_CHECKING:
     from guazza.indicators import IndicatorResult
     from guazza.storage import DuckDBClient
+
+
+def _expected_precip(q: Mapping[str, float | None]) -> float | None:
+    """Valore atteso E[X] della distribuzione predittiva via quadratura trapezoidale.
+
+    Usa i 5 quantili (p05/p10/p50/p90/p95) con estremi rettangolari:
+    Q(0) = Q(0.05), Q(1) = Q(0.95). Restituisce None se mancano dati;
+    risultato clampato a 0 (precip non negativa).
+    """
+    alphas = [0.05, 0.10, 0.50, 0.90, 0.95]
+    keys   = ["p05", "p10", "p50", "p90", "p95"]
+    vals: list[float] = []
+    for k in keys:
+        v = q.get(k)
+        if v is None:
+            return None
+        vals.append(v)
+    # Aggiunge estremi rettangolari: α=0 → Q(0.05), α=1 → Q(0.95)
+    ext_a = [0.0] + alphas + [1.0]
+    ext_v = [vals[0]] + vals + [vals[-1]]
+    total = 0.0
+    for i in range(len(ext_a) - 1):
+        total += (ext_a[i + 1] - ext_a[i]) * (ext_v[i] + ext_v[i + 1]) / 2.0
+    return max(0.0, total)
 
 
 def _dewpoint(t: float, rh: float) -> float:
@@ -486,7 +511,7 @@ def compute_hourly_profile(
     target_date: str,
     tmin_p50: float | None,
     tmax_p50: float | None,
-    precip_p50: float | None,
+    precip_anchor: float | None,
 ) -> list[dict[str, float | None]] | None:
     """Profilo orario disaggregato da NWP ensemble, ancorato alle previsioni ML.
 
@@ -494,8 +519,8 @@ def compute_hourly_profile(
     a [tmin_p50, tmax_p50]. Se tmin_p50/tmax_p50 sono None usa i valori raw.
 
     Precipitazione: distribuzione oraria NWP scalata proporzionalmente così che la
-    somma giornaliera corrisponda a precip_p50 ML. precip_prob = frazione modelli
-    con precip > 0.1mm/h per quell'ora.
+    somma giornaliera corrisponda a precip_anchor (E[precip] ML). precip_prob =
+    frazione modelli con precip > 0.1mm/h per quell'ora.
 
     Returns:
         Lista di 24 dict {hour, temp_c, humidity_pct, precip_mm, precip_prob} oppure
@@ -553,8 +578,8 @@ def compute_hourly_profile(
         return round(tmin_p50 + (v - raw_min) / span_raw * (tmax_p50 - tmin_p50), 1)
 
     total_precip_raw = sum(v for _, (_, _, v, _, _) in hour_data.items())
-    if total_precip_raw > 0 and precip_p50 is not None and precip_p50 > 0:
-        precip_scale = precip_p50 / total_precip_raw
+    if total_precip_raw > 0 and precip_anchor is not None and precip_anchor > 0:
+        precip_scale = precip_anchor / total_precip_raw
     else:
         precip_scale = 0.0
 
@@ -615,7 +640,9 @@ def write_location_json(
         # Clamp fisico: la precipitazione non può essere negativa.
         def _c(v: float | None) -> float | None:
             return max(0.0, v) if v is not None else None
+        ev = _expected_precip(t)
         return {
+            "mean":    round(ev, 2) if ev is not None else None,
             "p50":     _c(t.get("p50")),
             "ci80_lo": _c(t.get("ci80_lo")), "ci80_hi": _c(t.get("ci80_hi")),
             "ci90_lo": _c(t.get("ci90_lo")), "ci90_hi": _c(t.get("ci90_hi")),

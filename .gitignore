@@ -58,3 +58,8 @@ htmlcov/
 
 # claude code
 .claude/
+.agents/
+
+# impeccable
+.impeccable/
+

@@ -6,7 +6,7 @@ Previsioni meteo iper-locali per 5 microclimi toscani. Sistema operativo persona
 
 **Tesi**: i modelli numerici pubblici (ECMWF, ICON-EU, app commerciali) sbagliano sistematicamente sui microclimi specifici generati da orografia, fondi valle e isole di calore. Questo progetto lo dimostra empiricamente e produce un sistema che fa misurabilmente meglio.
 
-**Costo infrastruttura**: ~€7/mese (VPS Hetzner CX22 + dominio).
+**Costo infrastruttura**: ~€2/mese (dominio). Server: Dell Optiplex Micro 3050 locale, esposto via Cloudflare Tunnel.
 
 ---
 
@@ -91,7 +91,7 @@ guazza/
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
 | Sprint 6 | Frontend HTML+JS+Tailwind+DaisyUI+Chart.js, layout Foreca a 3 sezioni | ✅ Completato |
 | Sprint 7 | Raffinamenti logiche e frontend in locale prima del deploy | 🟡 In corso |
-| Sprint 8 | Deploy VPS, backup R2, crontab | — |
+| Sprint 8 | Deploy su Optiplex locale + Cloudflare Tunnel, backup R2, crontab | — |
 | Sprint 9 | Model monitoring, coverage alert | — |
 | Sprint 10 | Calibrazione soglie DLE post-deploy | — |
 | Sprint 11 | Case study / pubblicazione | — |
@@ -100,11 +100,12 @@ guazza/
 
 ## Architettura
 
-- **VPS**: Hetzner CX22 (2 vCPU, 4GB RAM, €3.79/mese)
+- **Server**: Dell Optiplex Micro 3050 (locale, hardware già disponibile)
 - **Orchestrazione**: cron Linux (no Prefect, no Airflow)
 - **Storage**: DuckDB (colonnare, file singolo) + R2 backup
 - **ML**: LightGBM quantile regression + CQR calibration
 - **Frontend**: HTML+JS vanilla + Tailwind CSS + DaisyUI v4 + Chart.js + Twemoji + suncalc (CDN, statico)
+- **Esposizione**: Cloudflare Tunnel (`cloudflared`) — nessun IP pubblico, SSL automatico
 - **DNS/CDN/WAF**: Cloudflare (gratis)
 - **Monitoring**: Healthchecks.io + UptimeRobot (free tier)
 
@@ -251,7 +252,7 @@ uv run python -m guazza.jobs.train run
 # 8. Prima previsione
 uv run python -m guazza.jobs.predict
 
-# 9. Installa crontab sul VPS
+# 9. Installa crontab sul server locale
 crontab deploy/crontab.template
 ```
 

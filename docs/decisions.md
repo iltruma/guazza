@@ -120,7 +120,7 @@ ricreazione del DB in staging + test che passano.
 
 **Contesto**: vedi AGENTS.md sezione "Anti-pattern".
 
-**Motivazione sintetica**: progetto single-node, 1 utente, budget €3.79/mese.
+**Motivazione sintetica**: progetto single-node, 1 utente, hardware locale già disponibile (Dell Optiplex Micro 3050), costo infrastruttura ≈ €0.
 Ogni layer aggiuntivo (Prefect, Docker, FastAPI 24/7) aggiunge:
 - superficie di failure
 - complessità di debug

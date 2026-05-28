@@ -161,7 +161,7 @@ Flag aggiuntivi in `historical` e `daily`:
 🟡 **Punto aperto — lead_time_h range 1-11h** (atteso fino a 168h):
 il backfill Open-Meteo ha salvato solo il run più recente per valid time, non la storia dei run.
 In produzione il fetch giornaliero accumulerà run a distanze crescenti. Da verificare dopo
-il primo mese di operatività sul VPS (Sprint 8).
+il primo mese di operatività sul server locale (Sprint 8).
 
 **Fix same-day (2026-05-17)**: il SQL di `build_features_daily` gestisce correttamente
 `lead_time_days=0` (backfill storico: ts_run e ts_valid sullo stesso giorno). Questi record
@@ -377,7 +377,7 @@ Il server `www.sir.toscana.it` serializza le connessioni lato server (~3s per re
 **Dipendenza**: nessuna — lavoro continuo prima del deploy
 
 Iterazioni di affinamento su logiche e frontend per portare il sistema a uno
-stato "production-ready" in locale prima di affrontare il deploy VPS. Scope
+stato "production-ready" in locale prima di affrontare il deploy. Scope
 aperto, definito turno per turno: bug fix, raffinamenti UX, micro-feature.
 Criterio di uscita: tutto gira pulito in locale per ≥1 settimana senza
 interventi.
@@ -399,6 +399,16 @@ interventi.
 - **Stile dark**: override CSS per Leaflet attribution e zoom bar
 - **max zoom 7**: limite RainViewer (non Leaflet) — tile non disponibili a zoom 8+
 
+#### Intraday correction D+0 — da fare (opzione B)
+
+Correzione aritmetica delle ore rimanenti per D+0, senza nuovo modello:
+
+- In `compute_hourly_profile`: per le ore già trascorse usare SIR osservato (già in DB);
+  calcolare `somma_osservata` dalle righe `observations` con `granularity='realtime'` del giorno corrente
+- `remaining = max(0, E[precip] - somma_osservata)`; riscalare il profilo NWP sulle sole ore future con questo anchor
+- Se `remaining == 0` e `somma_osservata > E[precip]`: mostrare le ore future a 0 (ha già piovuto più del previsto)
+- Nessuna modifica al modello ML né alle feature; solo `output.py` + `jobs/predict.py`
+
 #### Raffinamenti frontend (2026-05-20 → 2026-05-22)
 
 - **Twemoji** (`twemoji@14.0.2`, jsDelivr): emoji Unicode renderizzate come SVG per
@@ -413,22 +423,34 @@ interventi.
 - **Pressione atmosferica**: `pressure_hpa` (surface pressure Open-Meteo) esposta in
   `get_current_conditions()` e mostrata come 4a cella nella stats grid (grid-cols-4).
 
-### Sprint 8 — Deploy VPS
+### Sprint 8 — Deploy locale (Dell Optiplex Micro 3050 + Cloudflare Tunnel)
 **Dipendenza**: Sprint 7 chiuso, sistema stabile in locale
 
-- Provisioning Hetzner CX22, Ubuntu 24.04 LTS
+- Setup Ubuntu 24.04 LTS sul Dell Optiplex Micro 3050
+- **Cloudflare Tunnel** (`cloudflared`): espone nginx locale su guazza.it senza IP pubblico né port forwarding; SSL terminato da Cloudflare
 - Backfill storico (`historical`) per caricare SIR + Open-Meteo 2022→oggi
 - Crontab con i 4 job ingestion + `qc run` + job `predict`
-- Configurazione `.env` produzione (Netatmo, OpenAQ, Healthchecks.io), `load_dotenv` per lettura DB_PATH e HEALTHCHECKS_URL
+- Configurazione `.env` produzione (Netatmo, Healthchecks.io), `load_dotenv` per lettura DB_PATH e HEALTHCHECKS_URL
 - **Backup Cloudflare R2**: job cron periodico per backup `.duckdb` + Parquet su Cloudflare R2 (10GB free tier, egress gratis) via `rclone` o `boto3`
-- GitHub Actions → deploy SSH
+- GitHub Actions → deploy SSH (via tunnel o rete locale)
 
-### Sprint 9 — Model monitoring
+### Sprint 9 — Model monitoring + nowcasting
 **Dipendenza**: Deploy VPS completato (Sprint 8)
 
 - Job cron che calcola `coverage_empirical_30d` rolling e la confronta con target (80% per CI80, 90% per CI90)
 - Alert se coverage scende sotto soglia: log `ERROR` + ping `Healthchecks.io` fail
 - Requisito obbligatorio D-004
+
+#### Nowcasting orario — da pianificare (opzione C)
+
+Predizione oraria 0-6h con aggiornamento ogni 15-30 min. Architetturalmente separato dal modello day-ahead:
+
+- **Feature set diverso**: osservazioni SIR realtime correnti + trend ultime 3h + NWP più recente (run 0-6h)
+- **Target**: precip_mm, temp_c orarie per le prossime 1-6h (orizzonte fisso, no lead_time_h variabile)
+- **Modello separato**: training set su coppie (obs_t, features_t-1..t-3) → obs_t+1..t+6
+- **Cadenza cron**: ogni 15-30 min (subito dopo `realtime` ingest)
+- **Output JSON**: campo `nowcast` nell'output per location, striscia oraria 0-6h
+- **Dipendenza dati**: almeno 6-12 mesi di `realtime` in produzione per training set sufficiente → non prima di Sprint 11+
 
 ### Sprint 10 — Calibrazione soglie DLE post-deploy
 **Dipendenza**: 30-60 giorni di operatività in produzione (Sprint 8+9)

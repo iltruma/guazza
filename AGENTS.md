@@ -40,7 +40,7 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 
 | Componente | Scelta | Motivazione |
 |---|---|---|
-| VPS | Hetzner CX22 (€3.79/mese) | Single node, budget |
+| Server | Dell Optiplex Micro 3050 (locale) | Single node, hardware già disponibile, costo zero |
 | OS | Ubuntu 24.04 LTS | LTS, standard |
 | Orchestrazione | cron Linux | Stupido, robusto, prevedibile |
 | Storage analitico | DuckDB | Column-oriented, file singolo, backup = cp |
@@ -48,7 +48,8 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 | Backup | Cloudflare R2 (10GB free) | Egress gratis, free tier |
 | ML core | LightGBM quantile | Gold standard dati tabulari, no GPU |
 | CI calibrazione | CQR (Romano 2019) | Garanzia copertura marginale |
-| Deploy | GitHub Actions → SSH al VPS | Solo CI/CD, non orchestration |
+| Esposizione | Cloudflare Tunnel (cloudflared) | Nessun IP pubblico, no port forwarding, SSL automatico |
+| Deploy | GitHub Actions → SSH locale via tunnel | Solo CI/CD, non orchestration |
 | Frontend | HTML + Tailwind CSS + DaisyUI + Chart.js + Nginx | Statico, CDN via jsDelivr/Tailwind CDN |
 | DNS/CDN/WAF | Cloudflare | Gratis |
 | Monitoring | Healthchecks.io + UptimeRobot | Free tier, dead-man switch |
