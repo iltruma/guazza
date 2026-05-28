@@ -82,3 +82,8 @@ omit = ["*/jobs/*"]
 [tool.coverage.report]
 fail_under = 60
 show_missing = true
+
+[dependency-groups]
+dev = [
+    "httpx[http2]>=0.28.1",
+]
