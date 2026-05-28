@@ -41,7 +41,6 @@ const RV_API               = 'https://api.rainviewer.com/public/weather-maps.jso
 const RV_TTL_MS            = 5 * 60 * 1000;
 const RADAR_PAST_FRAMES    = 24;
 const RADAR_NOWCAST_FRAMES = 12;
-const RADAR_ZOOM           = 7;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentData         = null;
@@ -1158,7 +1157,7 @@ async function fetchRadarFrames() {
 function buildRadarLayers(host, frames) {
   radarLayers = frames.map(f => {
     const url = `${host}${f.path}/256/{z}/{x}/{y}/4/1_1.png`;
-    return L.tileLayer(url, { opacity: 0, tileSize: 256, zIndex: 5, minZoom: 0, maxZoom: 7, attribution: 'RainViewer' });
+    return L.tileLayer(url, { opacity: 0, tileSize: 256, zIndex: 5, minZoom: 0, maxZoom: 18, maxNativeZoom: 7, attribution: 'RainViewer' });
   });
   radarLayers.forEach(l => l.addTo(radarMap));
 }
@@ -1237,8 +1236,8 @@ function buildRadarMap(locationId, host, frames) {
   if (!loc)  { showRadarError('location sconosciuta'); return; }
   radarFrames = frames;
   radarMap = L.map('radar-map', {
-    center: [loc.lat, loc.lon], zoom: RADAR_ZOOM,
-    minZoom: 3, maxZoom: 7, zoomControl: false,
+    center: [loc.lat, loc.lon], zoom: 11,
+    minZoom: 3, maxZoom: 12, zoomControl: false,
     attributionControl: true, scrollWheelZoom: false,
   });
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
