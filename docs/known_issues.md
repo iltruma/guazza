@@ -343,19 +343,51 @@ Non è un bug del codice — è la latenza nativa del sistema SIR.
 ## KI-014 — Vento realtime quasi sempre null (Netatmo base, stazioni SIR senza anemometro)
 
 **Severità**: bassa (informativa — non impatta training né indicatori DLE)
-**Stato**: by design / limitazione hardware
+**Stato**: parzialmente risolto (2026-05-29) / residuo by design
 
 **Problema**: il pannello "Condizioni attuali" mostra `—` per il vento nella
-maggior parte delle location. Le stazioni Netatmo base non montano il modulo
-anemometro; le stazioni SIR a volte lo hanno ma i dati realtime non sempre sono
-disponibili.
+maggior parte delle location. Due cause distinte:
 
-**Conseguenza**: `P(wind > 40kmh)` e `P(wind < 5kmh)` nel SignalBag vengono
-calcolati dal NWP ensemble (non da obs realtime) anche con `build_signals_today`.
-Per gli indicatori `motorino` (vento < 5 km/h) e simili, questo introduce una
+1. **Stazioni condivise taggate con un'altra location** (risolto 2026-05-29):
+   `get_current_conditions` filtrava `observations.location_id`, ma una stazione
+   fisica ha una sola riga taggata col primo `location_id` che la usa nel YAML
+   (`_location_id_for_station`). Le 4 stazioni anemo condivise tra `lavoro_cosimo`
+   e `casa_nicco` finivano taggate `lavoro_cosimo` → `casa_nicco` non vedeva il
+   vento. **Fix**: `get_current_conditions` ora fa media pesata via
+   `station_weights` (JOIN su `station_id`, non `location_id`) per SIR e via
+   `observations.weight` per Netatmo. Vedi [KI-020].
+2. **Hardware mancante** (residuo by design): le stazioni Netatmo base non montano
+   l'anemometro; alcune SIR non pubblicano il vento realtime.
+
+**Conseguenza** (per il caso 2): `P(wind > 40kmh)` e `P(wind < 5kmh)` nel SignalBag
+vengono calcolati dal NWP ensemble (non da obs realtime) anche con
+`build_signals_today`. Per `motorino` (vento < 5 km/h) e simili introduce una
 discrepanza tra display realtime e logica DLE.
 
-**Nessun fix pianificato**: limitazione hardware/dati a monte.
+---
+
+## KI-020 — Condizioni attuali: media pesata per distanza (wind_dir scalare, remediation storica)
+
+**Severità**: bassa
+**Stato**: documentato (2026-05-29)
+
+`get_current_conditions` e `backfill_prediction_obs` aggregano le osservazioni
+pesando per distanza via `station_weights` (JOIN su `station_id`). Due note:
+
+1. **wind_dir media scalare**: la direzione del vento è aggregata con media pesata
+   scalare `Σ(dir·w)/Σw`, non con media circolare vettoriale. Vicino al wraparound
+   0/360° il risultato è errato (es. 350° e 10° → ~180° invece di 0°). Fix corretto
+   (`atan2(Σw·sinθ, Σw·cosθ)`) non implementato per mantenere lo scope contenuto.
+
+2. **Remediation `predictions.*_obs` storici** (zona rossa — scrittura DuckDB):
+   le righe già backfillate con la vecchia logica (JOIN su `location_id`) non si
+   autoricalcolano (guard `tmin_obs IS NULL`). Per le location con stazioni condivise
+   (casa_nicco, lavoro_cosimo) i target possono essere parziali. Correzione una-tantum:
+   ```sql
+   UPDATE predictions SET tmin_obs = NULL, tmax_obs = NULL, precip_obs = NULL
+   WHERE location_id IN ('casa_nicco', 'lavoro_cosimo');
+   ```
+   poi rieseguire `predict` (o il backfill). Mostrare e confermare prima di eseguire.
 
 ---
 

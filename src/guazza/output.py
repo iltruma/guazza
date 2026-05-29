@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+from loguru import logger
 
 if TYPE_CHECKING:
     from guazza.indicators import IndicatorResult
@@ -489,32 +490,94 @@ def get_current_conditions(
     db: DuckDBClient,
     location_id: str,
 ) -> dict[str, Any] | None:
-    """Ultima lettura realtime aggregata per una location (media stazioni, ultimi 3h).
+    """Condizioni attuali per una location: media pesata per distanza delle
+    stazioni intorno (ultimi 3h). Fallback al NWP Open-Meteo se mancano osservazioni.
+
+    Un'osservazione appartiene a una stazione fisica, non a una location: il legame
+    stazione→location e il peso (decay distanza × penalità quota) vivono in
+    `station_weights` per SIR. Netatmo porta il proprio peso dinamico nella colonna
+    `observations.weight`. I due rami vengono combinati in un'unica media pesata.
 
     Returns:
         {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms,
-         dewpoint_c, feels_like_c} oppure None se non ci sono osservazioni
-        recenti con temperatura disponibile.
+         dewpoint_c, feels_like_c} oppure None se non ci sono né osservazioni
+        recenti né forecast disponibili.
     """
-    row = db.execute("""
+    # Media pesata: SIR pesato via station_weights (JOIN su station_id, non
+    # location_id — la riga obs è taggata con una sola location arbitraria),
+    # Netatmo pesato via observations.weight. Una lettura per stazione (la più
+    # recente nella finestra), poi blend con SUM(v*w)/SUM(w).
+    blend_sql = """
+        WITH obs AS (
+            SELECT o.ts, o.temp_c, o.humidity_pct, o.precip_mm,
+                   o.wind_speed_ms, o.wind_dir_deg, sw.weight AS w
+            FROM observations o
+            JOIN station_weights sw
+              ON o.station_id = sw.station_id AND sw.source = 'sir'
+            WHERE sw.location_id = ?
+              AND o.source = 'sir_toscana'
+              AND o.granularity = 'realtime'
+              AND o.ts >= NOW() - INTERVAL 3 HOURS
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY o.station_id ORDER BY o.ts DESC) = 1
+
+            UNION ALL
+
+            SELECT o.ts, o.temp_c, o.humidity_pct, o.precip_mm,
+                   o.wind_speed_ms, o.wind_dir_deg, o.weight AS w
+            FROM observations o
+            WHERE o.source = 'netatmo'
+              AND o.location_id = ?
+              AND o.granularity = 'realtime'
+              AND o.weight IS NOT NULL
+              AND o.ts >= NOW() - INTERVAL 3 HOURS
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY o.station_id ORDER BY o.ts DESC) = 1
+        )
         SELECT
-            strftime(MAX(ts), '%Y-%m-%dT%H:%M:%S') AS ts,
-            ROUND(AVG(temp_c), 1)                               AS temp_c,
-            ROUND(AVG(humidity_pct), 0)                         AS humidity_pct,
-            ROUND(SUM(COALESCE(precip_mm, 0.0)), 2)             AS precip_mm,
-            ROUND(AVG(wind_speed_ms), 1)                        AS wind_speed_ms,
-            ROUND(AVG(wind_dir_deg), 0)                         AS wind_dir_deg
-        FROM observations
-        WHERE location_id = ?
-          AND granularity = 'realtime'
-          AND ts >= NOW() - INTERVAL 3 HOURS
-          AND temp_c IS NOT NULL
-    """, [location_id]).fetchone()
+            strftime(MAX(ts), '%Y-%m-%dT%H:%M:%S')                                       AS ts,
+            ROUND(SUM(temp_c * w)       / NULLIF(SUM(CASE WHEN temp_c       IS NOT NULL THEN w ELSE 0 END), 0), 1) AS temp_c,
+            ROUND(SUM(humidity_pct * w) / NULLIF(SUM(CASE WHEN humidity_pct IS NOT NULL THEN w ELSE 0 END), 0), 0) AS humidity_pct,
+            ROUND(SUM(precip_mm * w)    / NULLIF(SUM(CASE WHEN precip_mm    IS NOT NULL THEN w ELSE 0 END), 0), 2) AS precip_mm,
+            ROUND(SUM(wind_speed_ms * w)/ NULLIF(SUM(CASE WHEN wind_speed_ms IS NOT NULL THEN w ELSE 0 END), 0), 1) AS wind_speed_ms,
+            ROUND(SUM(wind_dir_deg * w) / NULLIF(SUM(CASE WHEN wind_dir_deg IS NOT NULL THEN w ELSE 0 END), 0), 0) AS wind_dir_deg
+        FROM obs
+    """
+    row = db.execute(blend_sql, [location_id, location_id]).fetchone()
+
+    from_nwp = False
+    if row is None or row[1] is None:
+        # Fallback NWP: nessuna osservazione realtime utile. Media tra modelli
+        # dell'ora forecast più vicina a now (ultimo run per sorgente).
+        fallback_sql = """
+            WITH f AS (
+                SELECT temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg, ts_valid
+                FROM forecasts
+                WHERE location_id = ?
+                  AND ts_valid >= NOW() - INTERVAL 2 HOURS
+                  AND ts_valid <= NOW() + INTERVAL 2 HOURS
+                  AND temp_c IS NOT NULL
+                QUALIFY ROW_NUMBER() OVER (
+                    PARTITION BY source
+                    ORDER BY ts_run DESC, abs(epoch(ts_valid) - epoch(NOW()))
+                ) = 1
+            )
+            SELECT
+                strftime(MAX(ts_valid), '%Y-%m-%dT%H:%M:%S') AS ts,
+                ROUND(AVG(temp_c), 1)                        AS temp_c,
+                ROUND(AVG(humidity_pct), 0)                  AS humidity_pct,
+                ROUND(AVG(precip_mm), 2)                     AS precip_mm,
+                ROUND(AVG(wind_speed_ms), 1)                 AS wind_speed_ms,
+                ROUND(AVG(wind_dir_deg), 0)                  AS wind_dir_deg
+            FROM f
+        """
+        row = db.execute(fallback_sql, [location_id]).fetchone()
+        from_nwp = True
 
     if row is None or row[1] is None:
         return None
 
     ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg = row
+    if from_nwp:
+        logger.debug(f"[{location_id}] current da fallback NWP (nessuna obs realtime)")
 
     # pressure_hpa e weather_code vengono dai forecast NWP (tabella forecasts),
     # non dalle stazioni realtime.

@@ -680,6 +680,17 @@ def test_current_conditions_no_data(seeded_db: Path) -> None:
     assert result is None
 
 
+def _seed_sir_weight(
+    con: object, station_id: str, location_id: str, weight: float = 1.0
+) -> None:
+    """Riga station_weights per una stazione SIR (mapping stazione→location)."""
+    con.execute(  # type: ignore[attr-defined]
+        "INSERT INTO station_weights (station_id, source, location_id, weight) "
+        "VALUES (?, 'sir', ?, ?)",
+        [station_id, location_id, weight],
+    )
+
+
 def test_current_conditions_returns_data(seeded_db: Path) -> None:
     from datetime import timedelta
 
@@ -693,7 +704,8 @@ def test_current_conditions_returns_data(seeded_db: Path) -> None:
         INSERT INTO observations
             (source, station_id, location_id, ts, granularity, temp_c, humidity_pct, precip_mm, wind_speed_ms)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, ["sir", "ST001", "casa_campi", ts_recent, "realtime", 18.5, 65.0, 0.0, 1.2])
+    """, ["sir_toscana", "ST001", "casa_campi", ts_recent, "realtime", 18.5, 65.0, 0.0, 1.2])
+    _seed_sir_weight(con, "ST001", "casa_campi")
     con.close()
 
     with DuckDBClient(db_path=seeded_db, read_only=True) as db:
@@ -721,12 +733,90 @@ def test_current_conditions_old_data_ignored(seeded_db: Path) -> None:
         INSERT INTO observations
             (source, station_id, location_id, ts, granularity, temp_c)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, ["sir", "ST001", "casa_campi", ts_old, "realtime", 10.0])
+    """, ["sir_toscana", "ST001", "casa_campi", ts_old, "realtime", 10.0])
+    _seed_sir_weight(con, "ST001", "casa_campi")
     con.close()
 
     with DuckDBClient(db_path=seeded_db, read_only=True) as db:
         result = get_current_conditions(db, "casa_campi")
     assert result is None
+
+
+def test_current_conditions_shared_station_wind(seeded_db: Path) -> None:
+    """Stazione condivisa taggata con un'altra location: il vento deve comunque
+    comparire per la location target via station_weights (bug casa_nicco)."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    # La riga obs è taggata 'lavoro_cosimo' (ha vinto la corsa in ingest),
+    # ma la stazione è pesata anche da 'casa_nicco'.
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, wind_speed_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ["sir_toscana", "ST_SHARED", "lavoro_cosimo", now - timedelta(minutes=5), "realtime", 17.0, 3.4])
+    _seed_sir_weight(con, "ST_SHARED", "lavoro_cosimo")
+    _seed_sir_weight(con, "ST_SHARED", "casa_nicco")
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_nicco")
+
+    assert result is not None
+    assert result["wind_speed_ms"] == pytest.approx(3.4)
+
+
+def test_current_conditions_weighted_blend(seeded_db: Path) -> None:
+    """Due stazioni con pesi diversi: media pesata, non media semplice."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.executemany("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, [
+        ["sir_toscana", "ST_A", "casa_campi", now - timedelta(minutes=5), "realtime", 10.0],
+        ["sir_toscana", "ST_B", "casa_campi", now - timedelta(minutes=5), "realtime", 20.0],
+    ])
+    _seed_sir_weight(con, "ST_A", "casa_campi", weight=3.0)
+    _seed_sir_weight(con, "ST_B", "casa_campi", weight=1.0)
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    # (10*3 + 20*1) / (3+1) = 12.5, non la media semplice 15.0
+    assert result["temp_c"] == pytest.approx(12.5)
+
+
+def test_current_conditions_netatmo_blend(seeded_db: Path) -> None:
+    """Netatmo contribuisce via observations.weight (non è in station_weights)."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, weight)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ["netatmo", "70:ee:50:aa", "casa_campi", now - timedelta(minutes=5), "realtime", 19.0, 0.4])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    assert result["temp_c"] == pytest.approx(19.0)
 
 
 def test_dewpoint_known_value() -> None:
@@ -746,7 +836,8 @@ def test_current_conditions_has_derived_fields(seeded_db: Path) -> None:
         INSERT INTO observations
             (source, station_id, location_id, ts, granularity, temp_c, humidity_pct, precip_mm, wind_speed_ms)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, ["sir", "ST_DEW", "casa_campi", now - timedelta(minutes=5), "realtime", 20.0, 50.0, 0.0, 2.0])
+    """, ["sir_toscana", "ST_DEW", "casa_campi", now - timedelta(minutes=5), "realtime", 20.0, 50.0, 0.0, 2.0])
+    _seed_sir_weight(con, "ST_DEW", "casa_campi")
     con.close()
 
     with DuckDBClient(db_path=seeded_db, read_only=True) as db:
@@ -771,7 +862,8 @@ def test_current_conditions_pressure_null_without_forecasts(seeded_db: Path) -> 
         INSERT INTO observations
             (source, station_id, location_id, ts, granularity, temp_c, humidity_pct)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, ["sir", "ST001", "casa_campi", now - timedelta(minutes=10), "realtime", 18.0, 60.0])
+    """, ["sir_toscana", "ST001", "casa_campi", now - timedelta(minutes=10), "realtime", 18.0, 60.0])
+    _seed_sir_weight(con, "ST001", "casa_campi")
     con.close()
 
     with DuckDBClient(db_path=seeded_db, read_only=True) as db:
@@ -793,7 +885,8 @@ def test_current_conditions_pressure_from_forecasts(seeded_db: Path) -> None:
         INSERT INTO observations
             (source, station_id, location_id, ts, granularity, temp_c, humidity_pct)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, ["sir", "ST001", "casa_campi", now - timedelta(minutes=10), "realtime", 18.0, 60.0])
+    """, ["sir_toscana", "ST001", "casa_campi", now - timedelta(minutes=10), "realtime", 18.0, 60.0])
+    _seed_sir_weight(con, "ST001", "casa_campi")
     con.execute("""
         INSERT INTO forecasts
             (source, location_id, ts_run, ts_valid, lead_time_h, pressure_hpa)
@@ -806,6 +899,32 @@ def test_current_conditions_pressure_from_forecasts(seeded_db: Path) -> None:
 
     assert result is not None
     assert result["pressure_hpa"] == pytest.approx(1018.5, abs=0.5)
+
+
+def test_current_conditions_fallback_nwp(seeded_db: Path) -> None:
+    """Nessuna osservazione: current viene dal NWP (media tra modelli, ora vicina)."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.executemany("""
+        INSERT INTO forecasts
+            (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, wind_speed_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, [
+        ["open_meteo_icon_d2", "casa_campi", now - timedelta(hours=2), now - timedelta(minutes=20), 2, 16.0, 2.0],
+        ["open_meteo_ecmwf_ifs", "casa_campi", now - timedelta(hours=2), now - timedelta(minutes=20), 2, 18.0, 4.0],
+    ])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    assert result["temp_c"] == pytest.approx(17.0)  # media (16+18)/2
+    assert result["wind_speed_ms"] == pytest.approx(3.0)
 
 
 # ── get_nwp_models_hourly ─────────────────────────────────────────────────────
@@ -1064,7 +1183,8 @@ def test_current_conditions_has_weather_code_key(seeded_db: Path) -> None:
         INSERT INTO observations
             (source, station_id, location_id, ts, granularity, temp_c, humidity_pct)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, ["sir", "ST001", "casa_campi", now - timedelta(minutes=5), "realtime", 18.0, 60.0])
+    """, ["sir_toscana", "ST001", "casa_campi", now - timedelta(minutes=5), "realtime", 18.0, 60.0])
+    _seed_sir_weight(con, "ST001", "casa_campi")
     con.close()
 
     with DuckDBClient(db_path=seeded_db, read_only=True) as db:
@@ -1088,7 +1208,8 @@ def test_current_conditions_weather_code_from_forecasts(seeded_db: Path) -> None
         INSERT INTO observations
             (source, station_id, location_id, ts, granularity, temp_c, humidity_pct)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, ["sir", "ST001", "casa_campi", now - timedelta(minutes=5), "realtime", 18.0, 60.0])
+    """, ["sir_toscana", "ST001", "casa_campi", now - timedelta(minutes=5), "realtime", 18.0, 60.0])
+    _seed_sir_weight(con, "ST001", "casa_campi")
     # Forecast nell'ora corrente con weather_code = 3 (coperto)
     con.execute("""
         INSERT INTO forecasts
