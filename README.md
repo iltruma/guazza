@@ -43,7 +43,7 @@ DB_PATH=/tmp/guazza_test.duckdb uv run python -m guazza.storage verify-schema
 guazza/
 ├── config/
 │   ├── locations.yaml      # 5 location con stazioni SIR e upstream_pluvio_stations
-│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio ring); ARPAT non più usate (cutover OpenAQ v0.6.2)
+│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio ring); stazioni ARPAT qualità aria in locations.yaml (arpat_stations)
 │   ├── indicators.yaml     # 8 indicatori DLE con soglie e costi asimmetrici
 │   ├── arpat_levels.yaml   # Scale qualità aria D.Lgs.155/2010
 │   └── sources.yaml        # Endpoint sorgenti dati e stato
@@ -69,8 +69,11 @@ guazza/
 │   ├── guazza.duckdb       # Database analitico (non committato)
 │   ├── models/             # Artefatti LightGBM pickle (non committati)
 │   └── output/             # JSON per il frontend (non committati)
+├── frontend/               # index.html, app.js, style.css (statico, CSS custom, CDN via jsDelivr)
 ├── deploy/                 # nginx.conf, Caddyfile, crontab template
 ├── tests/
+├── DESIGN.md               # Design system frontend (palette Carbone+Iris, tipografia, componenti)
+├── PRODUCT.md              # Product brief (utenti, scopo, principi di design)
 └── docs/
     ├── status.md           # Stato corrente — leggere a inizio sessione
     ├── decisions.md        # Decisioni architetturali motivate
@@ -89,8 +92,8 @@ guazza/
 | Sprint 3 | Feature engineering, 50 feature, ring upstream pluvio | ✅ Completato |
 | Sprint 4 | LightGBM quantile + CQR, skill +25% vs NWP su temperatura | ✅ Completato |
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
-| Sprint 6 | Frontend HTML+JS+Tailwind+DaisyUI+Chart.js, layout Foreca a 3 sezioni | ✅ Completato |
-| Sprint 7 | Raffinamenti logiche e frontend in locale prima del deploy | 🟡 In corso |
+| Sprint 6 | Frontend HTML+JS+Chart.js, layout a 3 sezioni | ✅ Completato |
+| Sprint 7 | Raffinamenti logiche, radar RainViewer, redesign frontend v2 (CSS custom) | 🟡 In corso |
 | Sprint 8 | Deploy su Optiplex locale + Cloudflare Tunnel, backup R2, crontab | — |
 | Sprint 9 | Model monitoring, coverage alert | — |
 | Sprint 10 | Calibrazione soglie DLE post-deploy | — |
@@ -104,7 +107,7 @@ guazza/
 - **Orchestrazione**: cron Linux (no Prefect, no Airflow)
 - **Storage**: DuckDB (colonnare, file singolo) + R2 backup
 - **ML**: LightGBM quantile regression + CQR calibration
-- **Frontend**: HTML+JS vanilla + Tailwind CSS + DaisyUI v4 + Chart.js + Twemoji + suncalc (CDN, statico)
+- **Frontend**: HTML+JS vanilla + CSS custom (no framework) + Chart.js + Leaflet + Twemoji + suncalc; font Geist + JetBrains Mono (CDN, statico)
 - **Esposizione**: Cloudflare Tunnel (`cloudflared`) — nessun IP pubblico, SSL automatico
 - **DNS/CDN/WAF**: Cloudflare (gratis)
 - **Monitoring**: Healthchecks.io + UptimeRobot (free tier)
@@ -161,7 +164,7 @@ uv run python -m guazza.jobs.predict --db data/guazza.duckdb \
 Output: `data/output/{location_id}.json` con CI80/CI90 per tmin/tmax/precip,
 8 indicatori semaforo (panni, motorino, gelata, ...), `coverage_empirical_30d`,
 condizioni realtime aggregate (`current` con dewpoint e temperatura percepita),
-qualità aria OpenAQ (`air_quality`), profili orari NWP con vento, e confronto
+qualità aria ARPAT OpenData NRT (`air_quality`), profili orari NWP con vento, e confronto
 modelli con data ultimo run.
 
 > **Nota locale**: prima di `predict` eseguire `ingest realtime` per avere
@@ -195,7 +198,7 @@ cd frontend && python3 -m http.server 8080
 | Sezione | Contenuto |
 |---|---|
 | **A — Condizioni attuali** | Temperatura grande, icona meteo, temperatura percepita (Steadman), punto di rugiada (Magnus), grid stats: vento (velocità + direzione), umidità, precipitazione, pressione (hPa + indicatore alta/bassa), alba/tramonto (SunCalc), fase lunare; card qualità aria ARPAT (PM10, PM2.5, NO₂, O₃, CO, benzene, SO₂); indicatori DLE calcolati su obs realtime |
-| **Radar precipitazioni** | Mappa Leaflet con overlay RainViewer: ultimi ~60min osservati + nowcast +60min (se attivo); timeline animata, pausa di default, zoom custom DaisyUI |
+| **Radar precipitazioni** | Mappa Leaflet con overlay RainViewer: ultimi ~60min osservati + nowcast +60min (se attivo); timeline animata, pausa di default, zoom custom |
 | **B — Previsioni giornaliere** | Striscia card D+0…D+7 con icona/Tmax/Tmin/precip/indicator-dots; clic espande CI bar 80/90% + 8 indicatori + tabella NWP con data ultimo run |
 | **C — Grafico multi-giorno** | Chart.js: temperatura, umidità, precipitazioni, vento — switch Guazza ML ↔ 6 modelli NWP, crosshair verticale |
 
@@ -203,9 +206,9 @@ cd frontend && python3 -m http.server 8080
 
 ```
 frontend/
-├── index.html      # HTML + CDN links (Tailwind, DaisyUI v4, Chart.js, Leaflet, Twemoji, SunCalc)
+├── index.html      # HTML + CDN links (Chart.js, Leaflet, Twemoji, SunCalc; font Geist + JetBrains Mono)
 ├── app.js          # Logica completa (rendering, chart, radar, routing)
-├── style.css       # CI bar, indicatori DLE, Leaflet overrides, Twemoji fix
+├── style.css       # CSS custom (classi g-*): palette Carbone+Iris, CI bar, indicatori DLE, Leaflet overrides, Twemoji fix
 └── data/           # Symlink → ../data/output (JSON per ogni location)
 ```
 

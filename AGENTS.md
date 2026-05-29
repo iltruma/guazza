@@ -50,7 +50,7 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 | CI calibrazione | CQR (Romano 2019) | Garanzia copertura marginale |
 | Esposizione | Cloudflare Tunnel (cloudflared) | Nessun IP pubblico, no port forwarding, SSL automatico |
 | Deploy | GitHub Actions → SSH locale via tunnel | Solo CI/CD, non orchestration |
-| Frontend | HTML + Tailwind CSS + DaisyUI + Chart.js + Nginx | Statico, CDN via jsDelivr/Tailwind CDN |
+| Frontend | HTML + CSS custom + Chart.js + Leaflet + Nginx | Statico, CSS custom (no framework), librerie e font via CDN jsDelivr |
 | DNS/CDN/WAF | Cloudflare | Gratis |
 | Monitoring | Healthchecks.io + UptimeRobot | Free tier, dead-man switch |
 | Retry scraper | tenacity | Exponential backoff, standard |
@@ -103,7 +103,7 @@ Se ERA5 appare come input dinamico a un modello: **è un bug**.
 - **Open-Meteo Forecast + Historical Forecast API** — 6 modelli NWP: ECMWF IFS, ICON-EU, ICON-D2 (2.2km), GFS 0.25°, AROME France, ICON-2I (2.2km, assimila osservazioni italiane). `ecmwf_aifs025` rimosso: restituisce null su tutte le variabili.
 - **SIR Toscana** — storici osservativi validati. 34 stazioni: 21 operative, 13 upstream pluvio (ring features)
 - **ARPAT** — qualità aria (NO2, O3, CO, SO2 orari NRT; PM10, PM2.5, benzene giornalieri da bollettini)
-- **RainViewer** — radar precipitazioni (solo frontend, Sprint 6)
+- **RainViewer** — radar precipitazioni (solo frontend, Sprint 7)
 
 ## Struttura repo
 
@@ -113,6 +113,8 @@ Struttura **flat** — un file per modulo, no package annidati.
 guazza/
 ├── AGENTS.md               # istruzioni di progetto (source of truth)
 ├── CLAUDE.md               # override Claude Code (importa @AGENTS.md)
+├── DESIGN.md               # design system frontend (palette Carbone+Iris, tipografia, componenti)
+├── PRODUCT.md              # product brief (utenti, scopo, principi di design)
 ├── config/
 │   ├── locations.yaml      # 5 location con stazioni SIR e upstream_pluvio_stations
 │   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio) + 10 ARPAT
@@ -377,12 +379,15 @@ Struttura multi-giorno: ogni file contiene la striscia `days` da D+0 a D+7.
 
 ### Frontend — librerie client-side (CDN jsDelivr)
 
-Oltre a Tailwind/DaisyUI/Chart.js il frontend carica:
+Il frontend usa **CSS custom** (`style.css`, classi prefissate `g-*`) — nessun framework
+CSS (Tailwind/DaisyUI rimossi nel redesign v2, vedi `DESIGN.md`). Font caricati via CDN:
+**Geist** (display/titoli) + **JetBrains Mono** (dati numerici). Librerie client-side
+caricate via CDN jsDelivr: **Chart.js** (+ adapter date-fns), **Leaflet 1.9.4**, oltre a:
 - **twemoji@14.0.2** — emoji Unicode convertite in SVG per consistenza cross-browser.
   `twemoji.parse(container, TWEMOJI_OPTS)` va chiamato **dopo ogni update di `innerHTML`
-  nel container `#app`** e una volta sull'`header` all'init. Senza il fix CSS
-  `img.emoji { height:1em; width:1em; vertical-align:-0.1em; }` in `style.css` gli SVG
-  ignorano le classi `text-*` di Tailwind.
+  nel container `#app`** e una volta sull'`header` all'init. Il fix CSS
+  `img.emoji { height:1em; width:1em; vertical-align:-0.1em; }` in `style.css` allinea gli
+  SVG al testo circostante.
 - **suncalc** — alba/tramonto (`SunCalc.getTimes`) e fase lunare
   (`SunCalc.getMoonIllumination().phase`) calcolati client-side dalle coordinate location.
   Fase lunare: 8 emoji (🌑→🌘) con tooltip nome in italiano. Aurora/crepuscolo civile
