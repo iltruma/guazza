@@ -287,3 +287,28 @@ si usa il fallback ML puro senza degradazione.
 
 **Limitazione**: il vento realtime è spesso `null` (KI-014), quindi `P(wind > 40kmh)`
 resta da NWP ensemble anche con `build_signals_today`.
+
+---
+
+## D-016 — Baseline di confronto per le claim di skill
+
+**Data**: 2026-05-29
+
+**Contesto**: il baseline backtest D+0 (`analysis/baseline_backtest.py`) mostra che il
+**multimodello-mean grezzo** è già un baseline forte (MAE tmin ~0.75°C su alcune location
+nel 2025): gli errori dei singoli NWP si cancellano. Lo skill +25.6% di Sprint 4 è
+misurato contro un baseline NWP che implica MAE ~1.22°C — più debole del multimodello-mean
+costruito per-location. Le definizioni differiscono per set modelli (4 vs 6), ground truth
+(SIR pesato vs stazione primaria) e periodo (CV multi-anno vs 2025).
+
+**Decisione**: per il case study, ogni claim di skill ("meglio di X") va riferita al
+**baseline naive più forte ragionevole** — il multimodello-mean per-location — non al
+singolo modello NWP né a un ensemble più debole. Un debias costante mensile non basta a
+batterlo (a volte lo peggiora per drift inter-annuale del bias): il valore del modello ML
+sta nella correzione **condizionale al regime** (stagione × cielo × vento), non nella
+rimozione di un bias medio.
+
+**Conseguenza**: prima di pubblicare numeri di skill, riconciliare il baseline di Sprint 4
+con il multimodello-mean per-location e ricomputare lo skill contro di esso. Lo stesso
+baseline va usato anche per il confronto esterno (LAMMA) quando `benchmark_forecasts` sarà
+popolata. Onestà sul baseline = credibilità del case study.

@@ -9,7 +9,11 @@ Versioning: major per sprint, minor per milestone interne.
 ## [Unreleased]
 
 ### Added
-- _(nessuna)_
+- `analysis/baseline_backtest.py`: baseline backtest D+0 (read-only) per de-risking della
+  tesi. Conferma bias di microclima sistematico e correggibile già a D+0 (es. `casa_cesto`
+  fondovalle: tmin sovrastimata da tutti i 6 NWP). Floor di skill per il modello ML.
+- `docs/decisions.md` D-016: il baseline di confronto per le claim di skill è il
+  multimodello-mean per-location (baseline naive più forte), non il singolo NWP.
 
 ### Changed
 - Stack: il 3050 diventa host Proxmox (homelab multi-servizio), Guazza è un tenant.

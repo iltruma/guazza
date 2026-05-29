@@ -440,6 +440,34 @@ Tailwind/DaisyUI riflettono lo stato pre-redesign.
 - **Campo `mean`** (E[precip]) esposto nelle previsioni JSON (`output.py`).
 - **Fix attribution RainViewer** riposizionata.
 
+### Baseline backtest D+0 — de-risking della tesi (2026-05-29)
+
+`analysis/baseline_backtest.py` (read-only, esplorativo). Conferma con i dati che il bias
+di microclima esiste, è sistematico e correggibile **già a D+0** (lead 0-5h, l'orizzonte
+più accurato → floor di skill). Metodo: forecast orario aggregato a daily sul giorno
+Europe/Rome, ground truth = stazione SIR **primaria**, debias mensile appreso su anni
+≤2024 e applicato al 2025 (split disgiunto, no leakage).
+
+**Risultati chiave (tmin/tmax MAE grezzo→debiasato, test 2025):**
+- `casa_cesto` (fondovalle): bias tmin **positivo su tutti i 6 modelli** (+0.5…+2.1°C) →
+  i NWP non vedono la conca fredda, sovrastimano la minima. Microclima da manuale.
+- `casa_nicco` (Firenze) arome tmin: bias +2.14°C → MAE 2.17→0.87 (+60%).
+- `lavoro_madda` ecmwf tmin: bias −2.49°C → 2.52→1.12 (+56%).
+- Il bias è **model-specific** (nessun NWP universalmente migliore) → conferma D-005.
+
+🟡 **Punto aperto — riconciliare il baseline di skill (vs claim +25% Sprint 4)**: il
+multimodello-mean grezzo D+0 2025 ha MAE tmin ~0.75°C sulle location migliori, mentre lo
+skill +25.6% di Sprint 4 implica un NWP baseline ~1.22°C. Differenze da chiarire: set
+modelli (4 vs 6), ground truth (SIR pesato vs stazione primaria), periodo (CV multi-anno
+vs 2025). Per un case study che afferma "meglio degli altri" il baseline di confronto va
+fissato e giustificato (vedi D-016).
+
+🟡 **Punto aperto — backfill multi-lead per D+1…D+7** (estende il 🟡 di Sprint 3, lead_time_h):
+il backtest multi-giorno non è eseguibile finché lo storico contiene solo lead 0-5h. Due
+strade: (a) ri-ingestare l'orizzonte completo per run dalla Open-Meteo Historical Forecast
+API se l'API lo consente, (b) accumularlo dal deploy in poi (Sprint 8). Gate della tesi
+completa sui giorni a venire.
+
 ### Sprint 8 — Deploy nel homelab (Dell Optiplex 3050 / Proxmox + Cloudflare Tunnel)
 **Dipendenza**: Sprint 7 chiuso, sistema stabile in locale
 
