@@ -369,6 +369,13 @@ caricate via CDN jsDelivr: **Chart.js** (+ adapter date-fns), **Leaflet 1.9.4**,
   (`SunCalc.getMoonIllumination().phase`) calcolati client-side dalle coordinate location.
   Fase lunare: 8 emoji (🌑→🌘) con tooltip nome in italiano. Aurora/crepuscolo civile
   non mostrati.
+- **@meteocons/svg@0.1.0** (MIT) — icone meteo **animate** (SVG SMIL embedded, si
+  riproducono dentro `<img src>` senza JS) per le sole condizioni `weather_code` WMO
+  (hero, striscia giorni, dettaglio giorno). CDN:
+  `https://cdn.jsdelivr.net/npm/@meteocons/svg@0.1.0/fill/<slug>.svg`. Renderizzate come
+  `<img class="g-wicon g-wicon--{hero|strip|detail}">` — twemoji.parse le ignora
+  (non sono Unicode). L'emoji twemoji resta in `onerror` come fallback. Tutte le altre
+  icone (indicatori DLE, mini-stats, header, luna, alba/tramonto) restano twemoji.
 
 ### Qualità del codice
 
