@@ -976,9 +976,11 @@ _OM_HOURLY_VARS = [
     "wind_direction_10m",
     "wind_gusts_10m",
     "surface_pressure",
+    "weather_code",
 ]
 
-# Mapping variabile Open-Meteo → colonna observations wide
+# Mapping variabile Open-Meteo → colonna observations wide (solo variabili float).
+# weather_code è gestito separatamente in _parse_om_response perché è int, non float.
 _OM_VAR_MAP: dict[str, str] = {
     "temperature_2m": "temp_c",
     "relative_humidity_2m": "humidity_pct",
@@ -1132,6 +1134,12 @@ def _parse_om_response(
             series = hourly.get(om_var, [])
             val = series[i] if i < len(series) else None
             rec[col] = float(val) if val is not None else None
+
+        # weather_code è un codice WMO intero — non convertire in float per evitare
+        # ambiguità nel round-trip DB (INTEGER column in forecasts).
+        wc_series = hourly.get("weather_code", [])
+        wc_val = wc_series[i] if i < len(wc_series) else None
+        rec["weather_code"] = int(wc_val) if wc_val is not None else None
 
         records.append(rec)
 

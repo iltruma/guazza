@@ -504,6 +504,67 @@ def test_parse_om_response_null_values() -> None:
     assert records[0]["precip_mm"] is None
 
 
+def test_parse_om_response_weather_code_as_int() -> None:
+    """weather_code deve essere int, non float."""
+    data = {
+        "hourly": {
+            "time": ["2026-05-15T08:00", "2026-05-15T09:00"],
+            "temperature_2m": [18.5, 19.2],
+            "relative_humidity_2m": [72.0, 68.0],
+            "precipitation": [0.0, 0.2],
+            "wind_speed_10m": [2.1, 3.4],
+            "wind_direction_10m": [180.0, 190.0],
+            "wind_gusts_10m": [5.0, 6.5],
+            "surface_pressure": [1013.2, 1012.8],
+            "weather_code": [3, 61],
+        }
+    }
+    records = _parse_om_response(data, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF)
+    assert len(records) == 2
+    assert records[0]["weather_code"] == 3
+    assert isinstance(records[0]["weather_code"], int)
+    assert records[1]["weather_code"] == 61
+
+
+def test_parse_om_response_weather_code_none_when_absent() -> None:
+    """Senza weather_code nell'array → None nel record (campo opzionale)."""
+    data = {
+        "hourly": {
+            "time": ["2026-05-15T08:00"],
+            "temperature_2m": [18.5],
+            "relative_humidity_2m": [72.0],
+            "precipitation": [0.0],
+            "wind_speed_10m": [2.1],
+            "wind_direction_10m": [180.0],
+            "wind_gusts_10m": [5.0],
+            "surface_pressure": [1013.2],
+            # weather_code assente
+        }
+    }
+    records = _parse_om_response(data, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF)
+    assert len(records) == 1
+    assert records[0]["weather_code"] is None
+
+
+def test_parse_om_response_weather_code_null_value() -> None:
+    """weather_code=None nell'array → None nel record."""
+    data = {
+        "hourly": {
+            "time": ["2026-05-15T08:00"],
+            "temperature_2m": [18.5],
+            "relative_humidity_2m": [72.0],
+            "precipitation": [0.0],
+            "wind_speed_10m": [2.1],
+            "wind_direction_10m": [180.0],
+            "wind_gusts_10m": [5.0],
+            "surface_pressure": [1013.2],
+            "weather_code": [None],
+        }
+    }
+    records = _parse_om_response(data, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF)
+    assert records[0]["weather_code"] is None
+
+
 def test_fetch_openmeteo_forecast_calls_api() -> None:
     """fetch_openmeteo_forecast chiama _fetch_om_json e ritorna record per ogni modello."""
     with patch("guazza.fetchers._fetch_om_json", return_value=_OM_MOCK_RESPONSE):

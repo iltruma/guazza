@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS forecasts (
     wind_dir_deg    DOUBLE,
     wind_gust_ms    DOUBLE,
     pressure_hpa    DOUBLE,
+    weather_code    INTEGER,
     last_modified   TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (source, location_id, ts_run, ts_valid)
 );

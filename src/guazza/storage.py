@@ -218,6 +218,7 @@ class DuckDBClient:
             raise RuntimeError("DuckDBClient non è nel context manager.")
         self._conn.execute(sql)
         self._ensure_aq_columns()
+        self._ensure_forecast_columns()
         logger.info("Schema applicato")
 
     def _ensure_aq_columns(self) -> None:
@@ -230,6 +231,12 @@ class DuckDBClient:
             self.execute(
                 f"ALTER TABLE observations ADD COLUMN IF NOT EXISTS {col} {dtype}"
             )
+
+    def _ensure_forecast_columns(self) -> None:
+        """Aggiunge colonne a forecasts se mancanti (migrazione idempotente)."""
+        self.execute(
+            "ALTER TABLE forecasts ADD COLUMN IF NOT EXISTS weather_code INTEGER"
+        )
 
     def verify_schema(self) -> bool:
         """Verifica che le tabelle attese esistano nel database."""
@@ -291,12 +298,14 @@ class DuckDBClient:
                 rec.get("temp_c"), rec.get("humidity_pct"), rec.get("precip_mm"),
                 rec.get("wind_speed_ms"), rec.get("wind_dir_deg"),
                 rec.get("wind_gust_ms"), rec.get("pressure_hpa"),
+                rec.get("weather_code"),
             ])
 
         _FCAST_COLS = [
             "source", "location_id", "ts_run", "ts_valid", "lead_time_h",
             "temp_c", "humidity_pct", "precip_mm",
             "wind_speed_ms", "wind_dir_deg", "wind_gust_ms", "pressure_hpa",
+            "weather_code",
         ]
         df = pd.DataFrame(rows, columns=_FCAST_COLS)
         self._conn.register("_staging_forecasts", df)
@@ -309,12 +318,14 @@ class DuckDBClient:
             INSERT OR REPLACE INTO forecasts (
                 source, location_id, ts_run, ts_valid, lead_time_h,
                 temp_c, humidity_pct, precip_mm,
-                wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa
+                wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa,
+                weather_code
             )
             SELECT
                 source, location_id, ts_run, ts_valid, lead_time_h,
                 temp_c, humidity_pct, precip_mm,
-                wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa
+                wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa,
+                weather_code
             FROM (
                 SELECT *,
                        ROW_NUMBER() OVER (

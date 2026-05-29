@@ -321,3 +321,89 @@ def test_upsert_sir_observations_dedup_within_batch(tmp_db: Path) -> None:
     assert rows[0][0] == pytest.approx(10.0)   # tmax_c dal primo sensore
     assert rows[0][1] == pytest.approx(2.0)    # tmin_c dal primo sensore
     assert rows[0][2] == pytest.approx(5.4)    # precip_mm dal secondo sensore
+
+
+# ── upsert_forecasts — weather_code ──────────────────────────────────────────
+
+def test_upsert_forecasts_weather_code_round_trip(tmp_db: Path) -> None:
+    """weather_code viene scritto come INTEGER e riletto correttamente."""
+    ts_run   = datetime(2026, 5, 18, 0, 0, 0)
+    ts_valid = datetime(2026, 5, 18, 12, 0, 0)
+    rec = {
+        "source":      "open_meteo_ecmwf_ifs",
+        "location_id": "casa_campi",
+        "ts_run":      ts_run,
+        "ts_valid":    ts_valid,
+        "lead_time_h": 12,
+        "temp_c":      18.5,
+        "weather_code": 61,
+    }
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        db.upsert_forecasts([rec])
+        row = db.execute(
+            "SELECT weather_code FROM forecasts WHERE source = ? AND ts_valid = ?",
+            ["open_meteo_ecmwf_ifs", ts_valid],
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] == 61
+    assert isinstance(row[0], int)
+
+
+def test_upsert_forecasts_weather_code_replace(tmp_db: Path) -> None:
+    """INSERT OR REPLACE aggiorna weather_code quando il run viene reinserito."""
+    ts_run   = datetime(2026, 5, 18, 0, 0, 0)
+    ts_valid = datetime(2026, 5, 18, 12, 0, 0)
+    base = {
+        "source": "open_meteo_icon_eu", "location_id": "casa_campi",
+        "ts_run": ts_run, "ts_valid": ts_valid, "lead_time_h": 12,
+        "temp_c": 20.0,
+    }
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        db.upsert_forecasts([{**base, "weather_code": 3}])
+        db.upsert_forecasts([{**base, "weather_code": 61}])
+        row = db.execute(
+            "SELECT weather_code FROM forecasts WHERE source = ? AND ts_valid = ?",
+            ["open_meteo_icon_eu", ts_valid],
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] == 61
+
+
+def test_upsert_forecasts_weather_code_null(tmp_db: Path) -> None:
+    """weather_code NULL accettato senza errori."""
+    ts_run   = datetime(2026, 5, 18, 6, 0, 0)
+    ts_valid = datetime(2026, 5, 18, 18, 0, 0)
+    rec = {
+        "source": "open_meteo_gfs025", "location_id": "casa_campi",
+        "ts_run": ts_run, "ts_valid": ts_valid, "lead_time_h": 12,
+        "temp_c": 15.0,
+        # weather_code assente → None
+    }
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        db.upsert_forecasts([rec])
+        row = db.execute(
+            "SELECT weather_code FROM forecasts WHERE source = ?",
+            ["open_meteo_gfs025"],
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] is None
+
+
+def test_ensure_forecast_columns_idempotent(tmp_db: Path) -> None:
+    """_ensure_forecast_columns chiamata più volte non solleva eccezioni."""
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        db._ensure_forecast_columns()   # seconda chiamata — deve essere no-op
+        col_info = db.execute(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_name = 'forecasts' AND column_name = 'weather_code'"
+        ).fetchall()
+
+    assert len(col_info) == 1
+    assert col_info[0][1].upper() == "INTEGER"
