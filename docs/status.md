@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-29 (v0.7.1 — condizione meteo da weather_code WMO)
+> Aggiornato: 2026-05-29 (v0.7.2 — icone meteo animate Meteocons)
 
 ## Cosa è stato fatto
 

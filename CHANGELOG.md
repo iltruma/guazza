@@ -8,6 +8,19 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-05-29
+
+### Added
+- Icone meteo animate Meteocons (`@meteocons/svg@0.1.0`, MIT) servite via CDN jsDelivr
+  per le condizioni `weather_code` WMO (hero, striscia giorni, dettaglio). Renderizzate
+  come `<img class="g-wicon">` SVG con animazione SMIL, non parsate da twemoji. Nuovo
+  helper `weatherIconHtml`, campo `iconName` (con varianti day/night) in `wmoCondition`,
+  classi CSS `.g-wicon*`. Fallback `onerror` all'emoji nativa se il CDN non risponde.
+
+### Changed
+- Le icone delle condizioni meteo passano da emoji twemoji a SVG animate Meteocons.
+  Tutte le altre icone (indicatori, mini-stats, header, luna, alba/tramonto) restano twemoji.
+
 ## [0.7.1] — 2026-05-29
 
 ### Added
