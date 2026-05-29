@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-22 (v0.6.3 — cutover OpenAQ → ARPAT NRT OpenData)
+> Aggiornato: 2026-05-29 (v0.7.0 — redesign frontend v2, CSS custom)
 
 ## Cosa è stato fatto
 
@@ -98,7 +98,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **224 test**, tutti verdi
+- **241 test**, tutti verdi
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -422,6 +422,23 @@ Correzione aritmetica delle ore rimanenti per D+0, senza nuovo modello:
   80%/90% in testo leggibile.
 - **Pressione atmosferica**: `pressure_hpa` (surface pressure Open-Meteo) esposta in
   `get_current_conditions()` e mostrata come 4a cella nella stats grid (grid-cols-4).
+
+#### Redesign frontend v2 — CSS custom (2026-05-23 → 2026-05-28)
+
+Riscrittura completa del frontend. Le descrizioni precedenti dello Sprint 6/7 che citano
+Tailwind/DaisyUI riflettono lo stato pre-redesign.
+
+- **Rimossi Tailwind CSS e DaisyUI**: il frontend ora usa **CSS custom** in `style.css`
+  con classi prefissate `g-*`. Nessun framework CSS, nessun build step.
+- **Palette "Carbone e Iride"**: 4 livelli di superficie carbone neutra (zero hue) +
+  accento iris `#6B7FD4` riservato a stati vivi/attivi + 5 segnali semantici
+  (verde/giallo/rosso DLE, warm/cold delta temperatura).
+- **Tipografia**: Geist (display/titoli) + JetBrains Mono (tutti i valori numerici),
+  caricati via Google Fonts CDN.
+- **Nuovi documenti**: `DESIGN.md` (design system completo: colori, tipografia, componenti,
+  regole) e `PRODUCT.md` (product brief: utenti, scopo, principi, anti-references).
+- **Campo `mean`** (E[precip]) esposto nelle previsioni JSON (`output.py`).
+- **Fix attribution RainViewer** riposizionata.
 
 ### Sprint 8 — Deploy locale (Dell Optiplex Micro 3050 + Cloudflare Tunnel)
 **Dipendenza**: Sprint 7 chiuso, sistema stabile in locale
