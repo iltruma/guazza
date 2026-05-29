@@ -19,6 +19,29 @@ Versioning: major per sprint, minor per milestone interne.
 
 ---
 
+## [0.7.0] — 2026-05-29
+
+### Changed
+- **Redesign frontend v2 — CSS custom**: rimossi Tailwind CSS e DaisyUI. Il frontend usa
+  ora CSS custom (`style.css`, classi `g-*`), senza framework né build step. Nuova palette
+  "Carbone e Iride" (4 livelli superficie carbone + accento iris `#6B7FD4` + 5 segnali
+  semantici), tipografia Geist (display) + JetBrains Mono (dati numerici) via Google Fonts CDN.
+- **Attribution RainViewer** riposizionata nella mappa radar.
+
+### Added
+- **`DESIGN.md`**: design system frontend completo (colori, tipografia, elevazione,
+  componenti, do's & don'ts).
+- **`PRODUCT.md`**: product brief (utenti, scopo, brand personality, principi di design,
+  anti-references).
+- **Campo `mean`** (E[precip]) esposto nelle previsioni JSON (`output.py`).
+
+### Docs
+- Allineati `README.md`, `AGENTS.md`, `docs/status.md` e `config/sources.yaml` al codice:
+  stack frontend (CSS custom, no Tailwind/DaisyUI), sorgente qualità aria (ARPAT OpenData
+  NRT come sorgente attiva, OpenAQ marcato storico), conteggio test (241).
+
+---
+
 ## [0.6.3] — 2026-05-22
 
 ### Changed
