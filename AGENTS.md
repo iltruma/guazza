@@ -107,50 +107,20 @@ Se ERA5 appare come input dinamico a un modello: **è un bug**.
 
 ## Struttura repo
 
-Struttura **flat** — un file per modulo, no package annidati.
+Struttura **flat** — un file per modulo in `src/guazza/`, no package annidati.
+L'albero completo delle directory è in `README.md`. Mappa dei moduli (responsabilità):
 
-```
-guazza/
-├── AGENTS.md               # istruzioni di progetto (source of truth)
-├── CLAUDE.md               # override Claude Code (importa @AGENTS.md)
-├── DESIGN.md               # design system frontend (palette Carbone+Iris, tipografia, componenti)
-├── PRODUCT.md              # product brief (utenti, scopo, principi di design)
-├── config/
-│   ├── locations.yaml      # 5 location con stazioni SIR e upstream_pluvio_stations
-│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio) + 10 ARPAT
-│   ├── indicators.yaml     # 8 indicatori DLE con soglie e costi
-│   ├── sources.yaml        # endpoint sorgenti dati
-│   └── arpat_levels.yaml   # livelli qualità aria D.Lgs.155/2010
-├── src/guazza/
-│   ├── schema.sql          # schema DuckDB (unico source of truth)
-│   ├── storage.py          # DuckDBClient, upsert_*, backfill_prediction_obs
-│   ├── fetchers.py         # SIR storico/realtime, Netatmo, Open-Meteo, ARPAT
-│   ├── weights.py          # pesi stazione→location, refresh_upstream_rings()
-│   ├── features.py         # build_features_daily() → tabella features_daily
-│   ├── models.py           # LightGBM quantile + CQR, train_all(), predict()
-│   ├── indicators.py       # Decision Logic Engine, evaluate_all(), log_results()
-│   ├── output.py           # build_signals(), compute_coverage_30d(), write_location_json()
-│   ├── qc.py               # quality control osservazioni SIR + ARPAT
-│   ├── _logging.py         # setup_logging() — TTY pretty / cron JSON
-│   └── jobs/
-│       ├── ingest.py       # cron: historical / daily / realtime / forecasts
-│       ├── features.py     # cron: features build / info
-│       ├── train.py        # one-shot: train run / train eval
-│       ├── predict.py      # cron: predict → JSON + DLE
-│       ├── qc.py           # cron: qc run / qc report
-│       └── backup.py       # cron: backup su Cloudflare R2 (Sprint 7)
-├── data/
-│   ├── guazza.duckdb       # database analitico (non committato)
-│   ├── models/             # artefatti LightGBM pickle (non committati)
-│   └── output/             # JSON per il frontend (non committati)
-├── deploy/                 # nginx.conf, Caddyfile, crontab template
-├── frontend/               # app.js, index.html, style.css (statico, CDN via jsDelivr)
-├── tests/
-└── docs/
-    ├── status.md           # stato corrente — leggere a inizio sessione
-    ├── decisions.md        # decisioni architetturali motivate
-    └── known_issues.md     # problemi noti e workaround
-```
+- `schema.sql` — schema DuckDB (unico source of truth)
+- `storage.py` — DuckDBClient, upsert_*, backfill_prediction_obs
+- `fetchers.py` — SIR storico/realtime, Netatmo, Open-Meteo, ARPAT
+- `weights.py` — pesi stazione→location, refresh_upstream_rings()
+- `features.py` — build_features_daily() → tabella features_daily
+- `models.py` — LightGBM quantile + CQR, train_all(), predict()
+- `indicators.py` — Decision Logic Engine, evaluate_all(), log_results()
+- `output.py` — build_signals(), compute_coverage_30d(), write_location_json()
+- `qc.py` — quality control osservazioni SIR + ARPAT
+- `_logging.py` — setup_logging() (TTY pretty / cron JSON)
+- `jobs/` — entrypoint CLI cron: ingest, features, train, predict, qc, backup
 
 ## Guardrail operativi
 
@@ -192,6 +162,17 @@ Non fare reverse engineering autonomo su API o sistemi esterni quando uno script
 
 ## Regole di commit
 
+Valgono le **Git Commit Guidelines globali** (`~/.claude/AGENTS.md`: formato, regole,
+staging selettivo, atomicità). Override e aggiunte specifiche di questo progetto:
+
+- **Lingua del messaggio: italiano** — override della regola globale (che vuole i commit
+  in inglese). Codice e documentazione restano comunque in inglese.
+- **Formato con scope**: `<tipo>(<scope>): <descrizione>` — scope = modulo/componente
+  (`ingestion`, `storage`, `indicators`, `config`, `frontend`).
+- **Tipi aggiuntivi** oltre a quelli globali: `test`, `config`.
+- **Non committare** dati grezzi (`*.parquet`, `*.db`) e output temporanei, oltre a quanto
+  già vietato globalmente.
+
 ### Commit: autonomo al completamento di ogni task
 
 Trigger obbligatori:
@@ -199,22 +180,6 @@ Trigger obbligatori:
 - Aggiornamento di `docs/status.md` o `docs/known_issues.md`
 - Aggiunta/modifica di configurazione (`config/*.yaml`)
 - Milestone intermedia stabile (schema DuckDB, primo fetcher funzionante)
-
-**Formato messaggio:**
-```
-<tipo>(<scope>): <descrizione breve in italiano>
-
-[corpo opzionale se serve contesto]
-```
-Lingua del messaggio: **italiano**. Questa è una scelta specifica di progetto
-che prevale sulla regola globale di `CLAUDE.md` (che vorrebbe i commit in
-inglese). Codice e documentazione restano in inglese; commit e chat in italiano.
-Tipi: `feat`, `fix`, `test`, `docs`, `config`, `refactor`, `chore`
-Scope: modulo o componente (`ingestion`, `storage`, `indicators`, `config`)
-
-**Staging selettivo** — aggiungere solo i file pertinenti al task. Mai `git add -A` o `git add .` cieco.
-
-**Non committare mai:** `.env`, file con credenziali, dati grezzi (`*.parquet`, `*.db`), output temporanei.
 
 ### Tag versione + CHANGELOG — obbligatorio a fine sessione significativa
 
@@ -422,48 +387,16 @@ caricate via CDN jsDelivr: **Chart.js** (+ adapter date-fns), **Leaflet 1.9.4**,
 
 ## Comandi utili
 
+Comandi di sviluppo più usati:
+
 ```bash
-# Setup ambiente locale
-uv sync
-
-# Esegui test
-uv run pytest
-
-# Lint
-uv run ruff check src/ && uv run mypy src/
-
-# Ingestion manuale
-uv run python -m guazza.jobs.ingest historical --dry-run
-uv run python -m guazza.jobs.ingest historical --only-sir --location casa_campi
-uv run python -m guazza.jobs.ingest historical --only-openmeteo --om-model italia_meteo_arpae_icon_2i
-uv run python -m guazza.jobs.ingest daily
-uv run python -m guazza.jobs.ingest realtime
-uv run python -m guazza.jobs.ingest forecasts
-
-# Feature engineering
-uv run python -m guazza.jobs.features build
-uv run python -m guazza.jobs.features info
-
-# Pesi stazioni + ring upstream
-uv run python -m guazza.weights refresh
-
-# Training modello
-uv run python -m guazza.jobs.train run --db data/guazza.duckdb --model-dir data/models
-uv run python -m guazza.jobs.train eval --db data/guazza.duckdb
-
-# Predizioni + DLE + JSON output
-uv run python -m guazza.jobs.predict --db data/guazza.duckdb --model-dir data/models --output-dir data/output
-uv run python -m guazza.jobs.predict --db data/guazza.duckdb --model-dir data/models --output-dir data/output --dry-run
-
-# Quality control
-uv run python -m guazza.jobs.qc run
-uv run python -m guazza.jobs.qc run --dry-run
-uv run python -m guazza.jobs.qc report
-
-# Validazione schema DuckDB
-uv run python -m guazza.storage verify-schema
-uv run python -m guazza.storage init-schema --db data/guazza.duckdb
+uv sync --extra dev                          # ambiente + dev deps
+uv run pytest                                # test
+uv run ruff check src/ && uv run mypy src/   # lint + type check
 ```
+
+L'elenco completo dei comandi operativi (ingestion, features, weights, train,
+predict, qc, schema) con tutti i flag e le varianti è in `README.md`.
 
 ### Variabili d'ambiente rilevanti
 

@@ -1,12 +1,6 @@
 @AGENTS.md
 
-## Note OpenCode / Claude
-
-- **STOP a inizio sessione: leggi `docs/status.md` integralmente prima di qualsiasi azione**
-- Una domanda alla volta se serve chiarimento
-- Rispondi sempre in italiano
-
-### Spiegazioni orientate alla manutenibilità
+## Spiegazioni orientate alla manutenibilità
 
 Quando spieghi una modifica (vedi "Spiegazione obbligatoria prima di modificare file" in AGENTS.md),
 calibra la spiegazione così:
