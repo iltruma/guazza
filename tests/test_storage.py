@@ -407,3 +407,41 @@ def test_ensure_forecast_columns_idempotent(tmp_db: Path) -> None:
 
     assert len(col_info) == 1
     assert col_info[0][1].upper() == "INTEGER"
+
+
+def test_backfill_prediction_obs_shared_station(tmp_db: Path) -> None:
+    """Una stazione condivisa, taggata in observations con un'altra location, deve
+    comunque popolare i *_obs della location target via station_weights (no più
+    JOIN su o.location_id)."""
+    target_date = datetime(2026, 5, 1)
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        db.ensure_predictions_schema()
+
+        db.upsert_predictions([{
+            "model_version": "test", "location_id": "casa_nicco",
+            "ts_valid": target_date, "lead_time_h": 24,
+            "tmin_c": {"p50": 8.0}, "tmax_c": {"p50": 18.0}, "precip_mm": {"p50": 0.0},
+        }])
+
+        # Osservazione giornaliera della stazione condivisa, taggata 'lavoro_cosimo'.
+        db.upsert_sir_observations([{
+            "source": "sir_toscana", "station_id": "ST_SHARED",
+            "location_id": "lavoro_cosimo", "ts": target_date, "granularity": "daily",
+            "tmin_c": 7.5, "tmax_c": 17.5, "precip_mm": 2.0,
+        }])
+        # La stazione è pesata anche da casa_nicco.
+        db.execute(
+            "INSERT INTO station_weights (station_id, source, location_id, weight) "
+            "VALUES (?, 'sir', ?, ?)",
+            ["ST_SHARED", "casa_nicco", 1.0],
+        )
+
+        updated = db.backfill_prediction_obs()
+        row = db.execute(
+            "SELECT tmin_obs, tmax_obs, precip_obs FROM predictions "
+            "WHERE location_id = 'casa_nicco'"
+        ).fetchone()
+
+    assert updated == 1
+    assert row == (pytest.approx(7.5), pytest.approx(17.5), pytest.approx(2.0))

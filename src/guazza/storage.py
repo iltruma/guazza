@@ -180,7 +180,7 @@ class DuckDBClient:
                 precip_obs = ow.precip_mm
             FROM (
                 SELECT
-                    o.location_id,
+                    sw.location_id,
                     o.ts::DATE AS obs_date,
                     SUM(o.tmin_c * sw.weight)
                         / NULLIF(SUM(CASE WHEN o.tmin_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
@@ -193,9 +193,9 @@ class DuckDBClient:
                         AS precip_mm
                 FROM observations o
                 JOIN station_weights sw
-                    ON o.station_id = sw.station_id AND o.location_id = sw.location_id
+                    ON o.station_id = sw.station_id
                 WHERE o.source = 'sir_toscana' AND o.granularity = 'daily'
-                GROUP BY o.location_id, o.ts::DATE
+                GROUP BY sw.location_id, o.ts::DATE
             ) ow
             WHERE predictions.location_id = ow.location_id
               AND predictions.ts_valid::DATE = ow.obs_date
