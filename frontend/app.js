@@ -82,47 +82,35 @@ function hideSkeleton() { hideEl('skeleton-state'); hideEl('error-state'); }
 
 // ── Weather icon ──────────────────────────────────────────────────────────────
 
-function weatherIcon(precipP50, tmaxP50, temporaleVerdict, nebbiaVerdict) {
-  if (nebbiaVerdict === 'rosso' || nebbiaVerdict === 'giallo') return '🌫️';
-  if (temporaleVerdict === 'rosso')  return '⛈️';
-  if (temporaleVerdict === 'giallo') return '🌩️';
-  if (precipP50 >= 10)  return '🌧️';
-  if (precipP50 >=  3)  return '🌦️';
-  if (precipP50 >= 0.5) return '🌥️';
-  if (tmaxP50 == null)  return '⛅';
-  if (tmaxP50 >= 22)    return '☀️';
-  if (tmaxP50 >= 15)    return '🌤️';
-  return '⛅';
+// Scala unica: icona e testo escono dalla stessa decisione, quindi non possono
+// divergere. `isNight` rimappa le sole condizioni di cielo sereno (☀️/🌤️) sulla
+// luna — usato dal hero "live", non dalle previsioni per-giorno.
+function weatherCondition({ precip = 0, tmax = null, temporale, nebbia, isNight = false }) {
+  if (nebbia === 'rosso' || nebbia === 'giallo') return { icon: '🌫️', text: 'Nebbia' };
+  if (temporale === 'rosso')  return { icon: '⛈️', text: 'Temporale' };
+  if (temporale === 'giallo') return { icon: '🌩️', text: 'Possibili tuoni' };
+  if (precip >= 10)  return { icon: '🌧️', text: 'Pioggia' };
+  if (precip >=  3)  return { icon: '🌦️', text: 'Pioggerella' };
+  if (precip >= 0.5) return { icon: '🌥️', text: 'Nuvoloso' };
+  if (tmax == null)  return { icon: '⛅', text: 'Variabile' };
+  if (tmax >= 22)    return { icon: isNight ? '🌙' : '☀️', text: isNight ? 'Sereno' : 'Soleggiato' };
+  if (tmax >= 15)    return { icon: isNight ? '🌙' : '🌤️', text: 'Sereno' };
+  return { icon: '⛅', text: 'Variabile' };
 }
 
 function weatherIconForDay(day) {
-  return weatherIcon(
-    (day.forecasts.precip_mm?.mean ?? day.forecasts.precip_mm?.p50) ?? 0,
-    day.forecasts.tmax_c?.p50   ?? null,
-    day.indicators.temporale?.verdict,
-    day.indicators.nebbia?.verdict,
-  );
+  return weatherCondition({
+    precip: (day.forecasts.precip_mm?.mean ?? day.forecasts.precip_mm?.p50) ?? 0,
+    tmax: day.forecasts.tmax_c?.p50 ?? null,
+    temporale: day.indicators.temporale?.verdict,
+    nebbia: day.indicators.nebbia?.verdict,
+  }).icon;
 }
 
-function weatherConditionText(precipP50, tmaxP50, temporaleVerdict, nebbiaVerdict) {
-  if (nebbiaVerdict === 'rosso' || nebbiaVerdict === 'giallo') return 'Nebbia';
-  if (temporaleVerdict === 'rosso')  return 'Temporale';
-  if (temporaleVerdict === 'giallo') return 'Possibili tuoni';
-  if (precipP50 >= 10)  return 'Pioggia';
-  if (precipP50 >=  3)  return 'Pioggerella';
-  if (precipP50 >= 0.5) return 'Nuvoloso';
-  if (tmaxP50 == null)  return 'Variabile';
-  if (tmaxP50 >= 22)    return 'Soleggiato';
-  if (tmaxP50 >= 15)    return 'Sereno';
-  return 'Variabile';
-}
-
-function weatherIconFromCurrent(current) {
-  const prec = current?.precip_mm ?? 0;
-  if (prec >= 5)   return '🌧️';
-  if (prec >= 1)   return '🌦️';
-  if (prec >= 0.1) return '🌥️';
-  return '☀️';
+function isNightAt(locMeta, now) {
+  if (!locMeta || typeof SunCalc === 'undefined') return false;
+  const t = SunCalc.getTimes(now, locMeta.lat, locMeta.lon);
+  return now < t.sunrise || now > t.sunset;
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
@@ -368,24 +356,25 @@ function renderHero(data) {
     tempEl.textContent = '—';
   }
 
-  // Icon
-  const iconEl = document.getElementById('hero-icon');
-  let icon;
-  if (current?.temp_c != null) icon = weatherIconFromCurrent(current);
-  else if (todayDay)           icon = weatherIconForDay(todayDay);
-  else                         icon = '⛅';
-  if (iconEl) { iconEl.textContent = icon; twemoji.parse(iconEl, TWEMOJI_OPTS); }
+  // Condizione live: icona e testo dalla stessa scala -> sempre coerenti.
+  // Precip dal realtime SIR se presente (resta "live"), altrimenti dal giornaliero;
+  // tmax e verdetti dal giorno corrente. Di notte le condizioni serene usano la luna.
+  const isNight = isNightAt(locMeta, new Date());
+  const cond = weatherCondition({
+    precip: current?.precip_mm
+      ?? (todayDay ? (todayDay.forecasts.precip_mm?.mean ?? todayDay.forecasts.precip_mm?.p50) : null)
+      ?? 0,
+    tmax: todayDay?.forecasts?.tmax_c?.p50 ?? null,
+    temporale: todayDay?.indicators?.temporale?.verdict,
+    nebbia: todayDay?.indicators?.nebbia?.verdict,
+    isNight,
+  });
 
-  // Condition + percepita
+  const iconEl = document.getElementById('hero-icon');
+  if (iconEl) { iconEl.textContent = cond.icon; twemoji.parse(iconEl, TWEMOJI_OPTS); }
+
   const condEl = document.getElementById('hero-condition');
-  const condText = todayDay
-    ? weatherConditionText(
-        (todayDay.forecasts.precip_mm?.mean ?? todayDay.forecasts.precip_mm?.p50) ?? 0,
-        todayDay.forecasts.tmax_c?.p50 ?? null,
-        todayDay.indicators.temporale?.verdict,
-        todayDay.indicators.nebbia?.verdict,
-      )
-    : (current ? (weatherIconFromCurrent(current) === '☀️' ? 'Soleggiato' : 'Variabile') : '');
+  const condText = cond.text;
   if (condEl) {
     const meta = [
       current?.feels_like_c != null ? `percepita ${current.feels_like_c.toFixed(1)}°` : null,
