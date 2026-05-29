@@ -1,6 +1,6 @@
 /* =====================================================================
-   Guazza v2 — Campagna Toscana d'Inverno
-   Verde-grigio mineral + petrol-blue accent
+   Guazza v2 — Carbone e Iride
+   Carbone puro (zero hue) + accento iris #6B7FD4
    No Tailwind, no DaisyUI — pure semantic CSS
    ===================================================================== */
 
@@ -963,7 +963,6 @@ img.emoji {
   letter-spacing: -0.02em;
   line-height: 1;
 }
-.g-metric__value--secondary { color: var(--text-2); }
 .g-metric__value--warm { color: var(--warm); }
 .g-metric__value--cool { color: var(--cold); }
 
@@ -1198,59 +1197,6 @@ img.emoji {
   flex-shrink: 0;
 }
 
-/* Stat strip */
-.g-stat-strip {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0,1fr));
-  gap: 1px;
-  background: var(--border-1);
-  border-bottom: 1px solid var(--border-1);
-}
-
-@media (min-width: 480px) {
-  .g-stat-strip { grid-template-columns: repeat(4, minmax(0,1fr)); }
-}
-
-.g-stat-strip__cell {
-  background: var(--surface-1);
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  animation: fade-up 0.28s ease-out both;
-}
-
-.g-stat-strip__label {
-  font-family: var(--ff-mono);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-3);
-  text-align: center;
-  white-space: nowrap;
-}
-
-.g-stat-strip__value {
-  font-family: var(--ff-mono);
-  font-size: 13px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-1);
-}
-
-/* Model switch wrapper */
-.g-model-switch-wrap {
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--border-1);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-@media (min-width: 768px) {
-  .g-model-switch-wrap { padding: 10px 24px; }
-}
 
 .g-model-switch {
   position: relative;
@@ -1304,8 +1250,8 @@ img.emoji {
   border: 1px solid rgba(255,255,255,0.09);
   min-width: 160px;
   padding: 10px 14px;
-  background: rgba(18,24,21,0.97);
-  box-shadow: 0 8px 32px rgba(8,10,24,0.5);
+  background: rgba(19,19,19,0.97);
+  box-shadow: 0 8px 32px rgba(8,8,8,0.6);
   z-index: 20;
 }
 
@@ -1336,58 +1282,6 @@ img.emoji {
 .g-card .g-chart-wrap { padding: 12px 8px 8px; min-height: 260px; }
 
 /* =============================================================
-   COLLAPSIBLE (Radar, AQ)
-   ============================================================= */
-
-.g-collapsible {
-  background: var(--surface-1);
-  border: 1px solid var(--border-1);
-  border-radius: var(--r-xl);
-  overflow: hidden;
-}
-
-.g-collapsible__head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 20px;
-  user-select: none;
-  transition: background var(--dur-fast) var(--ease-out);
-}
-.g-collapsible__head:hover { background: rgba(255,255,255,0.02); }
-
-@media (min-width: 768px) {
-  .g-collapsible__head { padding: 16px 24px; }
-}
-
-.g-collapsible__kicker {
-  font-family: var(--ff-mono);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--text-2);
-}
-
-.g-collapsible__hint {
-  font-family: var(--ff-mono);
-  font-size: 11px;
-  color: var(--text-3);
-  flex: 1;
-}
-
-.g-collapsible__chevron {
-  width: 16px; height: 16px;
-  color: var(--text-3);
-  flex-shrink: 0;
-  transition: transform var(--dur-base) var(--ease-out);
-  margin-left: auto;
-}
-details[open] .g-collapsible__chevron { transform: rotate(180deg); }
-
-.g-collapsible__body { border-top: 1px solid var(--border-1); }
-
-/* =============================================================
    RADAR
    ============================================================= */
 
@@ -1406,7 +1300,7 @@ details[open] .g-collapsible__chevron { transform: rotate(180deg); }
   .g-radar__container { height: 360px; }
 }
 
-#radar-map { position: absolute; inset: 0; background: #0b0f19; z-index: 1; }
+#radar-map { position: absolute; inset: 0; background: var(--surface-0); z-index: 1; }
 
 .g-radar__badge-pill {
   position: absolute;
@@ -1556,71 +1450,19 @@ details[open] .g-collapsible__chevron { transform: rotate(180deg); }
 
 /* Leaflet overrides */
 .leaflet-pane, .leaflet-top, .leaflet-bottom { z-index: 5 !important; }
-.leaflet-control-attribution { background: rgba(12,12,12,0.88); color: var(--text-3); }
+.leaflet-control-attribution {
+  background: rgba(12,12,12,0.88);
+  color: var(--text-3);
+  backdrop-filter: blur(5px);
+  padding: 2px 6px;
+  border-radius: 4px;
+  right: 12px;
+  bottom: 62px;
+}
 .leaflet-control-attribution a { color: var(--accent); }
 .leaflet-bar a { background: var(--surface-2); color: var(--text-3); border-color: var(--border-1); }
 .leaflet-bar a:hover { background: rgba(255,255,255,0.07); }
-.leaflet-container .leaflet-control-attribution {
-    background: rgba(0, 0, 0, 0.3) !important; 
-    backdrop-filter: blur(5px); 
-    color: #fff !important;
-    padding: 2px 6px;
-    border-radius: 4px;
-    right: 12px;
-    bottom: 62px;
-}
 
-/* ======================================================
-   AIR QUALITY
-   ============================================================= */
-
-.g-aq__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-  gap: 8px;
-  padding: 16px 20px;
-}
-@media (min-width: 768px) {
-  .g-aq__grid { padding: 16px 24px; }
-}
-
-.g-aq__tile {
-  padding: 12px 10px;
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-  border: 1px solid var(--border-1);
-  text-align: center;
-}
-
-.g-aq__tile-label {
-  font-family: var(--ff-mono);
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-3);
-  display: block;
-  margin-bottom: 4px;
-}
-
-.g-aq__tile-val {
-  font-family: var(--ff-mono);
-  font-size: 15px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  display: block;
-}
-
-.g-aq__tile-unit {
-  font-family: var(--ff-mono);
-  font-size: 9px;
-  color: var(--text-3);
-  display: block;
-  margin-top: 2px;
-}
-
-.g-aq__val--verde  { color: var(--verde); }
-.g-aq__val--giallo { color: var(--giallo); }
-.g-aq__val--rosso  { color: var(--rosso); }
-.g-aq__val--null   { color: var(--text-3); opacity: 0.5; }
 
 /* =============================================================
    COVERAGE BAR
@@ -1689,7 +1531,7 @@ details[open] .g-collapsible__chevron { transform: rotate(180deg); }
   color: var(--text-2);
   background: rgba(12,12,12,0.96);
   border: 1px solid rgba(255,255,255,0.10);
-  box-shadow: 0 8px 32px rgba(8,10,24,0.6);
+  box-shadow: 0 8px 32px rgba(8,8,8,0.6);
   pointer-events: none;
   line-height: 1.45;
 }
