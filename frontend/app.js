@@ -109,12 +109,44 @@ function wmoCondition(code, isNight = false) {
   }
 }
 
+// Le Meteocons hanno un margine trasparente fisso nel canvas 128×128: ritagliamo il
+// viewBox per avvicinare il glifo al testo. 14 lascia 2px ai raggi di clear-day (che
+// ruotando arrivano a 16px dal bordo) — è il vincolo più stretto del set.
+const METEOCONS_CROP = '14 14 100 100';
+const _weatherSvgCache = new Map();  // iconName -> Promise<string> (markup SVG ritagliato)
+
+// Placeholder sincrono; l'SVG inline viene iniettato dopo da hydrateWeatherIcons.
+// Serve l'inline (non <img>) per poter riscrivere il viewBox e togliere il margine.
 function weatherIconHtml(iconName, emojiFallback, cls) {
-  const src = `${METEOCONS_BASE}/${iconName}.svg`;
-  // onerror: fallback a emoji nativa (twemoji.parse è già passato sul container,
-  // quindi l'emoji resta nativa — leggibile comunque). Meteocons NON sono Unicode
-  // quindi twemoji.parse le ignora correttamente.
-  return `<img class="g-wicon ${cls}" src="${src}" alt="" onerror="this.outerHTML='<span class=&quot;g-wicon-fallback&quot;>${emojiFallback}</span>'">`;
+  return `<span class="g-wicon ${cls}" data-wicon="${iconName}" data-wicon-fb="${emojiFallback}"></span>`;
+}
+
+function loadWeatherSvg(iconName) {
+  let pending = _weatherSvgCache.get(iconName);
+  if (!pending) {
+    pending = fetch(`${METEOCONS_BASE}/${iconName}.svg`)
+      .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.text(); })
+      .then(txt => txt.replace(/viewBox="[^"]*"/, `viewBox="${METEOCONS_CROP}"`))
+      .catch(err => { _weatherSvgCache.delete(iconName); throw err; });
+    _weatherSvgCache.set(iconName, pending);
+  }
+  return pending;
+}
+
+// Idrata i placeholder [data-wicon] dentro container con l'SVG inline animato.
+// Fallback a emoji nativa se il CDN non risponde (twemoji.parse è già passato qui,
+// quindi l'emoji resta nativa — leggibile comunque).
+function hydrateWeatherIcons(container) {
+  if (!container) return;
+  container.querySelectorAll('[data-wicon]:not([data-wicon-done])').forEach(el => {
+    el.setAttribute('data-wicon-done', '');
+    loadWeatherSvg(el.getAttribute('data-wicon'))
+      .then(svg => { el.innerHTML = svg; })
+      .catch(() => {
+        el.textContent = el.getAttribute('data-wicon-fb') || '';
+        el.classList.add('g-wicon-fallback');
+      });
+  });
 }
 
 function weatherIconForDay(day, cls) {
@@ -387,7 +419,10 @@ function renderHero(data) {
   const cond = wmoCondition(heroCode, isNight);
 
   const iconEl = document.getElementById('hero-icon');
-  if (iconEl) { iconEl.innerHTML = weatherIconHtml(cond.iconName, cond.icon, 'g-wicon--hero'); }
+  if (iconEl) {
+    iconEl.innerHTML = weatherIconHtml(cond.iconName, cond.icon, 'g-wicon--hero');
+    hydrateWeatherIcons(iconEl);
+  }
 
   const condEl = document.getElementById('hero-condition');
   const condText = cond.text;
@@ -588,6 +623,7 @@ function renderDayStrip(days, activeDayIdx) {
   });
 
   twemoji.parse(el, TWEMOJI_OPTS);
+  hydrateWeatherIcons(el);
 }
 
 // ── Day detail ────────────────────────────────────────────────────────────────
@@ -599,7 +635,7 @@ function renderDayDetail(day) {
 
   // Head
   const iconEl = document.getElementById('detail-icon');
-  if (iconEl) { iconEl.innerHTML = icon; }
+  if (iconEl) { iconEl.innerHTML = icon; hydrateWeatherIcons(iconEl); }
   const titleEl = document.getElementById('detail-title');
   if (titleEl) titleEl.textContent = fmtDayLabel(target_date);
   const dateEl = document.getElementById('detail-date');

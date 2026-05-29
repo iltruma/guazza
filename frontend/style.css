@@ -114,11 +114,12 @@ img.emoji {
 
 /* === Meteocons (SVG animate) — solo icone weather_code WMO === */
 .g-wicon { display: block; flex-shrink: 0; line-height: 0; }
+.g-wicon > svg { display: block; width: 100%; height: 100%; }
 .g-wicon-fallback { line-height: 1; }
-.g-wicon--hero   { width: 7.875rem; height: 7.875rem; }
-.g-wicon--strip  { width: 90px; height: 90px; }
-.g-wicon--detail { width: clamp(5.625rem, 11.25vw, 7.875rem); height: clamp(5.625rem, 11.25vw, 7.875rem); }
-@media (min-width: 768px) { .g-wicon--strip { width: 99px; height: 99px; } }
+.g-wicon--hero   { width: 5.51rem; height: 5.51rem; }
+.g-wicon--strip  { width: 63px; height: 63px; }
+.g-wicon--detail { width: clamp(3.94rem, 7.88vw, 5.51rem); height: clamp(3.94rem, 7.88vw, 5.51rem); }
+@media (min-width: 768px) { .g-wicon--strip { width: 69px; height: 69px; } }
 
 /* =============================================================
    HEADER
