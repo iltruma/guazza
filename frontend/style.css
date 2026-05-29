@@ -359,6 +359,19 @@ img.emoji {
   flex-shrink: 0;
 }
 
+.g-hero__live-badge {
+  position: absolute;
+  top: 12px; right: 12px;
+  z-index: 2;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  background: rgba(52,211,153,0.15);
+  color: #34D399;
+  pointer-events: none;
+}
+
 .g-hero__temp-row {
   display: flex;
   align-items: center;
