@@ -9,6 +9,14 @@ Versioning: major per sprint, minor per milestone interne.
 ## [Unreleased]
 
 ### Added
+- `weather_code` WMO da Open-Meteo: ingestito come `INTEGER` per ogni ora e modello NWP
+  (`fetchers.py`, `schema.sql`), migrazione idempotente `_ensure_forecast_columns`
+  (`storage.py`). Nuovo helper `get_daily_weather_code` (moda 24h × N modelli, tie-break
+  per severità WMO) e `_modal_weather_code` in `output.py`. Campo `weather_code: int | null`
+  aggiunto a `current`, `days[]`, `nwp_models_hourly[].data[]` e `hourly[]` nel JSON di output.
+  Frontend: `wmoCondition(code, isNight)` sostituisce l'euristica `weatherCondition`; hero
+  usa `current.weather_code` con fallback su `todayDay.weather_code` e override pioggia
+  se `current.precip_mm > 0.2`.
 - `analysis/baseline_backtest.py`: baseline backtest D+0 (read-only) per de-risking della
   tesi. Conferma bias di microclima sistematico e correggibile già a D+0 (es. `casa_cesto`
   fondovalle: tmin sovrastimata da tutti i 6 NWP). Floor di skill per il modello ML.
