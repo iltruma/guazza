@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-29 (v0.7.0 — redesign frontend v2, CSS custom)
+> Aggiornato: 2026-05-29 (v0.7.1 — condizione meteo da weather_code WMO)
 
 ## Cosa è stato fatto
 

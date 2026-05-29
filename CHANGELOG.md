@@ -8,6 +8,8 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-05-29
+
 ### Added
 - `weather_code` WMO da Open-Meteo: ingestito come `INTEGER` per ogni ora e modello NWP
   (`fetchers.py`, `schema.sql`), migrazione idempotente `_ensure_forecast_columns`
