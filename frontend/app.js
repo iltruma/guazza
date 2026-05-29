@@ -1080,6 +1080,9 @@ function initChart(data, model, targetDate) {
 function updateChartModel(data, model, targetDate) {
   if (!meteoChart || !targetDate) { initChart(data, model, targetDate); return; }
   const canvas = document.getElementById('meteo-chart');
+  const [y, m, d] = targetDate.split('-').map(Number);
+  meteoChart.options.scales.x.min = new Date(y, m - 1, d, 0, 0, 0);
+  meteoChart.options.scales.x.max = new Date(y, m - 1, d, 23, 0, 0);
   const points = buildChartPoints(data, model, targetDate);
   const p = chartPalette();
   const ds = _buildChartDatasets(canvas, points, p);
