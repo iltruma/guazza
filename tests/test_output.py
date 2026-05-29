@@ -14,12 +14,15 @@ from guazza.indicators import IndicatorResult
 from guazza.output import (
     _dewpoint,
     _expected_precip,
+    _modal_weather_code,
     _prob_exceeds,
+    _WMO_SEVERITY,
     build_signals,
     build_signals_today,
     compute_coverage_30d,
     compute_hourly_profile,
     get_current_conditions,
+    get_daily_weather_code,
     get_nwp_model_comparison,
     get_nwp_models_hourly,
     write_location_json,
@@ -878,3 +881,193 @@ def test_write_location_json_with_db_adds_realtime_fields(
     assert "nwp_models_hourly" in data
     # Con DB vuoto, current e air_quality saranno None, nwp_models_hourly []
     assert data["nwp_models_hourly"] == []
+
+
+# ── _modal_weather_code ───────────────────────────────────────────────────────
+
+def test_modal_weather_code_single() -> None:
+    assert _modal_weather_code([3]) == 3
+
+
+def test_modal_weather_code_clear_winner() -> None:
+    assert _modal_weather_code([0, 3, 3, 61]) == 3
+
+
+def test_modal_weather_code_tiebreak_severity() -> None:
+    # 0 e 61 in parità: 61 ha severità più alta
+    assert _modal_weather_code([0, 61]) == 61
+
+
+def test_modal_weather_code_empty() -> None:
+    assert _modal_weather_code([]) is None
+
+
+def test_modal_weather_code_unknown_code_gets_zero_severity() -> None:
+    # Codice sconosciuto 999 vs 0: parità → 999 vince per max() con stessa priorità 0,
+    # ma l'importante è che non sollevi eccezioni.
+    result = _modal_weather_code([0, 999])
+    assert result in (0, 999)
+
+
+def test_wmo_severity_complete_for_common_codes() -> None:
+    """I codici WMO più comuni devono avere una severità definita."""
+    for code in [0, 1, 2, 3, 45, 48, 51, 61, 63, 65, 71, 75, 80, 81, 95, 96, 99]:
+        assert code in _WMO_SEVERITY, f"Codice {code} mancante in _WMO_SEVERITY"
+
+
+# ── get_daily_weather_code ────────────────────────────────────────────────────
+
+def _insert_forecasts_with_wc(db_path: Path, location_id: str, target_date: str) -> None:
+    """Inserisce forecast NWP con weather_code per due modelli, 3 ore del giorno."""
+    import duckdb
+
+    from datetime import date
+    d = date.fromisoformat(target_date)
+    ts_run = datetime(d.year, d.month, d.day, 0, 0, 0)
+    records = []
+    for src, wcs in [("open_meteo_ecmwf_ifs", [3, 61, 61]),
+                     ("open_meteo_icon_eu",    [3,  3, 61])]:
+        for h, wc in zip([6, 12, 18], wcs):
+            ts_valid = datetime(d.year, d.month, d.day, h, 0, 0)
+            records.append((src, location_id, ts_run, ts_valid, h, 18.0, wc))
+
+    con = duckdb.connect(str(db_path))
+    con.executemany(
+        "INSERT OR REPLACE INTO forecasts "
+        "(source, location_id, ts_run, ts_valid, lead_time_h, temp_c, weather_code) "
+        "VALUES (?,?,?,?,?,?,?)",
+        records,
+    )
+    con.close()
+
+
+def test_get_daily_weather_code_modal(seeded_db: Path) -> None:
+    """Moda corretta: 61 appare 3 volte su 6, 3 appare 3 volte → tie-break severità."""
+    _insert_forecasts_with_wc(seeded_db, "casa_campi", "2026-05-19")
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_daily_weather_code(db, "casa_campi", "2026-05-19")
+    # 3 e 61 sono in parità (3 occorrenze ciascuno); 61 ha severità maggiore
+    assert result == 61
+
+
+def test_get_daily_weather_code_empty(seeded_db: Path) -> None:
+    """Nessun dato → None."""
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_daily_weather_code(db, "casa_campi", "2026-05-19")
+    assert result is None
+
+
+def test_get_daily_weather_code_latest_run_wins(seeded_db: Path) -> None:
+    """QUALIFY latest run: il run più recente prevale per ogni (source, ts_valid)."""
+    import duckdb
+
+    from datetime import date
+
+    d = date(2026, 5, 19)
+    con = duckdb.connect(str(seeded_db))
+    # Run vecchio: codice 0 (sereno); run nuovo: codice 61 (pioggia)
+    con.execute("""
+        INSERT INTO forecasts (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, weather_code)
+        VALUES ('open_meteo_icon_eu', 'casa_campi', '2026-05-19 00:00', '2026-05-19 12:00', 12, 18.0, 0),
+               ('open_meteo_icon_eu', 'casa_campi', '2026-05-19 06:00', '2026-05-19 12:00',  6, 18.0, 61)
+    """)
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_daily_weather_code(db, "casa_campi", "2026-05-19")
+    assert result == 61
+
+
+# ── current.weather_code ─────────────────────────────────────────────────────
+
+def test_current_conditions_has_weather_code_key(seeded_db: Path) -> None:
+    """get_current_conditions deve sempre avere la chiave weather_code nel risultato."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, humidity_pct)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ["sir", "ST001", "casa_campi", now - timedelta(minutes=5), "realtime", 18.0, 60.0])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    assert "weather_code" in result
+    # Senza forecast NWP recenti, deve essere None
+    assert result["weather_code"] is None
+
+
+def test_current_conditions_weather_code_from_forecasts(seeded_db: Path) -> None:
+    """weather_code viene dai forecast NWP recenti."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, humidity_pct)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ["sir", "ST001", "casa_campi", now - timedelta(minutes=5), "realtime", 18.0, 60.0])
+    # Forecast nell'ora corrente con weather_code = 3 (coperto)
+    con.execute("""
+        INSERT INTO forecasts
+            (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, weather_code)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ["open_meteo_icon_eu", "casa_campi",
+          now - timedelta(hours=1), now - timedelta(minutes=10), 1, 18.5, 3])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    assert result["weather_code"] == 3
+    assert isinstance(result["weather_code"], int)
+
+
+# ── write_location_json — weather_code propagation ────────────────────────────
+
+def test_write_location_json_weather_code_propagated(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+) -> None:
+    """weather_code nel day_entry viene propagato nel JSON di output."""
+    days = [
+        {"target_date": "2026-05-19", "lead_time_h": 24,
+         "pred": sample_pred, "indicators": sample_indicators,
+         "weather_code": 61},
+    ]
+    path = write_location_json(
+        location_id="casa_campi", days=days, coverage={}, output_dir=tmp_path,
+    )
+    data = json.loads(path.read_text())
+    assert data["days"][0]["weather_code"] == 61
+    assert isinstance(data["days"][0]["weather_code"], int)
+
+
+def test_write_location_json_weather_code_null(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+) -> None:
+    """weather_code None è serializzato come null nel JSON."""
+    days = [
+        {"target_date": "2026-05-19", "lead_time_h": 24,
+         "pred": sample_pred, "indicators": sample_indicators},
+        # weather_code assente → None
+    ]
+    path = write_location_json(
+        location_id="casa_campi", days=days, coverage={}, output_dir=tmp_path,
+    )
+    data = json.loads(path.read_text())
+    assert data["days"][0]["weather_code"] is None

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -394,6 +395,69 @@ def get_current_air_quality(
     }
 
 
+# Severità WMO per il tie-break quando più codici hanno la stessa frequenza modale.
+# Valori più alti = condizione più severa. Gruppi di codici raggruppati per classe WMO.
+_WMO_SEVERITY: dict[int, int] = {
+    0: 0, 1: 1, 2: 2, 3: 3,
+    45: 4, 48: 5,
+    51: 6, 53: 7, 55: 8,
+    56: 9, 57: 10,
+    61: 11, 63: 12, 65: 13,
+    66: 14, 67: 15,
+    71: 16, 73: 17, 75: 18, 77: 19,
+    80: 20, 81: 21, 82: 22,
+    85: 23, 86: 24,
+    95: 25,
+    96: 26, 99: 27,
+}
+
+
+def _modal_weather_code(codes: list[int]) -> int | None:
+    """Codice WMO modale da una lista di interi.
+
+    In caso di pareggio, vince il codice con severità più alta secondo _WMO_SEVERITY.
+    Codici sconosciuti ottengono severità 0.
+    """
+    if not codes:
+        return None
+    counter = Counter(codes)
+    max_freq = max(counter.values())
+    candidates = [c for c, f in counter.items() if f == max_freq]
+    # tie-break: severità più alta
+    return max(candidates, key=lambda c: _WMO_SEVERITY.get(c, 0))
+
+
+def get_daily_weather_code(
+    db: DuckDBClient,
+    location_id: str,
+    target_date: str,
+) -> int | None:
+    """Codice WMO giornaliero per una location e data, per consenso modale tra modelli.
+
+    Algoritmo: per ogni (source, ts_valid) prende il run più recente, poi calcola
+    la moda su tutte le 24h × N modelli. Il tie-break usa _WMO_SEVERITY.
+
+    Returns:
+        Codice WMO intero, o None se nessun dato disponibile.
+    """
+    rows = db.execute("""
+        SELECT weather_code
+        FROM (
+            SELECT source, ts_valid, weather_code
+            FROM forecasts
+            WHERE location_id = ?
+              AND CAST(ts_valid AS DATE) = ?
+              AND weather_code IS NOT NULL
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY source, ts_valid ORDER BY ts_run DESC
+            ) = 1
+        ) latest
+    """, [location_id, target_date]).fetchall()
+
+    codes = [int(r[0]) for r in rows if r[0] is not None]
+    return _modal_weather_code(codes)
+
+
 def get_current_conditions(
     db: DuckDBClient,
     location_id: str,
@@ -425,7 +489,8 @@ def get_current_conditions(
 
     ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg = row
 
-    # pressure_hpa viene dai forecast NWP (tabella forecasts), non dalle stazioni realtime
+    # pressure_hpa e weather_code vengono dai forecast NWP (tabella forecasts),
+    # non dalle stazioni realtime.
     pres_row = db.execute("""
         SELECT ROUND(AVG(pressure_hpa), 1)
         FROM forecasts
@@ -435,6 +500,23 @@ def get_current_conditions(
           AND pressure_hpa IS NOT NULL
     """, [location_id]).fetchone()
     pressure_hpa = pres_row[0] if pres_row else None
+
+    # weather_code: moda dei codici WMO nell'ora più vicina a now tra tutti i modelli
+    wc_rows = db.execute("""
+        SELECT weather_code
+        FROM forecasts
+        WHERE location_id = ?
+          AND ts_valid >= NOW() - INTERVAL 1 HOUR
+          AND ts_valid <= NOW() + INTERVAL 1 HOUR
+          AND weather_code IS NOT NULL
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY source, ts_valid ORDER BY ts_run DESC
+        ) = 1
+    """, [location_id]).fetchall()
+    current_weather_code = _modal_weather_code(
+        [int(r[0]) for r in wc_rows if r[0] is not None]
+    )
+
     t    = float(temp_c)
     rh   = float(humidity_pct) if humidity_pct is not None else None
     ws  = float(wind_speed_ms) if wind_speed_ms is not None else None
@@ -453,6 +535,7 @@ def get_current_conditions(
         "dewpoint_c":    dew,
         "feels_like_c":  apparent,
         "pressure_hpa":  float(pressure_hpa) if pressure_hpa is not None else None,
+        "weather_code":  current_weather_code,
     }
 
 
@@ -473,7 +556,8 @@ def get_nwp_models_hourly(
             ROUND(temp_c, 1)                             AS temp_c,
             ROUND(humidity_pct, 0)                       AS humidity_pct,
             ROUND(COALESCE(precip_mm, 0.0), 2)           AS precip_mm,
-            ROUND(wind_speed_ms, 1)                      AS wind_speed_ms
+            ROUND(wind_speed_ms, 1)                      AS wind_speed_ms,
+            weather_code
         FROM forecasts
         WHERE location_id = ?
           AND CAST(ts_valid AS DATE) >= CURRENT_DATE
@@ -490,12 +574,14 @@ def get_nwp_models_hourly(
     by_source: dict[str, list[dict[str, Any]]] = {}
     for _, r in df.iterrows():
         src = str(r["source"])
+        wc = r.get("weather_code")
         by_source.setdefault(src, []).append({
             "ts":            str(r["ts"]),
             "temp_c":        float(r["temp_c"]) if r["temp_c"] is not None else None,
             "humidity_pct":  float(r["humidity_pct"]) if r["humidity_pct"] is not None else None,
             "precip_mm":     float(r["precip_mm"]) if r["precip_mm"] is not None else None,
             "wind_speed_ms": float(r["wind_speed_ms"]) if r["wind_speed_ms"] is not None else None,
+            "weather_code":  int(wc) if wc is not None and not pd.isna(wc) else None,
         })
 
     return [
@@ -554,6 +640,30 @@ def compute_hourly_profile(
     if df.empty:
         return None
 
+    # weather_code per ora: moda tra modelli (ogni (source, ts_valid) → run più recente)
+    wc_df = db.execute("""
+        SELECT HOUR(ts_valid) AS hour, weather_code
+        FROM (
+            SELECT source, ts_valid, weather_code
+            FROM forecasts
+            WHERE location_id = ?
+              AND CAST(ts_valid AS DATE) = ?
+              AND weather_code IS NOT NULL
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY source, ts_valid ORDER BY ts_run DESC
+            ) = 1
+        ) latest
+    """, [location_id, target_date]).fetchall()
+
+    # Raggruppa i codici WMO per ora e calcola la moda in Python (più semplice che in SQL)
+    hour_wc_codes: dict[int, list[int]] = {}
+    for wc_row in wc_df:
+        h_val, wc_val = int(wc_row[0]), int(wc_row[1])
+        hour_wc_codes.setdefault(h_val, []).append(wc_val)
+    hour_wc_modal: dict[int, int | None] = {
+        h: _modal_weather_code(codes) for h, codes in hour_wc_codes.items()
+    }
+
     hour_data: dict[int, tuple[float, float | None, float, float | None, float | None]] = {
         int(r["hour"]): (
             float(r["temp_mean"]),
@@ -583,7 +693,7 @@ def compute_hourly_profile(
     else:
         precip_scale = 0.0
 
-    result: list[dict[str, float | None]] = []
+    result: list[dict[str, float | int | None]] = []
     for h in range(24):
         if h in hour_data:
             t_raw, hum, p_raw, prob, wind = hour_data[h]
@@ -594,11 +704,13 @@ def compute_hourly_profile(
                 "precip_mm":     round(p_raw * precip_scale, 2),
                 "precip_prob":   round(prob, 2) if prob is not None else None,
                 "wind_speed_ms": round(wind, 1) if wind is not None else None,
+                "weather_code":  hour_wc_modal.get(h),
             })
         else:
             result.append({
                 "hour": h, "temp_c": None, "humidity_pct": None,
                 "precip_mm": None, "precip_prob": None, "wind_speed_ms": None,
+                "weather_code": None,
             })
 
     return result
@@ -653,8 +765,9 @@ def write_location_json(
         pred: dict[str, dict[str, float]] = day["pred"]
         inds: list[IndicatorResult] = day["indicators"]
         day_payloads.append({
-            "target_date": day["target_date"],
-            "lead_time_h": day["lead_time_h"],
+            "target_date":  day["target_date"],
+            "lead_time_h":  day["lead_time_h"],
+            "weather_code": day.get("weather_code"),
             "forecasts": {
                 "tmin_c":    _fmt_target(pred.get("tmin_c",    {})),
                 "tmax_c":    _fmt_target(pred.get("tmax_c",    {})),

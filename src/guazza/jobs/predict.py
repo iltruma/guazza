@@ -38,6 +38,7 @@ from guazza.output import (
     compute_coverage_30d,
     compute_hourly_profile,
     get_current_conditions,
+    get_daily_weather_code,
     get_nwp_model_comparison,
     write_location_json,
 )
@@ -169,6 +170,10 @@ def cmd_run(
                         db, location_id, str(target_date_obj),
                     )
 
+                    weather_code = get_daily_weather_code(
+                        db, location_id, str(target_date_obj),
+                    )
+
                     day_entries.append({
                         "target_date":    str(target_date_obj),
                         "lead_time_h":    lead_time_h,
@@ -176,6 +181,7 @@ def cmd_run(
                         "indicators":     results,
                         "hourly":         hourly,
                         "nwp_comparison": nwp_comparison,
+                        "weather_code":   weather_code,
                     })
 
                     if dry_run:
