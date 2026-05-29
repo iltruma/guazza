@@ -103,8 +103,8 @@ guazza/
 
 ## Architettura
 
-- **Server**: Dell Optiplex Micro 3050 (locale, hardware già disponibile)
-- **Orchestrazione**: cron Linux (no Prefect, no Airflow)
+- **Server**: Dell Optiplex Micro 3050 — host Proxmox (homelab multi-servizio, Guazza è un tenant)
+- **Scheduling**: cron Linux o k8s CronJob — job = CLI idempotenti orchestrator-agnostic
 - **Storage**: DuckDB (colonnare, file singolo) + R2 backup
 - **ML**: LightGBM quantile regression + CQR calibration
 - **Frontend**: HTML+JS vanilla + CSS custom (no framework) + Chart.js + Leaflet + Twemoji + suncalc; font Geist + JetBrains Mono (CDN, statico)

@@ -126,8 +126,15 @@ Ogni layer aggiuntivo (Prefect, Docker, FastAPI 24/7) aggiunge:
 - complessità di debug
 - costo operativo
 
-**Scelta**: cron Linux + Python scripts. Stupido, robusto, prevedibile.
-Nessuna eccezione ammessa senza bug tecnico documentato che la imponga.
+**Scelta**: i job sono CLI Python idempotenti (`guazza-ingest`, `guazza-predict`, …)
+invocabili da qualsiasi scheduler. L'invariante blindato è che l'app resti
+**orchestrator-agnostic** — non che si usi per forza `cron`.
+
+Il *target di deploy* è libero (il 3050 è un host Proxmox multi-servizio): cron in una
+LXC oppure namespace k8s con CronJob e DB in PVC sono entrambi legittimi. Vietato è
+**accoppiare la logica applicativa** a un orchestratore (Prefect/Dagster/Airflow/Celery)
+o esporre l'app come PaaS — quello reintroduce superficie di failure e complessità di
+debug nel codice. Vedi "Invariante deploy" in AGENTS.md per i vincoli tecnici DuckDB su k8s.
 
 ---
 

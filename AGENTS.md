@@ -40,16 +40,16 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 
 | Componente | Scelta | Motivazione |
 |---|---|---|
-| Server | Dell Optiplex Micro 3050 (locale) | Single node, hardware già disponibile, costo zero |
+| Server | Dell Optiplex Micro 3050 — host Proxmox (homelab multi-servizio) | Hardware già disponibile, costo zero; Guazza è un tenant tra altri |
 | OS | Ubuntu 24.04 LTS | LTS, standard |
-| Orchestrazione | cron Linux | Stupido, robusto, prevedibile |
+| Scheduling | cron Linux o k8s CronJob | Job = CLI idempotenti orchestrator-agnostic; scheduler a scelta del homelab |
 | Storage analitico | DuckDB | Column-oriented, file singolo, backup = cp |
 | Storage raw NWP | Parquet partizionato | Compresso, leggibile con pandas/polars |
 | Backup | Cloudflare R2 (10GB free) | Egress gratis, free tier |
 | ML core | LightGBM quantile | Gold standard dati tabulari, no GPU |
 | CI calibrazione | CQR (Romano 2019) | Garanzia copertura marginale |
 | Esposizione | Cloudflare Tunnel (cloudflared) | Nessun IP pubblico, no port forwarding, SSL automatico |
-| Deploy | GitHub Actions → SSH locale via tunnel | Solo CI/CD, non orchestration |
+| Deploy | CI su GitHub Actions (pubblica); CD nel homelab (es. namespace k8s) | CI clean-room + badge; il deploy non vincola l'app |
 | Frontend | HTML + CSS custom + Chart.js + Leaflet + Nginx | Statico, CSS custom (no framework), librerie e font via CDN jsDelivr |
 | DNS/CDN/WAF | Cloudflare | Gratis |
 | Monitoring | Healthchecks.io + UptimeRobot | Free tier, dead-man switch |
@@ -60,9 +60,8 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 
 ## Anti-pattern — non proporre mai
 
-- Coolify, Portainer, o qualsiasi PaaS layer
-- Prefect, Dagster, Airflow, Celery come orchestratori
-- Kubernetes, Docker Swarm, ArgoCD
+- Coolify, Portainer, o qualsiasi PaaS layer che astragga l'app
+- Prefect, Dagster, Airflow, Celery accoppiati alla logica applicativa (l'app deve restare orchestrator-agnostic)
 - PostgreSQL, MySQL, Redis, MongoDB
 - GitHub Actions come orchestratore runtime di job
 - ERA5 come predittore di forecast (solo come climatologia statica)
@@ -74,6 +73,14 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 - FastAPI come processo 24/7 per single user
 
 Se uno di questi appare come dipendenza necessaria, segnalarlo e proporre alternativa conforme allo stack.
+
+**Invariante deploy**: i job sono CLI idempotenti invocabili da qualsiasi scheduler
+(cron, k8s CronJob, systemd). Deployare Guazza come namespace k8s con DB in PVC è una
+scelta legittima del homelab — l'anti-pattern vieta l'*accoppiamento* dell'app a un
+orchestratore, non il *target* di deploy. Vincoli tecnici se si va su k8s: DuckDB è
+single-writer (`concurrencyPolicy: Forbid` sui CronJob writer), PVC `ReadWriteOnce` su
+storage local-path (`flock` inaffidabile su NFS/Ceph), backup `cp`/snapshot in un CronJob
+dedicato.
 
 ## Decisioni scientifiche — blindate
 

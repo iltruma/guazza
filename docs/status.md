@@ -440,19 +440,19 @@ Tailwind/DaisyUI riflettono lo stato pre-redesign.
 - **Campo `mean`** (E[precip]) esposto nelle previsioni JSON (`output.py`).
 - **Fix attribution RainViewer** riposizionata.
 
-### Sprint 8 — Deploy locale (Dell Optiplex Micro 3050 + Cloudflare Tunnel)
+### Sprint 8 — Deploy nel homelab (Dell Optiplex 3050 / Proxmox + Cloudflare Tunnel)
 **Dipendenza**: Sprint 7 chiuso, sistema stabile in locale
 
-- Setup Ubuntu 24.04 LTS sul Dell Optiplex Micro 3050
-- **Cloudflare Tunnel** (`cloudflared`): espone nginx locale su guazza.it senza IP pubblico né port forwarding; SSL terminato da Cloudflare
+- Host Proxmox sul 3050; Guazza come tenant (LXC con cron **oppure** namespace k8s)
+- **Cloudflare Tunnel** (`cloudflared`): espone nginx su guazza.it senza IP pubblico né port forwarding; SSL terminato da Cloudflare
 - Backfill storico (`historical`) per caricare SIR + Open-Meteo 2022→oggi
-- Crontab con i 4 job ingestion + `qc run` + job `predict`
+- Scheduling dei 4 job ingestion + `qc run` + `predict` (crontab o `CronJob` k8s con `concurrencyPolicy: Forbid`)
 - Configurazione `.env` produzione (Netatmo, Healthchecks.io), `load_dotenv` per lettura DB_PATH e HEALTHCHECKS_URL
-- **Backup Cloudflare R2**: job cron periodico per backup `.duckdb` + Parquet su Cloudflare R2 (10GB free tier, egress gratis) via `rclone` o `boto3`
-- GitHub Actions → deploy SSH (via tunnel o rete locale)
+- **Backup Cloudflare R2**: job periodico per backup `.duckdb` + Parquet su Cloudflare R2 (10GB free tier, egress gratis) via `rclone` o `boto3`
+- **CI**: GitHub Actions pubblica (test/lint/mypy, clean-room + badge). **CD**: pull-based nel homelab (DB DuckDB single-writer → PVC `ReadWriteOnce` su storage local-path se k8s)
 
 ### Sprint 9 — Model monitoring + nowcasting
-**Dipendenza**: Deploy VPS completato (Sprint 8)
+**Dipendenza**: Deploy nel homelab completato (Sprint 8)
 
 - Job cron che calcola `coverage_empirical_30d` rolling e la confronta con target (80% per CI80, 90% per CI90)
 - Alert se coverage scende sotto soglia: log `ERROR` + ping `Healthchecks.io` fail

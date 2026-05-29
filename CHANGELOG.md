@@ -12,7 +12,16 @@ Versioning: major per sprint, minor per milestone interne.
 - _(nessuna)_
 
 ### Changed
-- _(nessuna)_
+- Stack: il 3050 diventa host Proxmox (homelab multi-servizio), Guazza è un tenant.
+  Scheduling riformulato come "cron o k8s CronJob" — l'invariante blindato è che i job
+  restino CLI idempotenti **orchestrator-agnostic**, non l'uso obbligato di cron.
+- Anti-pattern: rimosso il ban duro su Kubernetes/ArgoCD (era un vincolo sul *target di
+  deploy*); resta vietato l'**accoppiamento** della logica app a un orchestratore
+  (Prefect/Dagster/Airflow/Celery) e l'esposizione come PaaS. Aggiunto "Invariante deploy"
+  con i vincoli tecnici DuckDB su k8s (single-writer, PVC RWO local-path, backup CronJob).
+- Docs allineate alla decisione: `AGENTS.md` (stack + anti-pattern), `README.md`
+  (architettura), `docs/decisions.md` (D-007), `docs/status.md` (Sprint 8), terminologia
+  "VPS" → "server homelab" in `docs/known_issues.md`.
 
 ### Fixed
 - _(nessuno)_

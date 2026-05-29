@@ -61,7 +61,7 @@ mancanti: AR-ENELSB-SANGIOVANNI (BENZENE, CO per casa_cesto) e FI-LAVAGNINI
 ## KI-018 — Cutover OpenAQ → ARPAT NRT OpenData: righe storiche source='openaq' nel DB
 
 **Severità**: informativa
-**Stato**: da eseguire sul DB locale e sul VPS
+**Stato**: da eseguire sul DB locale e sul server homelab
 
 Il fetcher OpenAQ è stato rimosso (2026-05-22). Le righe `source='openaq'` in
 `observations` sono ormai orfane. Lo storico AQ non serve (`get_current_air_quality()`
@@ -197,7 +197,7 @@ invece di crashare con `IOException`. Il DB non può corrompersi.
 - `tenacity` con backoff già configurato (`_fetch_om_json_historical`: 5
   tentativi, `_wait_historical` rispetta `Retry-After` se presente).
 - Se l'IP è bloccato: attendere il reset della finestra o eseguire il backfill
-  da un IP diverso (es. direttamente sul VPS in fase di deploy).
+  da un IP diverso (es. direttamente sul server homelab in fase di deploy).
 
 **Nota**: WSL in modalità NAT condivide l'IP dell'host Windows — un backfill
 fallito in locale brucia la quota per l'intera macchina.
