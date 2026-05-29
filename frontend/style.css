@@ -368,6 +368,16 @@ img.emoji {
   pointer-events: none;
 }
 
+.g-hero__live-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  background: rgba(52,211,153,0.15);
+  color: #34D399;
+  pointer-events: none;
+  flex-shrink: 0;
+}
 
 .g-hero__temp-row {
   display: flex;
@@ -1461,7 +1471,7 @@ img.emoji {
 /* Leaflet overrides */
 .leaflet-pane, .leaflet-top, .leaflet-bottom { z-index: 5 !important; }
 .leaflet-control-attribution {
-  background: rgba(12,12,12,0.88);
+  background: rgba(12,12,12,0.88) !important;
   color: var(--text-3);
   backdrop-filter: blur(5px);
   padding: 2px 6px;
