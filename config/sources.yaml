@@ -102,27 +102,24 @@ sources:
 
   # ── Qualità aria ─────────────────────────────────────────────────────────
 
-  openaq:
-    label: "OpenAQ v3 — qualità aria (aggregatore multi-provider)"
-    base_url: "https://api.openaq.org/v3"
+  arpat:
+    label: "ARPAT OpenData NRT — qualità aria oraria (real-time)"
+    base_url: "https://opendata.arpat.toscana.it/temi-ambientali/aria/qualita-aria/dati_orari_real_time/json_orari_nrt"
     endpoints:
-      locations:    "/locations?coordinates={lat},{lon}&radius={radius_m}"
-      latest:       "/locations/{id}/latest"
-      measurements: "/sensors/{sensor_id}/measurements"
+      last: "/{station_id}/last"
     status: OK
-    auth: "X-API-Key header (env OPENAQ_API_KEY)"
+    auth: nessuna
     format: JSON
-    update_freq: "oraria (discovery dinamica per coordinate)"
-    provider_upstream: "ARPAT Toscana (tra gli altri)"
+    update_freq: "oraria (pubblicazione con 2-3h di ritardo)"
     variables: [pm10, pm25, no2, o3, co, so2, benzene]
     notes: >
-      Sostituisce endpoint ARPAT diretti dal 2026-05-20.
-      Discovery stazioni per lat/lon di ogni location (radius default 15km) —
-      nessuna lista statica di station_id necessaria.
-      station_id nel DB: "openaq_{id}" (intero OpenAQ).
-      CO: convertito da µg/m³ (OpenAQ) a mg/m³ (schema observations).
-      Granularità: solo 'hourly' — niente bollettini giornalieri.
-      Backfill storico: /sensors/{id}/measurements con paginazione.
+      Sorgente attiva dal 2026-05-22 (v0.6.3) — sostituisce OpenAQ v3, a sua volta
+      adottato per ~2 giorni (v0.6.2) e poi ritirato per copertura incompleta (KI-017).
+      Endpoint pubblico senza auth. station_id da locations.yaml (arpat_stations) —
+      lista statica per location, nessuna discovery dinamica.
+      source nel DB: "arpat". CO nativo in mg/m³ (D.Lgs.155/2010), nessuna conversione.
+      Granularità: solo 'hourly' — niente bollettini giornalieri, nessun backfill storico
+      (AQ non è feature di training).
 
   # ── Radar precipitazioni (frontend only) ────────────────────────────────
 
