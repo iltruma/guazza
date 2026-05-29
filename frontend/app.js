@@ -82,29 +82,33 @@ function hideSkeleton() { hideEl('skeleton-state'); hideEl('error-state'); }
 
 // ── Weather icon ──────────────────────────────────────────────────────────────
 
-// Scala unica: icona e testo escono dalla stessa decisione, quindi non possono
-// divergere. `isNight` rimappa le sole condizioni di cielo sereno (☀️/🌤️) sulla
-// luna — usato dal hero "live", non dalle previsioni per-giorno.
-function weatherCondition({ precip = 0, tmax = null, temporale, nebbia, isNight = false }) {
-  if (nebbia === 'rosso' || nebbia === 'giallo') return { icon: '🌫️', text: 'Nebbia' };
-  if (temporale === 'rosso')  return { icon: '⛈️', text: 'Temporale' };
-  if (temporale === 'giallo') return { icon: '🌩️', text: 'Possibili tuoni' };
-  if (precip >= 10)  return { icon: '🌧️', text: 'Pioggia' };
-  if (precip >=  3)  return { icon: '🌦️', text: 'Pioggerella' };
-  if (precip >= 0.5) return { icon: '🌥️', text: 'Nuvoloso' };
-  if (tmax == null)  return { icon: '⛅', text: 'Variabile' };
-  if (tmax >= 22)    return { icon: isNight ? '🌙' : '☀️', text: isNight ? 'Sereno' : 'Soleggiato' };
-  if (tmax >= 15)    return { icon: isNight ? '🌙' : '🌤️', text: 'Sereno' };
-  return { icon: '⛅', text: 'Variabile' };
+// Mappa codici WMO → {icon, text}. isNight rimappa i codici sereno (0/1) sulla luna.
+// I codici non mappati esplicitamente cadono nel fallback ⛅/Variabile.
+function wmoCondition(code, isNight = false) {
+  if (code == null) return { icon: '⛅', text: 'Variabile' };
+  switch (code) {
+    case 0:           return { icon: isNight ? '🌙' : '☀️',  text: isNight ? 'Sereno'        : 'Soleggiato' };
+    case 1:           return { icon: isNight ? '🌙' : '🌤️', text: 'Sereno' };
+    case 2:           return { icon: '⛅',  text: 'Parz. nuvoloso' };
+    case 3:           return { icon: '☁️',  text: 'Coperto' };
+    case 45: case 48: return { icon: '🌫️', text: 'Nebbia' };
+    case 51: case 53: case 55: return { icon: '🌦️', text: 'Pioviggine' };
+    case 56: case 57: return { icon: '🌨️', text: 'Pioviggine gelata' };
+    case 61:          return { icon: '🌧️', text: 'Pioggia debole' };
+    case 63: case 65: return { icon: '🌧️', text: 'Pioggia' };
+    case 66: case 67: return { icon: '🌨️', text: 'Pioggia gelata' };
+    case 71: case 73: case 75: case 77: return { icon: '❄️', text: 'Neve' };
+    case 80:          return { icon: '🌦️', text: 'Rovesci' };
+    case 81: case 82: return { icon: '🌧️', text: 'Rovesci' };
+    case 85: case 86: return { icon: '🌨️', text: 'Neve a rovesci' };
+    case 95:          return { icon: '⛈️', text: 'Temporale' };
+    case 96: case 99: return { icon: '⛈️', text: 'Temporale con grandine' };
+    default:          return { icon: '⛅', text: 'Variabile' };
+  }
 }
 
 function weatherIconForDay(day) {
-  return weatherCondition({
-    precip: (day.forecasts.precip_mm?.mean ?? day.forecasts.precip_mm?.p50) ?? 0,
-    tmax: day.forecasts.tmax_c?.p50 ?? null,
-    temporale: day.indicators.temporale?.verdict,
-    nebbia: day.indicators.nebbia?.verdict,
-  }).icon;
+  return wmoCondition(day.weather_code ?? null).icon;
 }
 
 function isNightAt(locMeta, now) {
@@ -356,19 +360,20 @@ function renderHero(data) {
     tempEl.textContent = '—';
   }
 
-  // Condizione live: icona e testo dalla stessa scala -> sempre coerenti.
-  // Precip dal realtime SIR se presente (resta "live"), altrimenti dal giornaliero;
-  // tmax e verdetti dal giorno corrente. Di notte le condizioni serene usano la luna.
+  // Condizione live: weather_code WMO da current (NWP ora più vicina a now) con
+  // fallback al codice giornaliero di todayDay. Override pioggia se il SIR segnala
+  // precipitazione in corso (evita discrepanza tra dato realtime e codice forecast).
+  // Di notte i codici sereno (0/1) usano la luna.
   const isNight = isNightAt(locMeta, new Date());
-  const cond = weatherCondition({
-    precip: current?.precip_mm
-      ?? (todayDay ? (todayDay.forecasts.precip_mm?.mean ?? todayDay.forecasts.precip_mm?.p50) : null)
-      ?? 0,
-    tmax: todayDay?.forecasts?.tmax_c?.p50 ?? null,
-    temporale: todayDay?.indicators?.temporale?.verdict,
-    nebbia: todayDay?.indicators?.nebbia?.verdict,
-    isNight,
-  });
+  const heroCode = (() => {
+    // Override: pioggia realtime osservata → forza codice pioggia debole (61)
+    if (current?.precip_mm != null && current.precip_mm > 0.2) return 61;
+    // Sorgente primaria: weather_code dal current NWP (ora corrente)
+    if (current?.weather_code != null) return current.weather_code;
+    // Fallback: codice giornaliero del giorno corrente
+    return todayDay?.weather_code ?? null;
+  })();
+  const cond = wmoCondition(heroCode, isNight);
 
   const iconEl = document.getElementById('hero-icon');
   if (iconEl) { iconEl.textContent = cond.icon; twemoji.parse(iconEl, TWEMOJI_OPTS); }
