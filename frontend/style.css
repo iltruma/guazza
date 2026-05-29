@@ -112,6 +112,14 @@ img.emoji {
   display: inline-block;
 }
 
+/* === Meteocons (SVG animate) — solo icone weather_code WMO === */
+.g-wicon { display: block; flex-shrink: 0; line-height: 0; }
+.g-wicon-fallback { line-height: 1; }
+.g-wicon--hero   { width: 7.875rem; height: 7.875rem; }
+.g-wicon--strip  { width: 90px; height: 90px; }
+.g-wicon--detail { width: clamp(5.625rem, 11.25vw, 7.875rem); height: clamp(5.625rem, 11.25vw, 7.875rem); }
+@media (min-width: 768px) { .g-wicon--strip { width: 99px; height: 99px; } }
+
 /* =============================================================
    HEADER
    ============================================================= */
@@ -358,15 +366,9 @@ img.emoji {
 }
 
 .g-hero__icon {
-  font-size: 3.5rem;
-  line-height: 1;
   flex-shrink: 0;
 }
-.g-hero__icon img.emoji {
-  width: 3.5rem !important;
-  height: 3.5rem !important;
-  vertical-align: middle;
-}
+
 
 #hero-temp {
   font-family: var(--ff-sans);
@@ -743,8 +745,8 @@ img.emoji {
 }
 .g-strip__label--today { color: var(--accent); }
 
-.g-strip__icon { font-size: 40px; line-height: 1; margin: 6px 0 4px; }
-@media (min-width: 768px) { .g-strip__icon { font-size: 44px; } }
+.g-strip__icon { line-height: 1; margin: 6px 0 4px; }
+
 
 .g-strip__temps {
   display: flex;
@@ -911,8 +913,6 @@ img.emoji {
 }
 
 .g-detail__icon {
-  font-size: clamp(2.5rem, 5vw, 3.5rem);
-  line-height: 1;
   flex-shrink: 0;
   animation: slow-float 5s ease-in-out infinite;
 }

@@ -3,6 +3,7 @@
 // Dev: ln -s ../data/output frontend2/data  then: cd frontend2 && python3 -m http.server 8081
 const DATA_URL = loc => `/data/${loc}.json`;
 const TWEMOJI_OPTS = { folder: 'svg', ext: '.svg' };
+const METEOCONS_BASE = 'https://cdn.jsdelivr.net/npm/@meteocons/svg@0.1.0/fill';
 
 const LOCATIONS = [
   { id: 'casa_campi',    label: 'Casa Campi',  lat: 43.82,  lon: 11.13  },
@@ -82,33 +83,43 @@ function hideSkeleton() { hideEl('skeleton-state'); hideEl('error-state'); }
 
 // ── Weather icon ──────────────────────────────────────────────────────────────
 
-// Mappa codici WMO → {icon, text}. isNight rimappa i codici sereno (0/1) sulla luna.
+// Mappa codici WMO → {icon, iconName, text}. isNight rimappa i codici sereno (0/1) sulla luna.
+// icon: emoji twemoji (fallback), iconName: slug Meteocons SVG, text: etichetta italiana.
 // I codici non mappati esplicitamente cadono nel fallback ⛅/Variabile.
 function wmoCondition(code, isNight = false) {
-  if (code == null) return { icon: '⛅', text: 'Variabile' };
+  if (code == null) return { icon: '⛅', iconName: 'cloudy', text: 'Variabile' };
   switch (code) {
-    case 0:           return { icon: isNight ? '🌙' : '☀️',  text: isNight ? 'Sereno'        : 'Soleggiato' };
-    case 1:           return { icon: isNight ? '🌙' : '🌤️', text: 'Sereno' };
-    case 2:           return { icon: '⛅',  text: 'Parz. nuvoloso' };
-    case 3:           return { icon: '☁️',  text: 'Coperto' };
-    case 45: case 48: return { icon: '🌫️', text: 'Nebbia' };
-    case 51: case 53: case 55: return { icon: '🌦️', text: 'Pioviggine' };
-    case 56: case 57: return { icon: '🌨️', text: 'Pioviggine gelata' };
-    case 61:          return { icon: '🌧️', text: 'Pioggia debole' };
-    case 63: case 65: return { icon: '🌧️', text: 'Pioggia' };
-    case 66: case 67: return { icon: '🌨️', text: 'Pioggia gelata' };
-    case 71: case 73: case 75: case 77: return { icon: '❄️', text: 'Neve' };
-    case 80:          return { icon: '🌦️', text: 'Rovesci' };
-    case 81: case 82: return { icon: '🌧️', text: 'Rovesci' };
-    case 85: case 86: return { icon: '🌨️', text: 'Neve a rovesci' };
-    case 95:          return { icon: '⛈️', text: 'Temporale' };
-    case 96: case 99: return { icon: '⛈️', text: 'Temporale con grandine' };
-    default:          return { icon: '⛅', text: 'Variabile' };
+    case 0:           return { icon: isNight ? '🌙' : '☀️',  iconName: isNight ? 'clear-night'               : 'clear-day',               text: isNight ? 'Sereno'        : 'Soleggiato' };
+    case 1:           return { icon: isNight ? '🌙' : '🌤️', iconName: isNight ? 'partly-cloudy-night'        : 'partly-cloudy-day',        text: 'Sereno' };
+    case 2:           return { icon: '⛅',  iconName: isNight ? 'partly-cloudy-night'        : 'partly-cloudy-day',        text: 'Parz. nuvoloso' };
+    case 3:           return { icon: '☁️',  iconName: isNight ? 'overcast-night'             : 'overcast',                text: 'Coperto' };
+    case 45: case 48: return { icon: '🌫️', iconName: isNight ? 'fog-night'                  : 'fog-day',                 text: 'Nebbia' };
+    case 51: case 53: case 55: return { icon: '🌦️', iconName: 'drizzle',                                                  text: 'Pioviggine' };
+    case 56: case 57: return { icon: '🌨️', iconName: 'sleet',                                                             text: 'Pioviggine gelata' };
+    case 61:          return { icon: '🌧️', iconName: isNight ? 'partly-cloudy-night-rain'   : 'partly-cloudy-day-rain',  text: 'Pioggia debole' };
+    case 63: case 65: return { icon: '🌧️', iconName: 'rain',                                                              text: 'Pioggia' };
+    case 66: case 67: return { icon: '🌨️', iconName: 'sleet',                                                             text: 'Pioggia gelata' };
+    case 71: case 73: case 75: case 77: return { icon: '❄️', iconName: 'snow',                                            text: 'Neve' };
+    case 80:          return { icon: '🌦️', iconName: isNight ? 'partly-cloudy-night-rain'   : 'partly-cloudy-day-rain',  text: 'Rovesci' };
+    case 81: case 82: return { icon: '🌧️', iconName: 'rain',                                                              text: 'Rovesci' };
+    case 85: case 86: return { icon: '🌨️', iconName: 'snow',                                                              text: 'Neve a rovesci' };
+    case 95:          return { icon: '⛈️', iconName: isNight ? 'thunderstorms-night'        : 'thunderstorms-day',        text: 'Temporale' };
+    case 96: case 99: return { icon: '⛈️', iconName: isNight ? 'thunderstorms-night-rain'   : 'thunderstorms-day-rain',   text: 'Temporale con grandine' };
+    default:          return { icon: '⛅', iconName: 'cloudy',                                                             text: 'Variabile' };
   }
 }
 
-function weatherIconForDay(day) {
-  return wmoCondition(day.weather_code ?? null).icon;
+function weatherIconHtml(iconName, emojiFallback, cls) {
+  const src = `${METEOCONS_BASE}/${iconName}.svg`;
+  // onerror: fallback a emoji nativa (twemoji.parse è già passato sul container,
+  // quindi l'emoji resta nativa — leggibile comunque). Meteocons NON sono Unicode
+  // quindi twemoji.parse le ignora correttamente.
+  return `<img class="g-wicon ${cls}" src="${src}" alt="" onerror="this.outerHTML='<span class=&quot;g-wicon-fallback&quot;>${emojiFallback}</span>'">`;
+}
+
+function weatherIconForDay(day, cls) {
+  const c = wmoCondition(day.weather_code ?? null);
+  return weatherIconHtml(c.iconName, c.icon, cls);
 }
 
 function isNightAt(locMeta, now) {
@@ -376,7 +387,7 @@ function renderHero(data) {
   const cond = wmoCondition(heroCode, isNight);
 
   const iconEl = document.getElementById('hero-icon');
-  if (iconEl) { iconEl.textContent = cond.icon; twemoji.parse(iconEl, TWEMOJI_OPTS); }
+  if (iconEl) { iconEl.innerHTML = weatherIconHtml(cond.iconName, cond.icon, 'g-wicon--hero'); }
 
   const condEl = document.getElementById('hero-condition');
   const condText = cond.text;
@@ -530,7 +541,7 @@ function renderDayStrip(days, activeDayIdx) {
     const { target_date, forecasts: fc, indicators } = day;
     const active = idx === activeDayIdx;
     const diff   = diffDays(target_date);
-    const icon   = weatherIconForDay(day);
+    const icon   = weatherIconForDay(day, 'g-wicon--strip');
     const tmax   = fmtTemp(fc.tmax_c?.p50);
     const tmin   = fmtTemp(fc.tmin_c?.p50);
     const precipVal = (fc.precip_mm?.mean ?? fc.precip_mm?.p50) ?? 0;
@@ -584,11 +595,11 @@ function renderDayStrip(days, activeDayIdx) {
 function renderDayDetail(day) {
   if (!day) return;
   const { forecasts: fc, indicators, target_date, lead_time_h } = day;
-  const icon = weatherIconForDay(day);
+  const icon = weatherIconForDay(day, 'g-wicon--detail');
 
   // Head
   const iconEl = document.getElementById('detail-icon');
-  if (iconEl) { iconEl.textContent = icon; twemoji.parse(iconEl, TWEMOJI_OPTS); }
+  if (iconEl) { iconEl.innerHTML = icon; }
   const titleEl = document.getElementById('detail-title');
   if (titleEl) titleEl.textContent = fmtDayLabel(target_date);
   const dateEl = document.getElementById('detail-date');
