@@ -918,16 +918,21 @@ def test_wmo_severity_complete_for_common_codes() -> None:
 # ── get_daily_weather_code ────────────────────────────────────────────────────
 
 def _insert_forecasts_with_wc(db_path: Path, location_id: str, target_date: str) -> None:
-    """Inserisce forecast NWP con weather_code per due modelli, 3 ore del giorno."""
+    """Inserisce forecast NWP con weather_code per due modelli su 20 ore ciascuno.
+
+    Distribuzione: 10 ore code 3 (coperto) + 10 ore code 61 (pioggia) per source,
+    così entrambi i code sono in parità (20 vs 20) → tie-break a favore di 61.
+    20 ore soddisfano la soglia _MIN_HOURS_FOR_DAILY_CODE.
+    """
     import duckdb
 
     from datetime import date
     d = date.fromisoformat(target_date)
     ts_run = datetime(d.year, d.month, d.day, 0, 0, 0)
     records = []
-    for src, wcs in [("open_meteo_ecmwf_ifs", [3, 61, 61]),
-                     ("open_meteo_icon_eu",    [3,  3, 61])]:
-        for h, wc in zip([6, 12, 18], wcs):
+    for src in ("open_meteo_ecmwf_ifs", "open_meteo_icon_eu"):
+        for h in range(20):
+            wc = 3 if h < 10 else 61
             ts_valid = datetime(d.year, d.month, d.day, h, 0, 0)
             records.append((src, location_id, ts_run, ts_valid, h, 18.0, wc))
 
@@ -941,12 +946,12 @@ def _insert_forecasts_with_wc(db_path: Path, location_id: str, target_date: str)
     con.close()
 
 
-def test_get_daily_weather_code_modal(seeded_db: Path) -> None:
-    """Moda corretta: 61 appare 3 volte su 6, 3 appare 3 volte → tie-break severità."""
+def test_get_daily_weather_code_pessimistic(seeded_db: Path) -> None:
+    """Caso pessimistico: 61 appare 10 ore su 20 → vince su 3 (10 ore) per severità."""
     _insert_forecasts_with_wc(seeded_db, "casa_campi", "2026-05-19")
     with DuckDBClient(db_path=seeded_db, read_only=True) as db:
         result = get_daily_weather_code(db, "casa_campi", "2026-05-19")
-    # 3 e 61 sono in parità (3 occorrenze ciascuno); 61 ha severità maggiore
+    # 10 ore code 3, 10 ore code 61 — entrambi stabili (≥2h); 61 ha severità maggiore
     assert result == 61
 
 
@@ -958,24 +963,91 @@ def test_get_daily_weather_code_empty(seeded_db: Path) -> None:
 
 
 def test_get_daily_weather_code_latest_run_wins(seeded_db: Path) -> None:
-    """QUALIFY latest run: il run più recente prevale per ogni (source, ts_valid)."""
+    """QUALIFY latest run: il run più recente prevale per ogni (source, ts_valid).
+
+    Inserisce 20 ore per open_meteo_icon_eu (sopra soglia): per l'ora 12 ci sono due run,
+    il vecchio con wc=0 e il nuovo con wc=61. Tutte le altre ore hanno wc=61.
+    Il risultato atteso è 61 (il run più recente dell'ora 12 sovrascrive il vecchio).
+    """
     import duckdb
 
-    from datetime import date
-
-    d = date(2026, 5, 19)
+    d_str = "2026-05-19"
     con = duckdb.connect(str(seeded_db))
-    # Run vecchio: codice 0 (sereno); run nuovo: codice 61 (pioggia)
-    con.execute("""
-        INSERT INTO forecasts (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, weather_code)
-        VALUES ('open_meteo_icon_eu', 'casa_campi', '2026-05-19 00:00', '2026-05-19 12:00', 12, 18.0, 0),
-               ('open_meteo_icon_eu', 'casa_campi', '2026-05-19 06:00', '2026-05-19 12:00',  6, 18.0, 61)
-    """)
+    # 20 ore con run-base wc=61, poi ora 12 ha anche un run vecchio con wc=0
+    records = [
+        ("open_meteo_icon_eu", "casa_campi", f"{d_str} 06:00", f"{d_str} {h:02d}:00", h, 18.0, 61)
+        for h in range(20)
+    ] + [
+        # run vecchio per ora 12 con codice 0 — deve essere ignorato
+        ("open_meteo_icon_eu", "casa_campi", f"{d_str} 00:00", f"{d_str} 12:00", 12, 18.0, 0),
+    ]
+    con.executemany(
+        "INSERT INTO forecasts (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, weather_code)"
+        " VALUES (?,?,?,?,?,?,?)",
+        records,
+    )
     con.close()
 
     with DuckDBClient(db_path=seeded_db, read_only=True) as db:
         result = get_daily_weather_code(db, "casa_campi", "2026-05-19")
+    # run 06:00 (wc=61) batte run 00:00 (wc=0) per l'ora 12 → moda è 61
     assert result == 61
+
+
+def test_get_daily_weather_code_spike_filtered(seeded_db: Path) -> None:
+    """Spike da 1 ora (codice 95) viene ignorato; vince il codice stabile più severo."""
+    import duckdb
+
+    d_str = "2026-05-19"
+    con = duckdb.connect(str(seeded_db))
+    records = [
+        # 19 ore code 3 (coperto)
+        ("open_meteo_ecmwf_ifs", "casa_campi", f"{d_str} 00:00", f"{d_str} {h:02d}:00", h, 18.0, 3)
+        for h in range(19)
+    ] + [
+        # 1 ora code 95 (temporale) — spike singolo
+        ("open_meteo_ecmwf_ifs", "casa_campi", f"{d_str} 00:00", f"{d_str} 19:00", 19, 18.0, 95),
+    ]
+    con.executemany(
+        "INSERT INTO forecasts (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, weather_code)"
+        " VALUES (?,?,?,?,?,?,?)",
+        records,
+    )
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_daily_weather_code(db, "casa_campi", "2026-05-19")
+    # 95 appare solo 1 ora (< soglia 2) → fallback a codici stabili → vince 3
+    assert result == 3
+
+
+def test_get_daily_weather_code_excludes_partial_sources(seeded_db: Path) -> None:
+    """Source con meno di _MIN_HOURS_FOR_DAILY_CODE ore è esclusa dalla moda."""
+    import duckdb
+
+    d_str = "2026-05-19"
+    con = duckdb.connect(str(seeded_db))
+    # Source completa (20 ore): codice 3 (coperto) per tutte
+    records_full = [
+        ("open_meteo_ecmwf_ifs", "casa_campi", f"{d_str} 00:00", f"{d_str} {h:02d}:00", h, 18.0, 3)
+        for h in range(20)
+    ]
+    # Source parziale (5 ore): codice 95 (temporale) — non deve influenzare la moda
+    records_partial = [
+        ("open_meteo_icon_eu", "casa_campi", f"{d_str} 00:00", f"{d_str} {h:02d}:00", h, 18.0, 95)
+        for h in range(5)
+    ]
+    con.executemany(
+        "INSERT INTO forecasts (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, weather_code)"
+        " VALUES (?,?,?,?,?,?,?)",
+        records_full + records_partial,
+    )
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_daily_weather_code(db, "casa_campi", "2026-05-19")
+    # icon_eu (5 ore) è escluso → solo ecmwf_ifs contribuisce → moda è 3
+    assert result == 3
 
 
 # ── current.weather_code ─────────────────────────────────────────────────────

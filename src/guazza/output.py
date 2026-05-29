@@ -427,22 +427,40 @@ def _modal_weather_code(codes: list[int]) -> int | None:
     return max(candidates, key=lambda c: _WMO_SEVERITY.get(c, 0))
 
 
+_MIN_HOURS_FOR_DAILY_CODE = 20  # source con meno ore esclusa dal consenso
+_MIN_CODE_HOURS_FOR_SEVERITY = 2  # soglia minima ore per considerare un codice "reale"
+
+
+def _pessimistic_weather_code(codes: list[int]) -> int | None:
+    """Codice WMO pessimistico: il più severo che appare in almeno _MIN_CODE_HOURS_FOR_SEVERITY ore.
+
+    Filtra spike singoli (1 ora outlier) ma mostra pioggia/temporale se si ripete ≥2 ore.
+    Fallback alla severità massima assoluta se tutti i codici appaiono meno di 2 volte.
+    """
+    if not codes:
+        return None
+    counter = Counter(codes)
+    stable = [c for c, n in counter.items() if n >= _MIN_CODE_HOURS_FOR_SEVERITY]
+    candidates = stable if stable else list(counter.keys())
+    return max(candidates, key=lambda c: _WMO_SEVERITY.get(c, 0))
+
+
 def get_daily_weather_code(
     db: DuckDBClient,
     location_id: str,
     target_date: str,
 ) -> int | None:
-    """Codice WMO giornaliero per una location e data, per consenso modale tra modelli.
+    """Codice WMO giornaliero per una location e data, caso pessimistico tra modelli.
 
-    Algoritmo: per ogni (source, ts_valid) prende il run più recente, poi calcola
-    la moda su tutte le 24h × N modelli. Il tie-break usa _WMO_SEVERITY.
+    Algoritmo: per ogni (source, ts_valid) prende il run più recente, esclude le source
+    con dati parziali (< _MIN_HOURS_FOR_DAILY_CODE ore), poi ritorna il codice di severità
+    massima che appare in almeno _MIN_CODE_HOURS_FOR_SEVERITY ore.
 
     Returns:
         Codice WMO intero, o None se nessun dato disponibile.
     """
     rows = db.execute("""
-        SELECT weather_code
-        FROM (
+        WITH latest AS (
             SELECT source, ts_valid, weather_code
             FROM forecasts
             WHERE location_id = ?
@@ -451,11 +469,20 @@ def get_daily_weather_code(
             QUALIFY ROW_NUMBER() OVER (
                 PARTITION BY source, ts_valid ORDER BY ts_run DESC
             ) = 1
-        ) latest
-    """, [location_id, target_date]).fetchall()
+        ),
+        full_sources AS (
+            SELECT source
+            FROM latest
+            GROUP BY source
+            HAVING COUNT(DISTINCT HOUR(ts_valid)) >= ?
+        )
+        SELECT l.weather_code
+        FROM latest l
+        JOIN full_sources fs USING (source)
+    """, [location_id, target_date, _MIN_HOURS_FOR_DAILY_CODE]).fetchall()
 
     codes = [int(r[0]) for r in rows if r[0] is not None]
-    return _modal_weather_code(codes)
+    return _pessimistic_weather_code(codes)
 
 
 def get_current_conditions(
