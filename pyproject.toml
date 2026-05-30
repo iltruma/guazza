@@ -73,7 +73,7 @@ packages = ["guazza"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--tb=short"
+addopts = "-x --tb=short"
 
 [tool.coverage.run]
 source = ["guazza"]
