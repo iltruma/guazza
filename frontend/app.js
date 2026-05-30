@@ -946,7 +946,7 @@ function buildChartPoints(data, model, targetDate) {
   const points   = [];
   if (model === 'guazza') {
     (data.days.find(day => day.target_date === targetDate)?.hourly || []).forEach(h => {
-      points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0),
+      points.push({ ts: new Date(Date.UTC(y, m - 1, d, h.hour, 0, 0)),
                     temp_c: h.temp_c, humidity_pct: h.humidity_pct,
                     precip_mm: h.precip_mm, precip_prob: h.precip_prob,
                     wind_speed_ms: h.wind_speed_ms });
@@ -969,7 +969,7 @@ function buildWeeklyPoints(data, model) {
     data.days.forEach(day => {
       const [y, m, d] = day.target_date.split('-').map(Number);
       (day.hourly || []).forEach(h => points.push({
-        ts: new Date(y, m - 1, d, h.hour, 0, 0),
+        ts: new Date(Date.UTC(y, m - 1, d, h.hour, 0, 0)),
         temp_c: h.temp_c, humidity_pct: h.humidity_pct,
         precip_mm: h.precip_mm, precip_prob: h.precip_prob, wind_speed_ms: h.wind_speed_ms,
       }));
