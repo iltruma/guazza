@@ -118,7 +118,7 @@ ricreazione del DB in staging + test che passano.
 
 ## D-007 — Stack blindato (no orchestration layer)
 
-**Contesto**: vedi AGENTS.md sezione "Anti-pattern".
+**Contesto**: vedi CLAUDE.md sezione "Anti-pattern".
 
 **Motivazione sintetica**: progetto single-node, 1 utente, hardware locale già disponibile (Dell Optiplex Micro 3050), costo infrastruttura ≈ €0.
 Ogni layer aggiuntivo (Prefect, Docker, FastAPI 24/7) aggiunge:
@@ -134,7 +134,7 @@ Il *target di deploy* è libero (il 3050 è un host Proxmox multi-servizio): cro
 LXC oppure namespace k8s con CronJob e DB in PVC sono entrambi legittimi. Vietato è
 **accoppiare la logica applicativa** a un orchestratore (Prefect/Dagster/Airflow/Celery)
 o esporre l'app come PaaS — quello reintroduce superficie di failure e complessità di
-debug nel codice. Vedi "Invariante deploy" in AGENTS.md per i vincoli tecnici DuckDB su k8s.
+debug nel codice. Vedi "Invariante deploy" in CLAUDE.md per i vincoli tecnici DuckDB su k8s.
 
 ---
 

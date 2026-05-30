@@ -1,6 +1,6 @@
 # Contribuire a Guazza
 
-Repo sviluppato da un team misto: umano (Cosimo) + agenti AI (Claude/OpenCode, Gemini, GPT, altri).
+Repo sviluppato da Cosimo con Claude Code come agente di sviluppo.
 
 ---
 
@@ -16,7 +16,7 @@ uv sync
 **Nessuna azione prima di aver letto questi file:**
 
 1. `docs/status.md` — stato corrente, cosa è fatto, prossimi passi (`🟡` = punto aperto)
-2. `AGENTS.md` — regole di progetto, stack, guardrail
+2. `CLAUDE.md` — regole di progetto, stack, guardrail (fonte unica)
 3. `docs/decisions.md` — perché le cose sono come sono
 4. `docs/known_issues.md` — workaround attivi
 
