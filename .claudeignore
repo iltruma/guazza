@@ -1,0 +1,56 @@
+# .claudeignore — file che Claude Code non deve leggere/indicizzare.
+# Scopo: tenere fuori dal contesto blob enormi, artefatti rigenerabili e segreti.
+
+# --- Dati pesanti / binari (236M+ in data/) ---
+data/
+*.duckdb
+*.duckdb.lock
+*.duckdb.wal
+*.parquet
+nwp_raw/
+
+# --- Modelli serializzati ---
+models/
+*.pkl
+*.joblib
+*.txt.model
+
+# --- Output rigenerabili ---
+analysis/out/
+frontend/data
+data/output/
+
+# --- Lockfile / dipendenze (rumore, mai da editare a mano) ---
+uv.lock
+.venv/
+
+# --- Cache tool ---
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# --- Segreti ---
+.env
+*.env
+!.env.example
+
+# --- Cartelle di altri agenti / tool ---
+.agents/
+.opencode/
+.impeccable/
+.claude/
+
+# --- OS / IDE ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- VCS ---
+.git/
