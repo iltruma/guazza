@@ -759,7 +759,7 @@ function nwpDailyStats(source, targetDate) {
   const dayStart = new Date(y, mo - 1, d, 0, 0, 0);
   const dayEnd   = new Date(y, mo - 1, d, 23, 59, 59);
   const pts = (mdl.data || []).filter(pt => {
-    const ts = new Date(pt.ts.replace('Z', ''));
+    const ts = new Date(pt.ts);
     return ts >= dayStart && ts <= dayEnd;
   });
   if (!pts.length) return { hum: null, wind: null };
@@ -954,7 +954,7 @@ function buildChartPoints(data, model, targetDate) {
   } else {
     const mdl = (data.nwp_models_hourly || []).find(x => x.source === model);
     (mdl?.data || []).forEach(pt => {
-      const ts = new Date(pt.ts.replace('Z', ''));
+      const ts = new Date(pt.ts);
       if (ts >= dayStart && ts <= dayEnd)
         points.push({ ts, temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
                       precip_mm: pt.precip_mm, precip_prob: null, wind_speed_ms: pt.wind_speed_ms });
@@ -978,7 +978,7 @@ function buildWeeklyPoints(data, model) {
   }
   const mdl = (data.nwp_models_hourly || []).find(x => x.source === model);
   return (mdl?.data || []).map(pt => ({
-    ts: new Date(pt.ts.replace('Z', '')),
+    ts: new Date(pt.ts),
     temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
     precip_mm: pt.precip_mm, precip_prob: null, wind_speed_ms: pt.wind_speed_ms,
   })).sort((a, b) => a.ts - b.ts);
