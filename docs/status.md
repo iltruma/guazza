@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-29 (v0.7.2 — icone meteo animate Meteocons)
+> Aggiornato: 2026-05-30 (v0.7.2 — standardizzazione timestamp UTC)
 
 ## Cosa è stato fatto
 
@@ -269,7 +269,7 @@ Stack: HTML + JS vanilla; **Tailwind CSS + DaisyUI v4** (CDN jsDelivr) + **Chart
 
 #### Fix post-deploy (2026-05-18)
 
-- **Timestamp SIR +2h nel browser**: rimosso `|| '+00:00'` dal `strftime` in `get_current_conditions`. I timestamp SIR sono salvati come CEST naive; aggiungere il suffisso UTC causava +2h nella conversione browser.
+- **Timestamp SIR +2h nel browser**: rimosso `|| '+00:00'` dal `strftime` in `get_current_conditions`. I timestamp SIR erano salvati come CEST naive; ora sono UTC naive (vedi standardizzazione 2026-05-30), strftime usa suffisso `Z`.
 - **Lead time +48h invece di +24h per domani**: la QUALIFY in `predict.py` usava `lead_time_h DESC` per i giorni futuri, selezionando il forecast più vecchio. Corretto in `lead_time_h ASC` (forecast più recente) per tutti i giorni.
 
 #### Fix e miglioramenti frontend (2026-05-18 — post Sprint 6)
@@ -350,7 +350,7 @@ Il server `www.sir.toscana.it` serializza le connessioni lato server (~3s per re
 - **Bug fix critici** (vedi CHANGELOG v0.6.2):
   - `/locations/{id}/latest` non include `parameter`: usare `sensorsId` per lookup
   - `station_id` include `location_id` per evitare PK collision tra location vicine
-  - Timestamp convertiti da UTC a Europe/Rome naive (coerente con SIR/`CURRENT_TIMESTAMP`)
+  - Timestamp convertiti a UTC naive (convenzione standard del DB — vedi standardizzazione 2026-05-30)
 - **Frontend qualità aria sempre visibile**: tutti e 7 i parametri renderizzati
   anche quando null (`—`), griglia fissa a 7 colonne.
 
@@ -439,6 +439,24 @@ Tailwind/DaisyUI riflettono lo stato pre-redesign.
   regole) e `PRODUCT.md` (product brief: utenti, scopo, principi, anti-references).
 - **Campo `mean`** (E[precip]) esposto nelle previsioni JSON (`output.py`).
 - **Fix attribution RainViewer** riposizionata.
+
+### Standardizzazione timestamp UTC (completato — 2026-05-30)
+
+**Convenzione**: tutte le osservazioni nel DB (`observations`) sono **UTC naive**.
+- SIR realtime/bulk: era CET naive (UTC+1 fisso) → ora UTC naive (`-1h` applicato)
+- ARPAT NRT (hourly): era locale (CET/CEST) → ora UTC naive; vecchi record eliminati, re-ingest al prossimo cron
+- Netatmo: era già UTC naive (driver DuckDB strippava TZ da aware UTC) → invariato
+- SIR daily / ARPAT daily: etichette di giorno (mezzanotte naive), **non convertite** per convenzione — non sono istanti
+- `forecasts`: rimane UTC-aware (modelli NWP ragionano in UTC)
+
+**Codice**: `_parse_sir_realtime_ts`, `_parse_sir_bulk_meta_ts` in `fetchers.py` ora convertono CET→UTC.
+ARPAT NRT (`_parse_arpat_nrt`) usa `_ITALY_TZ.astimezone(UTC)`.
+`_CET` e `_ITALY_TZ` ora a livello modulo (prima di tutte le funzioni SIR/ARPAT).
+
+**output.py**: `strftime` usa `%Y-%m-%dT%H:%M:%SZ` con suffisso `Z` per `current.ts`, `ts_valid` fallback NWP, `last_run`.
+Il frontend interpreta questi timestamp come UTC e li converte correttamente in ora locale.
+
+**Bug latente risolto**: `NOW()` in DuckDB è UTC; confrontarlo con timestamp naive CET causava finestre temporali sbagliate di 1-2h in estate (record validi esclusi o record scaduti inclusi in `get_current_conditions`, `get_current_air_quality`).
 
 ### Baseline backtest D+0 — de-risking della tesi (2026-05-29)
 

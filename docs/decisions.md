@@ -312,3 +312,22 @@ rimozione di un bias medio.
 con il multimodello-mean per-location e ricomputare lo skill contro di esso. Lo stesso
 baseline va usato anche per il confronto esterno (LAMMA) quando `benchmark_forecasts` sarà
 popolata. Onestà sul baseline = credibilità del case study.
+
+## D-017 — Convenzione timestamp nel DB: UTC naive ovunque
+
+**Data**: 2026-05-30
+
+**Contesto**: la tabella `observations` mescolava tre convenzioni diverse:
+SIR realtime (CET naive, UTC+1 fisso), ARPAT NRT (locale CEST naive), Netatmo (UTC naive — TZ stripped dal driver DuckDB). `NOW()` in DuckDB è UTC, quindi le finestre temporali in `output.py` (`NOW() - INTERVAL 3 HOURS`) confrontavano UTC con naive CET, producendo errori di 1-2h in estate.
+
+**Decisione**: tutte le osservazioni **realtime/hourly** in `observations` sono **UTC naive**.
+- SIR: pubblica sempre CET (UTC+1 fisso), convertiamo con `_CET = timezone(timedelta(hours=1))` → `-1h`.
+- ARPAT NRT: pubblica ora locale (CEST in estate), convertiamo con `_ITALY_TZ.astimezone(UTC)`.
+- Netatmo: già UTC naive (invariato).
+- `forecasts`: UTC-aware (invariato — modelli NWP ragionano in UTC).
+- **SIR daily e ARPAT daily**: etichette di giorno (mezzanotte naive), non istanti. Non convertite per convenzione. `features.py` le tratta come label di calendario.
+
+**Conseguenze**:
+- `strftime` in `output.py` usa `%Y-%m-%dT%H:%M:%SZ` per tutti i campi UTC (`current.ts`, `last_run`, `ts_valid` fallback NWP).
+- `coverage_empirical_30d` resta misurata sui `forecasts` grezzi ML, non su valori corretti intraday.
+- Nota: SIR realtime storici registrati in CEST (estate) avevano CET naive invece di CEST naive → errore residuo di 1h non recuperabile su quei record. Accettato.
