@@ -394,13 +394,19 @@ def fetch_sir_realtime(station_id: str) -> dict[str, Any]:
                 pass
         # vel_max non esposta dal nuovo endpoint — wind_gust_ms non popolata
 
-    # pluvio — CUM01 = cumulativo ultima ora, usato come precip_mm realtime
+    # pluvio — CUM01 = ultima ora (precip_mm), CUM24 = cumulativo dalla mezzanotte (precip_cumday_mm)
     if pluvio := data.get("pluvio"):
         cum01 = pluvio.get("CUM01")
         if cum01 is not None and cum01 != "-":
             try:
                 record["precip_mm"] = float(cum01)
                 record["precip_interval_h"] = 1
+            except ValueError:
+                pass
+        cum24 = pluvio.get("CUM24")
+        if cum24 is not None and cum24 != "-":
+            try:
+                record["precip_cumday_mm"] = float(cum24)
             except ValueError:
                 pass
 

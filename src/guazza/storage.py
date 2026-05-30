@@ -219,6 +219,7 @@ class DuckDBClient:
         self._conn.execute(sql)
         self._ensure_aq_columns()
         self._ensure_forecast_columns()
+        self._ensure_cumday_column()
         logger.info("Schema applicato")
 
     def _ensure_aq_columns(self) -> None:
@@ -236,6 +237,12 @@ class DuckDBClient:
         """Aggiunge colonne a forecasts se mancanti (migrazione idempotente)."""
         self.execute(
             "ALTER TABLE forecasts ADD COLUMN IF NOT EXISTS weather_code INTEGER"
+        )
+
+    def _ensure_cumday_column(self) -> None:
+        """Aggiunge precip_cumday_mm a observations se mancante (migrazione idempotente)."""
+        self.execute(
+            "ALTER TABLE observations ADD COLUMN IF NOT EXISTS precip_cumday_mm DOUBLE"
         )
 
     def verify_schema(self) -> bool:
@@ -363,7 +370,7 @@ class DuckDBClient:
         _obs_cols = [
             "tmax_c", "tmin_c", "temp_c",
             "humidity_pct",
-            "precip_mm", "precip_interval_h",
+            "precip_mm", "precip_interval_h", "precip_cumday_mm",
             "wind_speed_ms", "wind_dir_deg", "wind_gust_ms",
             "pressure_hpa", "level_m",
             "pm10_ugm3", "pm25_ugm3", "no2_ugm3", "o3_ugm3",
@@ -394,6 +401,7 @@ class DuckDBClient:
                 humidity,
                 rec.get("precip_mm"),
                 rec.get("precip_interval_h"),
+                rec.get("precip_cumday_mm"),
                 rec.get("wind_speed_ms"),
                 rec.get("wind_dir_deg"),
                 rec.get("wind_gust_ms"),
@@ -430,7 +438,7 @@ class DuckDBClient:
         _OBS_STAGING_COLS = [
             "source", "station_id", "location_id", "ts", "granularity",
             "tmax_c", "tmin_c", "temp_c", "humidity_pct",
-            "precip_mm", "precip_interval_h",
+            "precip_mm", "precip_interval_h", "precip_cumday_mm",
             "wind_speed_ms", "wind_dir_deg", "wind_gust_ms",
             "pressure_hpa", "level_m",
             "pm10_ugm3", "pm25_ugm3", "no2_ugm3", "o3_ugm3",
@@ -462,7 +470,7 @@ class DuckDBClient:
             INSERT INTO observations
                 (source, station_id, location_id, ts, granularity,
                  tmax_c, tmin_c, temp_c,
-                 humidity_pct, precip_mm, precip_interval_h,
+                 humidity_pct, precip_mm, precip_interval_h, precip_cumday_mm,
                  wind_speed_ms, wind_dir_deg, wind_gust_ms,
                  pressure_hpa, level_m,
                  pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3,
@@ -470,7 +478,7 @@ class DuckDBClient:
                  weight, qc_pass)
             SELECT s.source, s.station_id, s.location_id, s.ts, s.granularity,
                    s.tmax_c, s.tmin_c, s.temp_c,
-                   s.humidity_pct, s.precip_mm, s.precip_interval_h,
+                   s.humidity_pct, s.precip_mm, s.precip_interval_h, s.precip_cumday_mm,
                    s.wind_speed_ms, s.wind_dir_deg, s.wind_gust_ms,
                    s.pressure_hpa, s.level_m,
                    s.pm10_ugm3, s.pm25_ugm3, s.no2_ugm3, s.o3_ugm3,

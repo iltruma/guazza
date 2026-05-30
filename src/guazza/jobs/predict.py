@@ -19,7 +19,7 @@ Cron: ogni 6h, subito dopo il job forecasts + features build.
 from __future__ import annotations
 
 import os
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,12 +33,14 @@ from guazza.indicators import evaluate_all, load_indicators, log_results
 from guazza.models import load_artifacts, predict
 from guazza.output import (
     _expected_precip,
+    apply_intraday_correction,
     build_signals,
     build_signals_today,
     compute_coverage_30d,
     compute_hourly_profile,
     get_current_conditions,
     get_daily_weather_code,
+    get_intraday_observed,
     get_nwp_model_comparison,
     write_location_json,
 )
@@ -150,8 +152,15 @@ def cmd_run(
                     if target_date_obj == date.today():
                         current_obs = get_current_conditions(db, location_id)
                         signals = build_signals_today(pred, row, obs_summary, current_obs)
+                        intraday_obs = get_intraday_observed(
+                            db, location_id, str(target_date_obj)
+                        )
+                        intraday = apply_intraday_correction(
+                            pred, intraday_obs, datetime.now(UTC)
+                        )
                     else:
                         signals = build_signals(pred, row, obs_summary)
+                        intraday = None
                     results = evaluate_all(indicators_cfg, signals, location_id)
 
                     logger.info(
@@ -182,6 +191,7 @@ def cmd_run(
                         "hourly":         hourly,
                         "nwp_comparison": nwp_comparison,
                         "weather_code":   weather_code,
+                        "intraday":       intraday,
                     })
 
                     if dry_run:

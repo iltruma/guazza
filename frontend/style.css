@@ -987,6 +987,29 @@ img.emoji {
 .g-metric__value--cool { color: var(--cold); }
 
 /* Indicators */
+.g-detail__intraday {
+  padding: 0 20px 10px;
+  min-height: 0;
+}
+.g-detail__intraday:empty { display: none; }
+
+.g-intraday-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-1);
+  background: var(--surface-2);
+  font-size: 0.75rem;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+@media (min-width: 768px) {
+  .g-detail__intraday { padding: 0 24px 12px; }
+}
+
 .g-detail__indicators {
   padding: 14px 20px;
   display: grid;

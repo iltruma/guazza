@@ -663,13 +663,42 @@ function renderDayDetail(day) {
       : '—';
   }
 
+  // Intraday correction D+0
+  const intraday = day.intraday;
+  const intradayEl = document.getElementById('detail-intraday');
+  if (intraday) {
+    if (intraday.tmin_corrected_c != null && tminEl)
+      tminEl.textContent = fmtTemp(intraday.tmin_corrected_c);
+    if (intraday.tmax_corrected_c != null && tmaxEl)
+      tmaxEl.textContent = fmtTemp(intraday.tmax_corrected_c);
+    if (intraday.precip_remaining_mm != null && precipEl) {
+      const rem = intraday.precip_remaining_mm;
+      precipEl.textContent = rem > 0.05 ? `${rem.toFixed(1)} mm` : '—';
+    }
+    if (intradayEl) {
+      const obs = intraday.precip_observed_mm;
+      const rem = intraday.precip_remaining_mm;
+      if (obs != null) {
+        const obsStr = obs > 0.05 ? `🌧️ ${obs.toFixed(1)} mm osservati` : 'Nessuna pioggia osservata';
+        const remStr = rem != null && rem > 0.05 ? ` · ~${rem.toFixed(1)} mm attesi` : '';
+        intradayEl.innerHTML = `<span class="g-intraday-badge">${obsStr}${remStr}</span>`;
+        twemoji.parse(intradayEl, TWEMOJI_OPTS);
+      } else {
+        intradayEl.innerHTML = '';
+      }
+    }
+  } else if (intradayEl) {
+    intradayEl.innerHTML = '';
+  }
+
   // CI bars
   const ciTmax = document.getElementById('detail-ci-tmax');
   if (ciTmax) ciTmax.innerHTML = ciBar(fc.tmax_c, '°');
   const ciTmin = document.getElementById('detail-ci-tmin');
   if (ciTmin) ciTmin.innerHTML = ciBar(fc.tmin_c, '°');
   const ciPrecip = document.getElementById('detail-ci-precip');
-  if (ciPrecip) ciPrecip.innerHTML = ciBar(fc.precip_mm, ' mm');
+  const precipCi = (intraday?.precip_corrected) ?? fc.precip_mm;
+  if (ciPrecip) ciPrecip.innerHTML = ciBar(precipCi, ' mm');
 
   // Indicators + NWP
   renderIndicatorChips(indicators);
