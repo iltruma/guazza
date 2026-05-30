@@ -162,7 +162,7 @@ def get_nwp_model_comparison(
             ROUND(MIN(temp_c), 1)                           AS tmin_c,
             ROUND(MAX(temp_c), 1)                           AS tmax_c,
             ROUND(SUM(COALESCE(precip_mm, 0.0)), 1)         AS precip_mm,
-            strftime(MAX(ts_run), '%Y-%m-%dT%H:%M:%S')      AS last_run
+            strftime(MAX(ts_run), '%Y-%m-%dT%H:%M:%SZ')     AS last_run
         FROM (
             SELECT source, ts_valid, temp_c, precip_mm, ts_run
             FROM forecasts
@@ -533,7 +533,7 @@ def get_current_conditions(
             QUALIFY ROW_NUMBER() OVER (PARTITION BY o.station_id ORDER BY o.ts DESC) = 1
         )
         SELECT
-            strftime(MAX(ts), '%Y-%m-%dT%H:%M:%S')                                       AS ts,
+            strftime(MAX(ts), '%Y-%m-%dT%H:%M:%SZ')                                      AS ts,
             ROUND(SUM(temp_c * w)       / NULLIF(SUM(CASE WHEN temp_c       IS NOT NULL THEN w ELSE 0 END), 0), 1) AS temp_c,
             ROUND(SUM(humidity_pct * w) / NULLIF(SUM(CASE WHEN humidity_pct IS NOT NULL THEN w ELSE 0 END), 0), 0) AS humidity_pct,
             ROUND(SUM(precip_mm * w)    / NULLIF(SUM(CASE WHEN precip_mm    IS NOT NULL THEN w ELSE 0 END), 0), 2) AS precip_mm,
@@ -561,7 +561,7 @@ def get_current_conditions(
                 ) = 1
             )
             SELECT
-                strftime(MAX(ts_valid), '%Y-%m-%dT%H:%M:%S') AS ts,
+                strftime(MAX(ts_valid), '%Y-%m-%dT%H:%M:%SZ') AS ts,
                 ROUND(AVG(temp_c), 1)                        AS temp_c,
                 ROUND(AVG(humidity_pct), 0)                  AS humidity_pct,
                 ROUND(AVG(precip_mm), 2)                     AS precip_mm,
