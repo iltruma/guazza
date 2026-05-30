@@ -800,31 +800,33 @@ def test_sir_realtime_precip_interval_1() -> None:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def test_parse_sir_realtime_ts_from_termo() -> None:
-    """Deve parsare la data dal campo termo.date come naive (ora locale SIR)."""
+    """SIR pubblica CET (UTC+1 fisso): 10:30 CET → 09:30 UTC naive."""
     from guazza.fetchers import _parse_sir_realtime_ts
     data = {"termo": {"value": "18.0", "date": "15/05/2026 10:30"}}
     ts = _parse_sir_realtime_ts(data)
-    assert ts == datetime(2026, 5, 15, 10, 30)
+    assert ts == datetime(2026, 5, 15, 9, 30)
     assert ts.tzinfo is None
 
 
 def test_parse_sir_realtime_ts_fallback_now() -> None:
-    """Senza campo date deve tornare un ts naive vicino a now locale."""
+    """Senza campo date deve tornare un ts UTC naive vicino a now UTC."""
+    from datetime import UTC
     from guazza.fetchers import _parse_sir_realtime_ts
-    before = datetime.now()
+    before = datetime.now(UTC).replace(tzinfo=None)
     ts = _parse_sir_realtime_ts({})
-    after = datetime.now()
+    after = datetime.now(UTC).replace(tzinfo=None)
     assert ts.tzinfo is None
     assert before <= ts <= after
 
 
 def test_parse_sir_realtime_ts_unparsable_fallback() -> None:
-    """Se date non è parsabile deve tornare un ts naive vicino a now locale."""
+    """Se date non è parsabile deve tornare un ts UTC naive vicino a now UTC."""
+    from datetime import UTC
     from guazza.fetchers import _parse_sir_realtime_ts
     data = {"termo": {"value": "18.0", "date": "invalid-date"}}
-    before = datetime.now()
+    before = datetime.now(UTC).replace(tzinfo=None)
     ts = _parse_sir_realtime_ts(data)
-    after = datetime.now()
+    after = datetime.now(UTC).replace(tzinfo=None)
     assert ts.tzinfo is None
     assert before <= ts <= after
 
@@ -834,10 +836,10 @@ def test_parse_sir_realtime_ts_unparsable_fallback() -> None:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def test_parse_sir_bulk_meta_ts_standard() -> None:
-    """Deve parsare il formato meta SIR bulk standard."""
+    """SIR bulk è CET (UTC+1 fisso): 16:15 CET → 15:15 UTC naive."""
     from guazza.fetchers import _parse_sir_bulk_meta_ts
     ts = _parse_sir_bulk_meta_ts(" del 18/05/2026 16.15 (ora solare)")
-    assert ts == datetime(2026, 5, 18, 16, 15)
+    assert ts == datetime(2026, 5, 18, 15, 15)
     assert ts is not None and ts.tzinfo is None
 
 
@@ -870,7 +872,8 @@ def test_fetch_sir_bulk_realtime_filters_stations(monkeypatch: Any) -> None:
     """Deve filtrare solo le stazioni richieste e restituire record wide corretti."""
     from guazza.fetchers import fetch_sir_bulk_realtime
 
-    fake_ts = datetime(2026, 5, 18, 16, 15)
+    # 16:15 CET (UTC+1) → 15:15 UTC naive
+    fake_ts = datetime(2026, 5, 18, 15, 15)
     # Ogni endpoint ha Valore diverso per verificare il merge corretto
     _action_values = {"TERMO24": "20", "IGRO24": "65", "ANEMO24": "3", "PLUVIO": "0"}
 
@@ -950,7 +953,7 @@ def _make_arpat_entry(
 # -- _parse_arpat_nrt ----------------------------------------------------------
 
 def test_parse_arpat_nrt_single_hour_no2() -> None:
-    """Un record orario con NO2 -> record wide corretto."""
+    """ARPAT NRT è ora locale (CEST in estate, UTC+2): 14:00 CEST → 12:00 UTC naive."""
     payload = [_make_arpat_entry("14", NO2=25.3)]
     records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 0.8)
 
@@ -961,7 +964,7 @@ def test_parse_arpat_nrt_single_hour_no2() -> None:
     assert r["location_id"] == _LOC_ID
     assert r["granularity"] == "hourly"
     assert r["weight"] == 0.8
-    assert r["ts"] == datetime(2026, 5, 22, 14, 0)
+    assert r["ts"] == datetime(2026, 5, 22, 12, 0)  # 14:00 CEST (UTC+2) → 12:00 UTC
     assert r["no2_ugm3"] == pytest.approx(25.3)
 
 
@@ -1013,7 +1016,7 @@ def test_parse_arpat_nrt_invalid_timestamp_skipped() -> None:
     ]
     records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
     assert len(records) == 1
-    assert records[0]["ts"].hour == 12
+    assert records[0]["ts"].hour == 10  # 12:00 CEST (UTC+2) → 10:00 UTC
 
 
 def test_parse_arpat_nrt_empty_payload() -> None:
@@ -1037,7 +1040,7 @@ def test_parse_arpat_nrt_multi_hours() -> None:
     records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
     assert len(records) == 3
     hours = sorted(r["ts"].hour for r in records)
-    assert hours == [10, 11, 12]
+    assert hours == [8, 9, 10]  # 10/11/12 CEST (UTC+2) → 8/9/10 UTC
 
 
 def test_parse_arpat_nrt_co_factor_one() -> None:

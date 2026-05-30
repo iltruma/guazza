@@ -19,7 +19,7 @@ import time
 import zoneinfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -290,20 +290,25 @@ _SIR_RT_HEADERS = {
     "User-Agent": _UA,
 }
 
+# Timezone helpers — tutte le osservazioni nel DB sono UTC naive
+# SIR pubblica sempre CET (UTC+1 fisso, non cambia con l'ora legale)
+_CET = timezone(timedelta(hours=1))
+# ARPAT pubblica ora locale italiana (CET in inverno, CEST in estate)
+_ITALY_TZ = zoneinfo.ZoneInfo("Europe/Rome")
+
 # Formati data noti nella risposta SIR realtime
 _SIR_RT_DATE_FORMATS = ["%d/%m/%Y %H:%M", "%d/%m/%Y %H:%M:%S"]
 
 
 def _parse_sir_realtime_ts(data: dict[str, Any]) -> datetime:
-    """Estrae il timestamp dalla risposta JSON SIR realtime come datetime naive.
+    """Estrae il timestamp dalla risposta JSON SIR realtime come datetime UTC naive.
 
-    SIR pubblica l'orario in ora locale italiana (CEST/CET) senza indicazione TZ.
-    Restituiamo un datetime naive che rappresenta quell'ora locale: DuckDB lo
-    salva in TIMESTAMP as-is senza conversioni. Il frontend riceve la stringa
-    senza suffisso e il browser la interpreta come ora locale → visualizzazione corretta.
+    SIR pubblica sempre CET (UTC+1 fisso, non cambia con l'ora legale).
+    Convertiamo a UTC naive prima di restituire, in linea con la convenzione
+    del DB (tutte le osservazioni realtime in UTC naive).
 
     Tenta di parsare il campo "date" dal primo sensore disponibile (termo, igro, anemo).
-    Fallback a datetime.now() (ora locale naive) se assente o non parsabile.
+    Fallback a now() UTC naive se assente o non parsabile.
     """
     for sensor_key in ("termo", "igro", "anemo"):
         sensor = data.get(sensor_key)
@@ -314,12 +319,13 @@ def _parse_sir_realtime_ts(data: dict[str, Any]) -> datetime:
             continue
         for fmt in _SIR_RT_DATE_FORMATS:
             try:
-                return datetime.strptime(date_str, fmt)
+                naive_cet = datetime.strptime(date_str, fmt)
+                return naive_cet.replace(tzinfo=_CET).astimezone(UTC).replace(tzinfo=None)
             except ValueError:
                 continue
         logger.debug(f"SIR realtime: date non parsabile: {date_str!r}")
         break
-    return datetime.now()
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -452,16 +458,18 @@ def fetch_sir_stations_realtime(
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _parse_sir_bulk_meta_ts(meta_str: str) -> datetime | None:
-    """Estrae datetime naive dalla stringa meta SIR bulk.
+    """Estrae datetime UTC naive dalla stringa meta SIR bulk.
 
     Formato atteso: ' del DD/MM/YYYY HH.MM (ora solare)'
+    SIR bulk pubblica sempre CET (UTC+1 fisso). Convertiamo a UTC naive.
     Restituisce None se il formato non è riconoscibile.
     """
     m = re.search(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}\.\d{2})", meta_str)
     if not m:
         return None
     try:
-        return datetime.strptime(f"{m.group(1)} {m.group(2)}", "%d/%m/%Y %H.%M")
+        naive_cet = datetime.strptime(f"{m.group(1)} {m.group(2)}", "%d/%m/%Y %H.%M")
+        return naive_cet.replace(tzinfo=_CET).astimezone(UTC).replace(tzinfo=None)
     except ValueError:
         return None
 
@@ -520,7 +528,7 @@ def fetch_sir_bulk_realtime(station_ids: set[str]) -> dict[str, dict[str, Any]]:
 
     def _ensure(sid: str, ts: datetime | None) -> dict[str, Any]:
         if sid not in combined:
-            combined[sid] = {"ts": ts or datetime.now()}
+            combined[sid] = {"ts": ts or datetime.now(UTC).replace(tzinfo=None)}
         elif ts is not None and ts > combined[sid].get("ts", ts):
             combined[sid]["ts"] = ts
         return combined[sid]
@@ -592,7 +600,7 @@ def fetch_sir_bulk_realtime(station_ids: set[str]) -> dict[str, dict[str, Any]]:
     # Assembla record wide
     results: dict[str, dict[str, Any]] = {}
     for sid, fields in combined.items():
-        ts_val = fields.pop("ts", datetime.now())
+        ts_val = fields.pop("ts", datetime.now(UTC).replace(tzinfo=None))
         results[sid] = {
             "source": "sir_toscana",
             "station_id": sid,
@@ -1506,8 +1514,6 @@ _ARPAT_PARAM_MAP: dict[str, tuple[str, float]] = {
     "C6H6":    ("benzene_ugm3", 1.0),
 }
 
-_ITALY_TZ = zoneinfo.ZoneInfo("Europe/Rome")
-
 
 @retry(
     stop=stop_after_attempt(3),
@@ -1547,7 +1553,8 @@ def _parse_arpat_nrt(
         if not ora_str or not data_str:
             continue
         try:
-            ts = datetime.strptime(f"{ora_str} {data_str}", "%H %d-%b-%y")
+            naive_local = datetime.strptime(f"{ora_str} {data_str}", "%H %d-%b-%y")
+            ts = naive_local.replace(tzinfo=_ITALY_TZ).astimezone(UTC).replace(tzinfo=None)
         except ValueError:
             logger.debug(
                 f"ARPAT NRT [{station_id}] timestamp non parsificabile: "
