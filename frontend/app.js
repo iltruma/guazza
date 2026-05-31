@@ -162,11 +162,6 @@ function isNightAt(locMeta, now) {
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
-function fmtDate(isoDate) {
-  const [y, m, d] = isoDate.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
-}
-
 function fmtDateShort(isoDate) {
   const [y, m, d] = isoDate.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
@@ -181,6 +176,11 @@ function fmtDayLabel(isoDate) {
   if (diff === 1) return 'Domani';
   const wd = target.toLocaleDateString('it-IT', { weekday: 'long' });
   return wd.charAt(0).toUpperCase() + wd.slice(1);
+}
+
+function fmtDayNumber(isoDate) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' });
 }
 
 function fmtDayShort(isoDate) {
@@ -611,6 +611,7 @@ function renderDayStrip(days, activeDayIdx) {
 
     return `<button class="g-strip__card${active ? ' g-strip__card--active' : ''}" data-idx="${idx}" aria-pressed="${active}">
       <span class="${labelCls}">${dayLabel}</span>
+      <span class="g-strip__date">${fmtDayNumber(target_date)}</span>
       <span class="g-strip__icon">${icon}</span>
       <div class="g-strip__temps">
         <span class="g-strip__tmax">${tmax}</span>
@@ -653,8 +654,8 @@ function renderDayDetail(day) {
   if (iconEl) { iconEl.innerHTML = icon; hydrateWeatherIcons(iconEl); }
   const titleEl = document.getElementById('detail-title');
   if (titleEl) titleEl.textContent = fmtDayLabel(target_date);
-  const dateEl = document.getElementById('detail-date');
-  if (dateEl) dateEl.textContent = fmtDate(target_date);
+  const subtitleEl = document.getElementById('detail-subtitle');
+  if (subtitleEl) subtitleEl.textContent = fmtDayNumber(target_date);
   const leadEl = document.getElementById('detail-lead');
   if (leadEl) leadEl.textContent = `+${lead_time_h}h`;
   const emessaEl = document.getElementById('detail-emessa');
@@ -791,10 +792,9 @@ function renderNwpList(day) {
     <th>Modello</th>
     <th>T max</th>
     <th>T min</th>
-    <th>Precip TOT</th>
-    <th>Um. Media</th>
-    <th>Vento Max</th>
-    <th>Run</th>
+    <th>P tot</th>
+    <th>U med</th>
+    <th>V max</th>
   </tr></thead>`;
 
   const gHourly = day.hourly || [];
@@ -804,15 +804,15 @@ function renderNwpList(day) {
   const gWind   = gWinds.length ? Math.max(...gWinds) : null;
 
   const guazzaRow = `<tr class="g-nwp__row g-nwp__row--guazza" data-source="guazza">
-    <td><span class="g-nwp__name g-nwp__name--guazza">★ Guazza ML</span></td>
+    <td>
+      <span class="g-nwp__name g-nwp__name--guazza">★ Guazza ML</span>
+      <span class="g-nwp__run">${fmtLastRun(currentData?.generated_at)}</span>
+    </td>
     <td>${gTmax != null ? gTmax.toFixed(1)+'°' : '—'}</td>
     <td>${gTmin != null ? gTmin.toFixed(1)+'°' : '—'}</td>
     <td>${gPrec != null ? gPrec.toFixed(1)+' mm' : '—'}</td>
     <td>${gHum  != null ? gHum.toFixed(0)+'%'                   : '—'}</td>
     <td>${gWind != null ? (gWind * 3.6).toFixed(0)+' km/h'      : '—'}</td>
-    <td style="color:var(--text-3);font-size:10px">${currentData?.generated_at
-      ? new Date(currentData.generated_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})
-      : '—'}</td>
   </tr>`;
 
   const nwpRows = nwp.map(m => {
@@ -832,7 +832,6 @@ function renderNwpList(day) {
       <td class="g-nwp__val">${m.precip_mm != null ? m.precip_mm.toFixed(1)+' mm' : '—'}${dPrec.text ? `<span class="g-delta ${dPrec.cls}">${dPrec.text}</span>` : ''}</td>
       <td class="g-nwp__val">${hum}</td>
       <td class="g-nwp__val">${wind}</td>
-      <td style="color:var(--text-3);font-size:10px">${m.last_run ? new Date(m.last_run).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}) : '—'}</td>
     </tr>`;
   }).join('');
 
@@ -940,7 +939,6 @@ function chartPalette() {
     grid:  'rgba(148,163,184,0.08)',
     label: '#94A3B8',
     temp:  '#F97316',
-    hum:   '#0EA5E9',
     wind:  '#14B8A6',
   };
 }
@@ -956,7 +954,7 @@ function buildChartPoints(data, model, targetDate) {
       points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0),
                     temp_c: h.temp_c, humidity_pct: h.humidity_pct,
                     precip_mm: h.precip_mm, precip_prob: h.precip_prob,
-                    wind_speed_ms: h.wind_speed_ms });
+                    wind_speed_ms: h.wind_speed_ms, weather_code: h.weather_code });
     });
   } else {
     const mdl = (data.nwp_models_hourly || []).find(x => x.source === model);
@@ -964,7 +962,8 @@ function buildChartPoints(data, model, targetDate) {
       const ts = new Date(pt.ts);
       if (ts >= dayStart && ts <= dayEnd)
         points.push({ ts, temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
-                      precip_mm: pt.precip_mm, precip_prob: null, wind_speed_ms: pt.wind_speed_ms });
+                      precip_mm: pt.precip_mm, precip_prob: null, wind_speed_ms: pt.wind_speed_ms,
+                      weather_code: pt.weather_code ?? null });
     });
   }
   return points.sort((a, b) => a.ts - b.ts);
@@ -980,6 +979,7 @@ function buildWeeklyPoints(data, model) {
         ts: new Date(y, m - 1, d, h.hour, 0, 0),
         temp_c: h.temp_c, humidity_pct: h.humidity_pct,
         precip_mm: h.precip_mm, precip_prob: h.precip_prob, wind_speed_ms: h.wind_speed_ms,
+        weather_code: h.weather_code,
       }));
     });
     return points.sort((a, b) => a.ts - b.ts);
@@ -989,18 +989,19 @@ function buildWeeklyPoints(data, model) {
     ts: new Date(pt.ts),
     temp_c: pt.temp_c, humidity_pct: pt.humidity_pct,
     precip_mm: pt.precip_mm, precip_prob: null, wind_speed_ms: pt.wind_speed_ms,
+    weather_code: pt.weather_code ?? null,
   })).sort((a, b) => a.ts - b.ts);
+}
+
+function _precipColor(mm, prob) {
+  if (mm < 0.05) return 'rgba(37,99,235,0.06)';
+  return `rgba(37,99,235,${(0.5 + (prob ?? 0.8) * 0.45).toFixed(2)})`;
 }
 
 function precipDatasets(points) {
   return {
     data: points.map(pt => ({ x: pt.ts, y: (pt.precip_mm ?? 0) < 0.05 ? 0 : (pt.precip_mm ?? 0) })),
-    bg:   points.map(pt => {
-      const y = pt.precip_mm ?? 0;
-      if (y < 0.05) return 'rgba(37,99,235,0.06)';
-      const prob = pt.precip_prob ?? 0.8;
-      return `rgba(37,99,235,${(0.5 + prob * 0.45).toFixed(2)})`;
-    }),
+    bg:   points.map(pt => _precipColor(pt.precip_mm ?? 0, pt.precip_prob)),
   };
 }
 
@@ -1031,6 +1032,48 @@ const crosshairPlugin = {
   },
 };
 
+// Riga di icone meteo (Meteocons) sotto l'asse X. Sul daily una per tick orario
+// reale di Chart.js (segue i box da 2h, anche dopo resize); sul weekly, dove i tick
+// sono giornalieri, a passo fisso ($iconStepHours, es. ogni 3h). Ridisegna solo quando
+// cambia geometria o dati (firma su chart.$iconSig), non a ogni hover redraw —
+// altrimenti gli SVG animati ripartirebbero in continuazione.
+const weatherIconsPlugin = {
+  id: 'weatherIcons',
+  afterDraw(chart) {
+    const overlay = chart.$iconOverlayId ? document.getElementById(chart.$iconOverlayId) : null;
+    if (!overlay) return;
+    const pts = chart.$weatherPoints;
+    if (!pts || !pts.length) { overlay.innerHTML = ''; chart.$iconSig = ''; return; }
+
+    const x    = chart.scales.x;
+    const area = chart.chartArea;
+    const step = chart.$iconStepHours || 0;
+
+    // Sul weekly, un punto ogni `step` ore; sul daily, il punto sotto ogni tick.
+    const entries = step
+      ? pts.filter(p => p.ts.getHours() % step === 0)
+      : x.ticks
+          .map(t => pts.find(p => p.ts.getHours() === new Date(t.value).getHours()))
+          .filter(Boolean);
+
+    const sig = `${entries.length}:${Math.round(area.left)}:${Math.round(area.right)}:${step}`;
+    if (sig === chart.$iconSig && !chart.$iconsDirty) return;
+    chart.$iconSig = sig;
+    chart.$iconsDirty = false;
+
+    let html = '';
+    entries.forEach(p => {
+      const left    = chart.canvas.offsetLeft + x.getPixelForValue(p.ts);
+      const isNight = isNightAt(chart.$locMeta, p.ts);
+      const c       = wmoCondition(p.weather_code ?? null, isNight);
+      html += `<span class="g-chart-icon" style="left:${left}px">${weatherIconHtml(c.iconName, c.icon, 'g-chart-icon__svg')}</span>`;
+    });
+    overlay.style.top = `${chart.canvas.offsetTop + area.bottom + 32}px`;
+    overlay.innerHTML = html;
+    hydrateWeatherIcons(overlay);
+  },
+};
+
 function _makeTooltipHandler(elId) {
   return function({ chart, tooltip }) {
     const el = document.getElementById(elId);
@@ -1043,9 +1086,8 @@ function _makeTooltipHandler(elId) {
     const date = ts.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
     const time = ts.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     const temp = items.find(i => i.datasetIndex === 0);
-    const hum  = items.find(i => i.datasetIndex === 1);
-    const prec = items.find(i => i.datasetIndex === 2);
-    const wind = items.find(i => i.datasetIndex === 3);
+    const prec = items.find(i => i.datasetIndex === 1);
+    const wind = items.find(i => i.datasetIndex === 2);
 
     const row = (dotColor, label, val) =>
       `<div style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:3px 0">
@@ -1059,7 +1101,6 @@ function _makeTooltipHandler(elId) {
         <span style="font-size:13px;font-weight:700;font-family:var(--ff-mono);font-variant-numeric:tabular-nums;color:var(--text-1)">${time}</span>
       </div>
       ${temp ? row('#F97316', 'Temp',    `${temp.raw.y.toFixed(1)}°C`)   : ''}
-      ${hum  ? row('#0EA5E9', 'Umidità', `${hum.raw.y.toFixed(0)}%`)     : ''}
       ${prec && prec.raw.y > 0.05 ? row('#2563EB', 'Precip', `${prec.raw.y.toFixed(1)} mm`) : ''}
       ${wind ? row('#14B8A6', 'Vento',   `${wind.raw.y.toFixed(0)} km/h`) : ''}`;
 
@@ -1085,6 +1126,74 @@ const externalTooltipHandler       = _makeTooltipHandler('chart-tooltip');
 const externalTooltipHandlerWeekly = _makeTooltipHandler('chart-weekly-tooltip');
 
 
+// Raccoglie temp (°C), vento (km/h) e precip (mm) di TUTTI i modelli (Guazza +
+// NWP) per la vista corrente: targetDate = un giorno (daily), null = tutti (weekly).
+function _collectAcrossModels(data, targetDate) {
+  const temps = [], windsKmh = [], precips = [];
+  const add = (t, wms, pr) => {
+    if (t != null) temps.push(t);
+    if (wms != null) windsKmh.push(wms * 3.6);
+    if (pr != null) precips.push(pr);
+  };
+  const days = targetDate ? data.days.filter(d => d.target_date === targetDate) : data.days;
+  days.forEach(d => (d.hourly || []).forEach(h => add(h.temp_c, h.wind_speed_ms, h.precip_mm)));
+
+  let inScope = () => true;
+  if (targetDate) {
+    const [y, m, d] = targetDate.split('-').map(Number);
+    const ds = new Date(y, m - 1, d, 0, 0, 0).getTime();
+    const de = new Date(y, m - 1, d, 23, 59, 59).getTime();
+    inScope = ts => { const t = new Date(ts).getTime(); return t >= ds && t <= de; };
+  }
+  (data.nwp_models_hourly || []).forEach(mdl =>
+    (mdl.data || []).forEach(pt => { if (inScope(pt.ts)) add(pt.temp_c, pt.wind_speed_ms, pt.precip_mm); }),
+  );
+  return { temps, windsKmh, precips };
+}
+
+// Step "nice" (1/2/5 × 10^n) per avere ~maxTicks intervalli su un dato range.
+function _niceStep(span, maxTicks = 6) {
+  if (span <= 0) return 1;
+  const raw = span / maxTicks;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n   = raw / mag;
+  const s   = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return s * mag;
+}
+
+// Range degli assi identici per tutti i modelli (unione dei loro dati): cambiando
+// modello l'asse non si riscala, così le differenze tra modelli restano leggibili.
+// Per ogni asse calcolo uno step adatto all'ampiezza e arrotondo gli estremi a quel
+// passo: con range stretti (daily) o larghi (weekly) i tick restano sempre equispaziati.
+function sharedAxisRanges(data, targetDate) {
+  const { temps, windsKmh, precips } = _collectAcrossModels(data, targetDate);
+  const tMin = temps.length ? Math.min(...temps) : 0;
+  const tMax = temps.length ? Math.max(...temps) : 30;
+  const wMax = windsKmh.length ? Math.max(...windsKmh) : 10;
+  const pMax = precips.length ? Math.max(...precips) : 2;
+
+  const tStep = _niceStep((tMax + 1) - (tMin - 1));
+  const wStep = _niceStep(Math.max(wMax, 1), 5);
+  return {
+    tempMin: Math.floor((tMin - 1) / tStep) * tStep,
+    tempMax: Math.ceil((tMax + 1) / tStep) * tStep,
+    tempStep: tStep,
+    windMax: Math.max(Math.ceil(wMax / wStep) * wStep, wStep),
+    windStep: wStep,
+    precipMax: Math.max(Math.ceil(pMax / 2) * 2, 2),
+  };
+}
+
+function applyAxisRanges(scales, r) {
+  scales.yTemp.min = r.tempMin;
+  scales.yTemp.max = r.tempMax;
+  scales.yTemp.ticks = { ...scales.yTemp.ticks, stepSize: r.tempStep };
+  scales.yWind.min = 0;
+  scales.yWind.max = r.windMax;
+  scales.yWind.ticks = { ...scales.yWind.ticks, stepSize: r.windStep };
+  scales.yPrecip.max = r.precipMax;
+}
+
 function _buildChartDatasets(canvas, points, p) {
   const { data: precipData, bg: precipBg } = precipDatasets(points);
   return [
@@ -1097,17 +1206,9 @@ function _buildChartDatasets(canvas, points, p) {
       yAxisID: 'yTemp', tension: 0.4, order: 1,
     },
     {
-      type: 'line', label: 'Umidità (%)',
-      data: points.filter(pt => pt.humidity_pct != null).map(pt => ({ x: pt.ts, y: pt.humidity_pct })),
-      borderColor: p.hum, backgroundColor: 'transparent',
-      borderWidth: 2, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 6,
-      pointHoverBackgroundColor: '#fff', pointHoverBorderColor: p.hum, pointHoverBorderWidth: 3,
-      yAxisID: 'yHum', tension: 0.4, order: 2,
-    },
-    {
       type: 'bar', label: 'Precipitazioni (mm)',
       data: precipData, backgroundColor: precipBg,
-      yAxisID: 'yTemp', barPercentage: 0.9, categoryPercentage: 1.0,
+      yAxisID: 'yPrecip', barPercentage: 0.9, categoryPercentage: 1.0,
       borderRadius: 2, order: 3,
     },
     {
@@ -1133,6 +1234,10 @@ function _baseChartOptions(p, xMin, xMax, unit) {
     scales: {
       x: {
         type: 'time', min: xMin, max: xMax,
+        // Il dataset a barre (precip) attiverebbe offset:true centrando le barre sul
+        // punto e lasciando mezza barra di margine vuoto ai due estremi: lo disattivo
+        // così le serie combaciano con xMin/xMax e riempiono tutta la larghezza.
+        offset: false,
         time: { unit, displayFormats: { hour: 'HH', day: 'dd/MM' } },
         grid: { color: p.grid, borderColor: 'transparent' },
         ticks: { color: p.label, maxTicksLimit: 13, font: { size: 11 } },
@@ -1142,15 +1247,16 @@ function _baseChartOptions(p, xMin, xMax, unit) {
         grid: { color: p.grid, borderColor: 'transparent' },
         ticks: { color: p.temp, callback: v => `${v}°`, font: { size: 11 } },
       },
-      yHum: {
-        position: 'right', min: 0, max: 100,
-        grid: { drawOnChartArea: false },
-        ticks: { color: p.hum, callback: v => `${v}`, font: { size: 11 } },
-      },
       yWind: {
         position: 'right', min: 0,
         grid: { drawOnChartArea: false },
         ticks: { color: p.wind, callback: v => `${v}`, font: { size: 11 } },
+      },
+      // Asse precip dedicato e nascosto. min/max (come temp e vento) vengono
+      // impostati da applyAxisRanges con range condiviso tra tutti i modelli.
+      yPrecip: {
+        position: 'right', display: false, min: 0,
+        grid: { drawOnChartArea: false },
       },
     },
   };
@@ -1165,11 +1271,20 @@ function initChart(data, model, targetDate) {
   const xMax = new Date(y, m - 1, d, 23, 0, 0);
   const points = buildChartPoints(data, model, targetDate);
   const p = chartPalette();
+  const opts = _baseChartOptions(p, xMin, xMax, 'hour');
+  // 'data' fa combaciare l'asse con xMin/xMax: il default 'ticks' lo estenderebbe
+  // fino al tick da 2h oltre le 23:00 (margine vuoto a destra).
+  opts.scales.x.bounds = 'data';
+  applyAxisRanges(opts.scales, sharedAxisRanges(data, targetDate));
   meteoChart = new Chart(canvas.getContext('2d'), {
-    plugins: [crosshairPlugin],
+    plugins: [crosshairPlugin, weatherIconsPlugin],
     data: { datasets: _buildChartDatasets(canvas, points, p) },
-    options: _baseChartOptions(p, xMin, xMax, 'hour'),
+    options: opts,
   });
+  meteoChart.$iconOverlayId = 'meteo-chart-icons';
+  meteoChart.$weatherPoints = points;
+  meteoChart.$locMeta = LOCATIONS.find(l => l.id === data.location_id);
+  meteoChart.$iconsDirty = true;
 }
 
 function updateChartModel(data, model, targetDate) {
@@ -1178,10 +1293,14 @@ function updateChartModel(data, model, targetDate) {
   const [y, m, d] = targetDate.split('-').map(Number);
   meteoChart.options.scales.x.min = new Date(y, m - 1, d, 0, 0, 0);
   meteoChart.options.scales.x.max = new Date(y, m - 1, d, 23, 0, 0);
+  applyAxisRanges(meteoChart.options.scales, sharedAxisRanges(data, targetDate));
   const points = buildChartPoints(data, model, targetDate);
   const p = chartPalette();
   const ds = _buildChartDatasets(canvas, points, p);
-  meteoChart.data.datasets.forEach((d, i) => { d.data = ds[i].data; if (i === 2) d.backgroundColor = ds[i].backgroundColor; });
+  meteoChart.data.datasets.forEach((d, i) => { d.data = ds[i].data; if (i === 1) d.backgroundColor = ds[i].backgroundColor; });
+  meteoChart.$weatherPoints = points;
+  meteoChart.$locMeta = LOCATIONS.find(l => l.id === data.location_id);
+  meteoChart.$iconsDirty = true;
   meteoChart.update();
 }
 
@@ -1196,12 +1315,21 @@ function initWeeklyChart(data, model) {
   const points = buildWeeklyPoints(data, model);
   const p = chartPalette();
   const opts = _baseChartOptions(p, xMin, xMax, 'day');
+  // Default 'ticks' estenderebbe l'asse alla mezzanotte oltre xMax (frazione di
+  // giorno vuota ai bordi): 'data' lo fa combaciare esattamente con xMin/xMax.
+  opts.scales.x.bounds = 'data';
+  applyAxisRanges(opts.scales, sharedAxisRanges(data, null));
   opts.plugins.tooltip = { enabled: false, external: externalTooltipHandlerWeekly };
   multiDayChart = new Chart(canvas.getContext('2d'), {
-    plugins: [crosshairPlugin],
+    plugins: [crosshairPlugin, weatherIconsPlugin],
     data: { datasets: _buildChartDatasets(canvas, points, p) },
     options: opts,
   });
+  multiDayChart.$iconOverlayId = 'multiday-chart-icons';
+  multiDayChart.$iconStepHours = 6;
+  multiDayChart.$weatherPoints = points;
+  multiDayChart.$locMeta = LOCATIONS.find(l => l.id === data.location_id);
+  multiDayChart.$iconsDirty = true;
 }
 
 function updateWeeklyChart(data, model) {
@@ -1209,8 +1337,12 @@ function updateWeeklyChart(data, model) {
   const canvas = document.getElementById('multiday-chart');
   const points = buildWeeklyPoints(data, model);
   const p = chartPalette();
+  applyAxisRanges(multiDayChart.options.scales, sharedAxisRanges(data, null));
   const ds = _buildChartDatasets(canvas, points, p);
-  multiDayChart.data.datasets.forEach((d, i) => { d.data = ds[i].data; if (i === 2) d.backgroundColor = ds[i].backgroundColor; });
+  multiDayChart.data.datasets.forEach((d, i) => { d.data = ds[i].data; if (i === 1) d.backgroundColor = ds[i].backgroundColor; });
+  multiDayChart.$weatherPoints = points;
+  multiDayChart.$locMeta = LOCATIONS.find(l => l.id === data.location_id);
+  multiDayChart.$iconsDirty = true;
   multiDayChart.update();
 }
 

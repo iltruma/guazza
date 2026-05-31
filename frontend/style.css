@@ -766,6 +766,15 @@ img.emoji {
 }
 .g-strip__label--today { color: var(--accent); }
 
+.g-strip__date {
+  font-family: var(--ff-mono);
+  font-size: 9px;
+  color: var(--text-3);
+  text-align: center;
+  line-height: 1;
+  margin-top: 3px;
+}
+
 .g-strip__icon { line-height: 1; margin: 6px 0 4px; }
 
 
@@ -906,12 +915,6 @@ img.emoji {
   color: var(--accent);
 }
 
-.g-detail__date {
-  font-family: var(--ff-mono);
-  font-size: 12px;
-  color: var(--text-2);
-}
-
 .g-detail__emessa {
   font-family: var(--ff-mono);
   font-size: 11px;
@@ -924,6 +927,12 @@ img.emoji {
   gap: 12px;
 }
 
+.g-detail__title-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .g-detail__title {
   font-family: var(--ff-sans);
   font-size: clamp(1.75rem, 4vw, 2.5rem);
@@ -931,6 +940,13 @@ img.emoji {
   letter-spacing: -0.02em;
   color: var(--text-1);
   line-height: 1.05;
+}
+
+.g-detail__subtitle {
+  font-family: var(--ff-mono);
+  font-size: 12px;
+  color: var(--text-3);
+  text-transform: capitalize;
 }
 
 .g-detail__icon {
@@ -1283,6 +1299,45 @@ img.emoji {
   .g-chart-wrap { min-height: 280px; }
 }
 
+/* Spazio sotto l'asse X per la riga di icone meteo */
+.g-chart-wrap--icons { padding-bottom: 46px; }
+
+/* Contenitore scrollabile in orizzontale: su mobile il wrap supera la viewport
+   (min-width sotto) e si scorre a destra; su desktop riempie e non scrolla. */
+.g-chart-scroll {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+@media (max-width: 767px) {
+  .g-chart-wrap--scroll { min-width: 620px; }
+  .g-chart-wrap--weekly { min-width: 1000px; }
+}
+
+.g-chart-icons {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0;
+  pointer-events: none;
+}
+.g-chart-icon {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 22px;
+}
+.g-chart-icon .g-wicon {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
 .g-chart-tooltip {
   position: absolute;
   pointer-events: none;
@@ -1322,7 +1377,7 @@ img.emoji {
   .g-card__header { padding: 16px 24px 14px; }
 }
 
-.g-card .g-chart-wrap { padding: 12px 8px 8px; min-height: 260px; }
+.g-card .g-chart-wrap { padding: 12px 8px 46px; min-height: 340px; }
 
 /* =============================================================
    RADAR

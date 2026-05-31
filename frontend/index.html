@@ -143,12 +143,14 @@
           <header class="g-detail__head">
             <div class="g-detail__head-meta">
               <span id="detail-lead" class="g-detail__lead"></span>
-              <span id="detail-date" class="g-detail__date"></span>
               <span id="detail-emessa" class="g-detail__emessa"></span>
             </div>
             <div class="g-detail__title-row">
               <span id="detail-icon" class="g-detail__icon"></span>
-              <h2 id="detail-title" class="g-detail__title"></h2>
+              <div class="g-detail__title-col">
+                <h2 id="detail-title" class="g-detail__title"></h2>
+                <span id="detail-subtitle" class="g-detail__subtitle"></span>
+              </div>
             </div>
           </header>
 
@@ -193,9 +195,6 @@
                   <span class="g-chart-legend__dot" style="background:#F97316"></span>Temp
                 </span>
                 <span class="g-chart-legend__item">
-                  <span class="g-chart-legend__dot" style="background:#0EA5E9"></span>Umidità
-                </span>
-                <span class="g-chart-legend__item">
                   <span class="g-chart-legend__dot" style="background:#2563EB;opacity:0.7"></span>Precip
                 </span>
                 <span class="g-chart-legend__item">
@@ -204,9 +203,12 @@
               </div>
             </div>
 
-            <div class="g-chart-wrap">
-              <canvas id="meteo-chart"></canvas>
-              <div id="chart-tooltip" class="g-chart-tooltip"></div>
+            <div class="g-chart-scroll">
+              <div class="g-chart-wrap g-chart-wrap--icons g-chart-wrap--scroll">
+                <canvas id="meteo-chart"></canvas>
+                <div id="chart-tooltip" class="g-chart-tooltip"></div>
+                <div id="meteo-chart-icons" class="g-chart-icons"></div>
+              </div>
             </div>
 
           </div>
@@ -238,9 +240,6 @@
               <span class="g-chart-legend__dot" style="background:#F97316"></span>Temp
             </span>
             <span class="g-chart-legend__item">
-              <span class="g-chart-legend__dot" style="background:#0EA5E9"></span>Umidità
-            </span>
-            <span class="g-chart-legend__item">
               <span class="g-chart-legend__dot" style="background:#2563EB;opacity:0.7"></span>Precip
             </span>
             <span class="g-chart-legend__item">
@@ -249,9 +248,12 @@
           </div>
         </div>
       </div>
-      <div class="g-chart-wrap">
-        <canvas id="multiday-chart"></canvas>
-        <div id="chart-weekly-tooltip" class="g-chart-tooltip"></div>
+      <div class="g-chart-scroll">
+        <div class="g-chart-wrap g-chart-wrap--icons g-chart-wrap--scroll g-chart-wrap--weekly">
+          <canvas id="multiday-chart"></canvas>
+          <div id="chart-weekly-tooltip" class="g-chart-tooltip"></div>
+          <div id="multiday-chart-icons" class="g-chart-icons"></div>
+        </div>
       </div>
     </section>
 
