@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-31 (fix timestamp Netatmo UTC + ts_sir/ts_netatmo nell'hero)
+> Aggiornato: 2026-05-31 (v0.8.0 — blend realtime √N + qc_pass, redesign grafici daily/weekly)
 
 ## Cosa è stato fatto
 

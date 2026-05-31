@@ -8,6 +8,40 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-31
+
+### Added
+- Blend realtime: peso aggregato Netatmo sublineare `1/√N` (`output.py`). N sensori
+  consumer indipendenti riducono la varianza come √N, non N: dividere ogni peso per √N
+  evita che la mera densità di moduli (es. ~130 a Firenze urbana) sommerga le stazioni
+  SIR validate per conteggio.
+- Grafici daily/weekly: riga di icone meteo Meteocons sotto l'asse X, allineate ai pixel
+  dei tick (daily a ogni tick orario, weekly ogni 6h) con varianti giorno/notte.
+- Grafici daily/weekly scrollabili in orizzontale su mobile (`min-width` + `overflow-x`)
+  per leggere il dettaglio orario senza compressione.
+- Day strip e header dettaglio: data estesa (es. "6 giugno") sotto il nome del giorno
+  (`fmtDayNumber`).
+
+### Changed
+- Grafici: assi Y con range **identico per tutti i modelli** (unione dei dati) così il
+  confronto tra modelli resta leggibile cambiando modello; step "nice" per tick
+  equispaziati; asse precipitazioni dedicato e nascosto; asse X `offset:false` +
+  `bounds:'data'` per riempire la larghezza senza margini vuoti.
+- Tabella `nwp-list`: rimossa la colonna Run; il run di Guazza ML è mostrato inline nel
+  nome come per gli altri modelli.
+- Profilo orario ML allineato all'asse Europe/Rome; timestamp Netatmo in UTC con
+  `ts_sir`/`ts_netatmo` separati nell'hero.
+
+### Fixed
+- Blend realtime: esclusi i moduli Netatmo con `qc_pass=False` (il flag QC calcolato in
+  ingestion non veniva applicato in `get_current_conditions`).
+- Tooltip dei grafici posizionato sopra il puntino della curva senza coprirlo.
+- Tabella daily: colonne `tmax`/`tmin` invertite.
+
+### Removed
+- Serie umidità dai grafici daily/weekly (dataset, asse `yHum`, voce di legenda, riga
+  tooltip): la temperatura usa l'asse sinistro per intero.
+
 ## [0.7.2] — 2026-05-29
 
 ### Added
