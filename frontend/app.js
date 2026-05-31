@@ -935,11 +935,14 @@ function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
 // ── Chart ─────────────────────────────────────────────────────────────────────
 
 function chartPalette() {
+  // Token in :root (--chart-*) come unica fonte: i colori canvas non risolvono var().
+  const css = getComputedStyle(document.documentElement);
+  const v = name => css.getPropertyValue(name).trim();
   return {
-    grid:  'rgba(148,163,184,0.08)',
-    label: '#94A3B8',
-    temp:  '#F97316',
-    wind:  '#14B8A6',
+    grid:  v('--chart-grid'),
+    label: v('--chart-axis'),
+    temp:  v('--chart-temp'),
+    wind:  v('--chart-wind'),
   };
 }
 
@@ -994,8 +997,9 @@ function buildWeeklyPoints(data, model) {
 }
 
 function _precipColor(mm, prob) {
-  if (mm < 0.05) return 'rgba(37,99,235,0.06)';
-  return `rgba(37,99,235,${(0.5 + (prob ?? 0.8) * 0.45).toFixed(2)})`;
+  // Canali RGB di --chart-precip (#60A5FA); l'alpha codifica la probabilità.
+  if (mm < 0.05) return 'rgba(96,165,250,0.06)';
+  return `rgba(96,165,250,${(0.5 + (prob ?? 0.8) * 0.45).toFixed(2)})`;
 }
 
 function precipDatasets(points) {
@@ -1100,9 +1104,9 @@ function _makeTooltipHandler(elId) {
         <span style="font-size:10px;font-family:var(--ff-mono);text-transform:capitalize;color:var(--text-3)">${date}</span>
         <span style="font-size:13px;font-weight:700;font-family:var(--ff-mono);font-variant-numeric:tabular-nums;color:var(--text-1)">${time}</span>
       </div>
-      ${temp ? row('#F97316', 'Temp',    `${temp.raw.y.toFixed(1)}°C`)   : ''}
-      ${prec && prec.raw.y > 0.05 ? row('#2563EB', 'Precip', `${prec.raw.y.toFixed(1)} mm`) : ''}
-      ${wind ? row('#14B8A6', 'Vento',   `${wind.raw.y.toFixed(0)} km/h`) : ''}`;
+      ${temp ? row('var(--chart-temp)', 'Temp',    `${temp.raw.y.toFixed(1)}°C`)   : ''}
+      ${prec && prec.raw.y > 0.05 ? row('var(--chart-precip)', 'Precip', `${prec.raw.y.toFixed(1)} mm`) : ''}
+      ${wind ? row('var(--chart-wind)', 'Vento',   `${wind.raw.y.toFixed(0)} km/h`) : ''}`;
 
     const cRect = chart.canvas.parentElement.getBoundingClientRect();
     el.style.opacity = '1';
@@ -1518,7 +1522,7 @@ function render(data) {
     renderDayDetail(day);
 
     const fs = document.getElementById('forecast-section');
-    if (fs) { fs.classList.remove('hidden'); fs.style.display = 'flex'; }
+    if (fs) fs.classList.remove('hidden');
 
     showEl('chart-weekly-section');
     initModelSwitch(data);
@@ -1542,7 +1546,7 @@ async function loadLocation(locId) {
   selectedModel = 'guazza';
 
   const fs = document.getElementById('forecast-section');
-  if (fs) { fs.classList.add('hidden'); fs.style.display = 'none'; }
+  if (fs) fs.classList.add('hidden');
   ['hero-card','aq-section','chart-weekly-section','coverage-bar','error-state'].forEach(hideEl);
   showSkeleton();
 

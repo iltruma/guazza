@@ -146,6 +146,17 @@ Quattro livelli di carbone, un accento iris, cinque segnali semantici.
 
 **The Semantic Separation Rule.** I colori warm/cold esistono solo per i delta di temperatura NWP e i valori Tmax/Tmin nel bento. Verde/giallo/rosso esistono solo per i segnali DLE e AQ. L'iris esiste solo per lo stato attivo. Nessuna contaminazione tra ruoli.
 
+### Chart series
+
+I grafici (daily/weekly) sono l'unico contesto a cui è concessa una *full palette* di ruoli nominati: tre serie categoriche devono restare distinguibili a colpo d'occhio. I colori vivono come token in `:root` e sono l'unica fonte (la legenda HTML e il tooltip li referenziano via `var(--chart-*)`; il canvas li legge con `getComputedStyle`).
+
+- **`--chart-temp`** (`#F97316`, = warm): linea temperatura.
+- **`--chart-precip`** (`#60A5FA`, = cold): barre precipitazione; l'alpha della barra codifica la probabilità (vedi `_precipColor`).
+- **`--chart-wind`** (`#14B8A6`, teal): linea vento. Unico uso del teal nel sistema.
+- **`--chart-grid`** (`= --border-1`) e **`--chart-axis`** (`= --text-3`): griglia e label assi restano sui neutri carbone, non slate.
+
+Riusare warm/cold qui non viola la Semantic Separation Rule: il grafico non traccia mai un delta di temperatura, quindi non c'è collisione di significato. Nessun colore chart fuori da questi token; in particolare niente `#2563EB` (secondo blu, rimosso) o slate `#94A3B8`.
+
 ## 3. Typography
 
 **Display Font:** Geist (con `system-ui, sans-serif` come fallback)
