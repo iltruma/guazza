@@ -1065,8 +1065,19 @@ function _makeTooltipHandler(elId) {
 
     const cRect = chart.canvas.parentElement.getBoundingClientRect();
     el.style.opacity = '1';
-    el.style.left    = `${Math.max(0, Math.min(tooltip.caretX - 80, cRect.width - 175))}px`;
-    el.style.top     = `${Math.max(4, tooltip.caretY - 130)}px`;
+
+    // Posiziona il box dal lato opposto al puntino così da non coprirlo: a destra
+    // se il cursore è nella metà sinistra (e viceversa), sotto se è nella metà alta.
+    const gap  = 16;
+    const boxW = el.offsetWidth;
+    const boxH = el.offsetHeight;
+
+    const left = tooltip.caretX < cRect.width / 2
+      ? tooltip.caretX + gap
+      : tooltip.caretX - gap - boxW;
+
+    el.style.left = `${Math.max(0, Math.min(left, cRect.width - boxW))}px`;
+    el.style.top  = `${Math.max(0, tooltip.caretY - gap - boxH)}px`;
   };
 }
 
