@@ -23,6 +23,17 @@ const INDICATOR_META = {
   annaffia: { label: 'Annaffia',  icon: '💧' },
 };
 
+// Nome esteso per il title hover dei bottoni model-switch (le sigle da sole
+// richiedono di ricordare cos'è ognuna).
+const MODEL_DESC = {
+  guazza:                                  'Guazza ML: post-processing su osservazioni SIR',
+  open_meteo_ecmwf_ifs:                    'ECMWF IFS: modello globale europeo',
+  open_meteo_icon_eu:                      'ICON-EU: DWD, dominio europeo',
+  open_meteo_icon_d2:                      'ICON-D2: DWD, alta risoluzione 2.2 km',
+  open_meteo_arome_france:                 'AROME: Météo-France, alta risoluzione',
+  open_meteo_italia_meteo_arpae_icon_2i:   'ICON-2I: ItaliaMeteo/ARPAE, 2.2 km, assimila osservazioni italiane',
+};
+
 // Soglie qualità aria — mapping verde/giallo/rosso vs fasce ARPAT.
 // [lo, hi]: value<lo→verde, lo≤value<hi→giallo, value≥hi→rosso.
 const AQ_THRESHOLDS = {
@@ -851,7 +862,7 @@ function renderCoverage(cov) {
   const el = document.getElementById('coverage-numbers');
   if (!el) return;
   if (!cov || Object.values(cov).every(v => v === null)) {
-    el.innerHTML = `<span class="g-coverage__calibrating">Calibrazione in corso — copertura CI non ancora disponibile (primi 30gg)</span>`;
+    el.innerHTML = `<span class="g-coverage__calibrating">Calibrazione in corso: copertura CI disponibile dopo i primi 30 giorni di osservazioni.</span>`;
   } else {
     const items = [
       ['Tmin CI80', cov.tmin_ci80], ['Tmin CI90', cov.tmin_ci90],
@@ -860,7 +871,9 @@ function renderCoverage(cov) {
     ].filter(([, v]) => v !== null)
      .map(([k, v]) => `<span>${k}: <strong>${(v * 100).toFixed(0)}%</strong></span>`)
      .join('');
-    el.innerHTML = `<div class="g-coverage__numbers">${items}</div>`;
+    const tip = 'Quanto spesso la realtà è caduta dentro l\'intervallo di confidenza, sugli ultimi 30 giorni. Vicino al nominale (80% / 90%) = CI affidabile.';
+    el.innerHTML = `<span class="g-coverage__kicker" title="${tip}">Copertura CI osservata · ultimi 30gg</span>
+      <div class="g-coverage__numbers">${items}</div>`;
   }
   showEl('coverage-bar');
 }
@@ -918,6 +931,7 @@ function _buildModelSwitch(data, switchId, pillId, activeSource, onChange) {
     btn.className = `g-model-switch__btn${active ? ' g-model-switch__btn--active' : ''}`;
     btn.dataset.src = m.source;
     btn.textContent = m.label;
+    btn.title = MODEL_DESC[m.source] ?? m.label;
     container.appendChild(btn);
     btn.addEventListener('click', () => {
       container.querySelectorAll('[data-src]').forEach(b => {

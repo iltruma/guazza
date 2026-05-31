@@ -1604,6 +1604,17 @@ img.emoji {
   padding: 8px 12px;
 }
 
+.g-coverage__kicker {
+  display: block;
+  font-family: var(--ff-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  cursor: help;
+}
+
 .g-coverage__numbers {
   display: flex;
   flex-wrap: wrap;
