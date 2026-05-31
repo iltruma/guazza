@@ -819,9 +819,9 @@ def test_current_conditions_netatmo_blend(seeded_db: Path) -> None:
     con = duckdb.connect(str(seeded_db))
     con.execute("""
         INSERT INTO observations
-            (source, station_id, location_id, ts, granularity, temp_c, weight)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, ["netatmo", "70:ee:50:aa", "casa_campi", now - timedelta(minutes=5), "realtime", 19.0, 0.4])
+            (source, station_id, location_id, ts, granularity, temp_c, weight, qc_pass)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, ["netatmo", "70:ee:50:aa", "casa_campi", now - timedelta(minutes=5), "realtime", 19.0, 0.4, True])
     con.close()
 
     with DuckDBClient(db_path=seeded_db, read_only=True) as db:
@@ -832,6 +832,33 @@ def test_current_conditions_netatmo_blend(seeded_db: Path) -> None:
     # ts_netatmo popolato, ts_sir assente (nessuna stazione SIR)
     assert result["ts_netatmo"] is not None
     assert result["ts_sir"] is None
+
+
+def test_current_conditions_excludes_netatmo_qc_fail(seeded_db: Path) -> None:
+    """Un modulo Netatmo con qc_pass=False non entra nella media realtime."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.executemany("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, weight, qc_pass)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, [
+        ["netatmo", "70:ee:50:aa", "casa_campi", now - timedelta(minutes=5), "realtime", 19.0, 0.4, True],
+        # Valore sballato (irraggiamento solare): scartato dal QC, deve essere ignorato
+        ["netatmo", "70:ee:50:bb", "casa_campi", now - timedelta(minutes=5), "realtime", 45.0, 0.4, False],
+    ])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    # Solo il modulo qc_pass=True contribuisce: 19.0, non la media 32.0
+    assert result["temp_c"] == pytest.approx(19.0)
 
 
 def test_dewpoint_known_value() -> None:

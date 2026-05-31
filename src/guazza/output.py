@@ -530,6 +530,7 @@ def get_current_conditions(
               AND o.location_id = ?
               AND o.granularity = 'realtime'
               AND o.weight IS NOT NULL
+              AND o.qc_pass
               AND o.ts >= NOW() - INTERVAL 3 HOURS
             QUALIFY ROW_NUMBER() OVER (PARTITION BY o.station_id ORDER BY o.ts DESC) = 1
         )
