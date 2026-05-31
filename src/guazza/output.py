@@ -651,7 +651,9 @@ def get_nwp_models_hourly(
             weather_code
         FROM forecasts
         WHERE location_id = ?
-          AND CAST(ts_valid AS DATE) >= CURRENT_DATE
+          -- Margine 3h sotto mezzanotte UTC per coprire l'inizio del giorno locale
+          -- (Europe/Rome): le ore 00-01 locali sono le 22-23Z del giorno prima.
+          AND ts_valid >= CURRENT_DATE - INTERVAL 3 HOUR
           AND temp_c IS NOT NULL
         QUALIFY ROW_NUMBER() OVER (
             PARTITION BY source, ts_valid ORDER BY ts_run DESC
@@ -708,6 +710,9 @@ def get_intraday_observed(
         FROM observations
         WHERE location_id = ?
           AND granularity  = 'realtime'
+          -- Solo SIR: i moduli Netatmo outdoor al sole hanno bias da irraggiamento
+          -- (fino a +8°C) che falserebbe il MAX usato per ancorare tmax.
+          AND source       = 'sir_toscana'
           AND CAST(ts AS DATE) = ?
     """, [location_id, date_utc]).fetchone()
 
@@ -808,7 +813,7 @@ def compute_hourly_profile(
     """
     df = db.execute("""
         SELECT
-            HOUR(ts_valid)                                                      AS hour,
+            HOUR(local_ts)                                                      AS hour,
             AVG(temp_c)                                                         AS temp_mean,
             AVG(humidity_pct)                                                   AS humidity_mean,
             AVG(COALESCE(precip_mm, 0.0))                                       AS precip_mean,
@@ -817,10 +822,12 @@ def compute_hourly_profile(
                      ELSE 0.0 END)                                              AS precip_prob,
             AVG(wind_speed_ms)                                                  AS wind_mean
         FROM (
-            SELECT source, ts_valid, temp_c, humidity_pct, precip_mm, wind_speed_ms
+            SELECT
+                ts_valid AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome' AS local_ts,
+                temp_c, humidity_pct, precip_mm, wind_speed_ms
             FROM forecasts
             WHERE location_id = ?
-              AND CAST(ts_valid AS DATE) = ?
+              AND CAST(ts_valid AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome' AS DATE) = ?
             QUALIFY ROW_NUMBER() OVER (
                 PARTITION BY source, ts_valid
                 ORDER BY ts_run DESC
@@ -836,12 +843,14 @@ def compute_hourly_profile(
 
     # weather_code per ora: moda tra modelli (ogni (source, ts_valid) → run più recente)
     wc_df = db.execute("""
-        SELECT HOUR(ts_valid) AS hour, weather_code
+        SELECT HOUR(local_ts) AS hour, weather_code
         FROM (
-            SELECT source, ts_valid, weather_code
+            SELECT
+                ts_valid AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome' AS local_ts,
+                weather_code
             FROM forecasts
             WHERE location_id = ?
-              AND CAST(ts_valid AS DATE) = ?
+              AND CAST(ts_valid AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome' AS DATE) = ?
               AND weather_code IS NOT NULL
             QUALIFY ROW_NUMBER() OVER (
                 PARTITION BY source, ts_valid ORDER BY ts_run DESC

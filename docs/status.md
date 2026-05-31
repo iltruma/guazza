@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-30 (v0.7.2 — standardizzazione timestamp UTC)
+> Aggiornato: 2026-05-31 (profilo orario ML su asse Europe/Rome)
 
 ## Cosa è stato fatto
 
@@ -457,6 +457,26 @@ ARPAT NRT (`_parse_arpat_nrt`) usa `_ITALY_TZ.astimezone(UTC)`.
 Il frontend interpreta questi timestamp come UTC e li converte correttamente in ora locale.
 
 **Bug latente risolto**: `NOW()` in DuckDB è UTC; confrontarlo con timestamp naive CET causava finestre temporali sbagliate di 1-2h in estate (record validi esclusi o record scaduti inclusi in `get_current_conditions`, `get_current_air_quality`).
+
+### Profilo orario ML su asse Europe/Rome (2026-05-31)
+
+Il profilo orario del modello `guazza` ragionava in UTC mentre il grafico frontend usa
+l'ora locale: le ore di bordo giornata risultavano disallineate. Conversione esplicita
+a `Europe/Rome`.
+
+- **`output.py`** — `compute_hourly_profile`: forecast NWP convertiti `UTC → Europe/Rome`
+  (`AT TIME ZONE`), `HOUR(local_ts)` e filtro giorno in ora locale, sia per il profilo
+  che per la moda dei `weather_code`. `get_nwp_models_hourly`: margine `-3h` sotto
+  mezzanotte UTC per coprire le ore 00-01 locali (= 22-23Z del giorno prima).
+- **`get_intraday_observed`** ristretto a `source='sir_toscana'`: i moduli Netatmo
+  outdoor al sole hanno bias da irraggiamento (fino a +8°C) che falserebbe il MAX usato
+  per ancorare tmax.
+- **`app.js`** — helper `dayTemps()`: l'intraday correction D+0
+  (`tmin/tmax_corrected_c`, `precip_remaining_mm`) ha priorità sul forecast ML, così
+  striscia e dettaglio mostrano lo stesso numero (eliminata la duplicazione di logica
+  intraday in `renderDayDetail`). `buildChartPoints`/`buildWeeklyPoints`: `h.hour` è ora
+  locale → costruttore `new Date(...)` locale invece di `Date.UTC`.
+- 280 test verdi, ruff + mypy OK.
 
 ### Baseline backtest D+0 — de-risking della tesi (2026-05-29)
 

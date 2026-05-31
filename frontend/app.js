@@ -570,16 +570,29 @@ function ciBar(fc, unit) {
 
 // ── Day strip ─────────────────────────────────────────────────────────────────
 
+// Valori operativi del giorno: la correzione intraday (presente solo per D+0) ha
+// priorità sul forecast ML, così striscia e dettaglio mostrano lo stesso numero.
+function dayTemps(day) {
+  const fc = day.forecasts;
+  const intra = day.intraday;
+  return {
+    tmax:   intra?.tmax_corrected_c ?? fc.tmax_c?.p50,
+    tmin:   intra?.tmin_corrected_c ?? fc.tmin_c?.p50,
+    precip: intra?.precip_remaining_mm ?? (fc.precip_mm?.mean ?? fc.precip_mm?.p50),
+  };
+}
+
 function renderDayStrip(days, activeDayIdx) {
   const el = document.getElementById('day-strip');
   el.innerHTML = days.map((day, idx) => {
-    const { target_date, forecasts: fc, indicators } = day;
+    const { target_date, indicators } = day;
     const active = idx === activeDayIdx;
     const diff   = diffDays(target_date);
     const icon   = weatherIconForDay(day, 'g-wicon--strip');
-    const tmax   = fmtTemp(fc.tmax_c?.p50);
-    const tmin   = fmtTemp(fc.tmin_c?.p50);
-    const precipVal = (fc.precip_mm?.mean ?? fc.precip_mm?.p50) ?? 0;
+    const t      = dayTemps(day);
+    const tmax   = fmtTemp(t.tmax);
+    const tmin   = fmtTemp(t.tmin);
+    const precipVal = t.precip ?? 0;
     const precipPct = Math.min(100, (precipVal / 20) * 100).toFixed(1);
     const precipDisplay = precipVal > 0.05 ? `${precipVal.toFixed(1)} mm` : '—';
     const dayLabel  = fmtDayShort(target_date);
@@ -648,44 +661,35 @@ function renderDayDetail(day) {
     emessaEl.textContent = `prev. emessa ${t}`;
   }
 
-  // Metrics
+  // Metrics — stessi valori operativi della striscia (intraday D+0 incluso)
+  const t = dayTemps(day);
   const tmaxEl = document.getElementById('detail-tmax');
-  if (tmaxEl) tmaxEl.textContent = fmtTemp(fc.tmax_c?.p50);
+  if (tmaxEl) tmaxEl.textContent = fmtTemp(t.tmax);
 
   const tminEl = document.getElementById('detail-tmin');
-  if (tminEl) tminEl.textContent = fmtTemp(fc.tmin_c?.p50);
+  if (tminEl) tminEl.textContent = fmtTemp(t.tmin);
 
-  const precipVal = fc.precip_mm?.mean ?? fc.precip_mm?.p50;
   const precipEl = document.getElementById('detail-precip-val');
   if (precipEl) {
-    precipEl.textContent = precipVal != null && precipVal > 0.05
-      ? `${precipVal.toFixed(1)} mm`
+    precipEl.textContent = t.precip != null && t.precip > 0.05
+      ? `${t.precip.toFixed(1)} mm`
       : '—';
   }
 
-  // Intraday correction D+0
+  // Intraday correction D+0: tmin/tmax/precip già applicati da dayTemps();
+  // qui resta solo il badge informativo "osservato/atteso".
   const intraday = day.intraday;
   const intradayEl = document.getElementById('detail-intraday');
-  if (intraday) {
-    if (intraday.tmin_corrected_c != null && tminEl)
-      tminEl.textContent = fmtTemp(intraday.tmin_corrected_c);
-    if (intraday.tmax_corrected_c != null && tmaxEl)
-      tmaxEl.textContent = fmtTemp(intraday.tmax_corrected_c);
-    if (intraday.precip_remaining_mm != null && precipEl) {
-      const rem = intraday.precip_remaining_mm;
-      precipEl.textContent = rem > 0.05 ? `${rem.toFixed(1)} mm` : '—';
-    }
-    if (intradayEl) {
-      const obs = intraday.precip_observed_mm;
-      const rem = intraday.precip_remaining_mm;
-      if (obs != null) {
-        const obsStr = obs > 0.05 ? `🌧️ ${obs.toFixed(1)} mm osservati` : 'Nessuna pioggia osservata';
-        const remStr = rem != null && rem > 0.05 ? ` · ~${rem.toFixed(1)} mm attesi` : '';
-        intradayEl.innerHTML = `<span class="g-intraday-badge">${obsStr}${remStr}</span>`;
-        twemoji.parse(intradayEl, TWEMOJI_OPTS);
-      } else {
-        intradayEl.innerHTML = '';
-      }
+  if (intraday && intradayEl) {
+    const obs = intraday.precip_observed_mm;
+    const rem = intraday.precip_remaining_mm;
+    if (obs != null) {
+      const obsStr = obs > 0.05 ? `🌧️ ${obs.toFixed(1)} mm osservati` : 'Nessuna pioggia osservata';
+      const remStr = rem != null && rem > 0.05 ? ` · ~${rem.toFixed(1)} mm attesi` : '';
+      intradayEl.innerHTML = `<span class="g-intraday-badge">${obsStr}${remStr}</span>`;
+      twemoji.parse(intradayEl, TWEMOJI_OPTS);
+    } else {
+      intradayEl.innerHTML = '';
     }
   } else if (intradayEl) {
     intradayEl.innerHTML = '';
@@ -946,7 +950,8 @@ function buildChartPoints(data, model, targetDate) {
   const points   = [];
   if (model === 'guazza') {
     (data.days.find(day => day.target_date === targetDate)?.hourly || []).forEach(h => {
-      points.push({ ts: new Date(Date.UTC(y, m - 1, d, h.hour, 0, 0)),
+      // h.hour è ora locale (Europe/Rome): costruttore locale per allinearlo all'asse.
+      points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0),
                     temp_c: h.temp_c, humidity_pct: h.humidity_pct,
                     precip_mm: h.precip_mm, precip_prob: h.precip_prob,
                     wind_speed_ms: h.wind_speed_ms });
@@ -969,7 +974,8 @@ function buildWeeklyPoints(data, model) {
     data.days.forEach(day => {
       const [y, m, d] = day.target_date.split('-').map(Number);
       (day.hourly || []).forEach(h => points.push({
-        ts: new Date(Date.UTC(y, m - 1, d, h.hour, 0, 0)),
+        // h.hour è ora locale (Europe/Rome): costruttore locale, no UTC.
+        ts: new Date(y, m - 1, d, h.hour, 0, 0),
         temp_c: h.temp_c, humidity_pct: h.humidity_pct,
         precip_mm: h.precip_mm, precip_prob: h.precip_prob, wind_speed_ms: h.wind_speed_ms,
       }));

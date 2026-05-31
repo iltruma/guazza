@@ -611,7 +611,10 @@ def test_hourly_profile_precip_zero_when_dry(seeded_db: Path) -> None:
     with DuckDBClient(db_path=seeded_db, read_only=True) as db:
         result = compute_hourly_profile(db, "casa_campi", "2026-05-19", 5.0, 20.0, 0.0)
     assert result is not None
-    assert all(r["precip_mm"] == 0.0 for r in result)
+    # Le ore di bordo del giorno locale (00-01 = 22-23Z del giorno prima) non sono
+    # seedate dall'helper e restano None; le ore con dati devono essere tutte secche.
+    present = [r["precip_mm"] for r in result if r["precip_mm"] is not None]
+    assert present and all(p == 0.0 for p in present)
 
 
 def test_hourly_profile_in_json(
@@ -661,7 +664,11 @@ def test_hourly_profile_has_humidity(seeded_db: Path) -> None:
         result = compute_hourly_profile(db, "casa_campi", "2026-05-19", 5.0, 20.0, 0.0)
     assert result is not None
     hum_values = [r["humidity_pct"] for r in result if r["humidity_pct"] is not None]
-    assert len(hum_values) == 24
+    # Giorno locale: il seed copre un solo giorno UTC, quindi le ore 00-01 locali
+    # (22-23Z del giorno prima) restano vuote. Ogni ora con dati ha però l'umidità.
+    temp_hours = [r for r in result if r["temp_c"] is not None]
+    assert hum_values
+    assert len(hum_values) == len(temp_hours)
     assert all(h >= 0 for h in hum_values)
 
 
