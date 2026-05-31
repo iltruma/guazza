@@ -727,13 +727,19 @@ def _extract_measures(measures: dict[str, Any]) -> dict[str, float | None]:
 
 
 def _measure_ts(measures: dict[str, Any]) -> datetime:
+    """Timestamp della misura come datetime UTC naive (convenzione DB observations).
+
+    L'epoch Netatmo è UTC. Restituirlo aware lo farebbe convertire in locale
+    all'insert DuckDB (session TZ Europe/Rome → +2h in estate); lo strippiamo a
+    naive UTC come SIR/ARPAT.
+    """
     for mdata in measures.values():
         for ts_str in mdata.get("res", {}):
             try:
-                return datetime.fromtimestamp(int(ts_str), tz=UTC)
+                return datetime.fromtimestamp(int(ts_str), tz=UTC).replace(tzinfo=None)
             except (ValueError, OSError):
                 pass
-    return datetime.now(tz=UTC)
+    return datetime.now(tz=UTC).replace(tzinfo=None)
 
 
 def _qc_range(temp: float | None, humidity: float | None) -> bool:

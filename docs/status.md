@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-31 (profilo orario ML su asse Europe/Rome)
+> Aggiornato: 2026-05-31 (fix timestamp Netatmo UTC + ts_sir/ts_netatmo nell'hero)
 
 ## Cosa è stato fatto
 
@@ -457,6 +457,25 @@ ARPAT NRT (`_parse_arpat_nrt`) usa `_ITALY_TZ.astimezone(UTC)`.
 Il frontend interpreta questi timestamp come UTC e li converte correttamente in ora locale.
 
 **Bug latente risolto**: `NOW()` in DuckDB è UTC; confrontarlo con timestamp naive CET causava finestre temporali sbagliate di 1-2h in estate (record validi esclusi o record scaduti inclusi in `get_current_conditions`, `get_current_air_quality`).
+
+### Fix timestamp Netatmo UTC + ts_sir/ts_netatmo nell'hero (2026-05-31)
+
+L'hero mostrava "dati SIR" 2h avanti (es. 12:44 invece di 10:44). Doppia causa.
+
+- **Bug Netatmo (`fetchers.py` `_measure_ts`)**: ritornava un datetime *aware UTC*;
+  all'insert nella colonna `TIMESTAMP` naive, DuckDB (session TZ `Europe/Rome`) lo
+  riconvertiva in locale strisciandolo → ogni osservazione Netatmo salvata +2h. Fix:
+  `…replace(tzinfo=None)` (UTC naive, come SIR/ARPAT). La nota precedente "Netatmo già
+  UTC naive" era valida solo con session TZ UTC. Le righe vecchie sbagliate escono dalla
+  finestra 3h entro poche ore (Netatmo non è usato per il training) → nessuna pulizia.
+- **`current.ts` (`output.py` `get_current_conditions`)**: il blend usava `MAX(ts)` su
+  SIR+Netatmo, pescando il +2h di Netatmo sotto l'etichetta "SIR". Ora il CTE tagga la
+  sorgente e il SELECT espone `ts_sir` = `MIN(ts)` sulle stazioni SIR (freshness onesta,
+  alcune aggiornano ogni 10', altre 15') e `ts_netatmo` = `MAX(ts)`. `ts` generico
+  mantenuto per i consumer esistenti. Entrambi `null` su fallback NWP.
+- **Frontend (`app.js`)**: l'hero mostra due etichette distinte, `dati SIR <ora>` e
+  `dati Netatmo <ora>`, ciascuna omessa se la sorgente non contribuisce.
+- Contract aggiornato (`current.ts_sir`, `current.ts_netatmo`). 280+ test verdi.
 
 ### Profilo orario ML su asse Europe/Rome (2026-05-31)
 

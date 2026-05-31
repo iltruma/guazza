@@ -18,7 +18,8 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
     "tmax_ci80": float | null, "tmax_ci90": float | null,
     "precip_ci80": float | null, "precip_ci90": float | null
   },
-  "current": {"ts": str, "temp_c": float, "humidity_pct": float, "precip_mm": float,
+  "current": {"ts": str, "ts_sir": str | null, "ts_netatmo": str | null,
+              "temp_c": float, "humidity_pct": float, "precip_mm": float,
               "wind_speed_ms": float | null, "wind_dir_deg": float | null,
               "dewpoint_c": float, "feels_like_c": float,
               "pressure_hpa": float | null,
@@ -52,6 +53,7 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 
 - `coverage_empirical_30d`: rolling 30 giorni predictions vs obs. `null` se < 10 campioni → dashboard mostra "calibrazione in corso".
 - `current` e `air_quality` sono `null` se non ci sono osservazioni recenti (rispettivamente realtime meteo e ARPAT).
+- `current.ts` è il timestamp più recente del blend (UTC, suffisso `Z`); `ts_sir` è il MIN tra le stazioni SIR (freshness onesta del dato osservativo), `ts_netatmo` il MAX dei moduli Netatmo. Entrambi `null` se la sorgente non contribuisce (es. fallback NWP, o location senza SIR realtime).
 - `current.pressure_hpa` è la pressione di superficie da Open-Meteo (non SIR) — può essere `null` se non ci sono dati NWP recenti.
 - `current.weather_code` è il codice WMO modale (moda tra modelli NWP nell'ora più vicina a now) — può essere `null` se non ci sono dati NWP recenti.
 - `days[].weather_code` è il codice WMO modale giornaliero (moda su 24h × N modelli, ultimo run per fonte) — `null` se assente.

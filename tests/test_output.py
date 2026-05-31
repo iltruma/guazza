@@ -722,6 +722,9 @@ def test_current_conditions_returns_data(seeded_db: Path) -> None:
 
     assert result is not None
     assert "ts" in result
+    # ts_sir popolato (dato da stazione SIR), ts_netatmo assente
+    assert result["ts_sir"] is not None
+    assert result["ts_netatmo"] is None
     assert result["temp_c"] == pytest.approx(18.5)
     assert result["humidity_pct"] == pytest.approx(65.0)
     assert result["precip_mm"] == pytest.approx(0.0)
@@ -826,6 +829,9 @@ def test_current_conditions_netatmo_blend(seeded_db: Path) -> None:
 
     assert result is not None
     assert result["temp_c"] == pytest.approx(19.0)
+    # ts_netatmo popolato, ts_sir assente (nessuna stazione SIR)
+    assert result["ts_netatmo"] is not None
+    assert result["ts_sir"] is None
 
 
 def test_dewpoint_known_value() -> None:

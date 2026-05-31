@@ -289,7 +289,9 @@ def test_extract_measures() -> None:
 def test_measure_ts() -> None:
     measures = {"02:aa": {"type": ["temperature"], "res": {str(_TS_UNIX): [18.0]}}}
     ts = _measure_ts(measures)
-    assert ts == datetime.fromtimestamp(_TS_UNIX, tz=UTC)
+    # UTC naive (convenzione DB): stesso istante dell'epoch, tzinfo strippato
+    assert ts.tzinfo is None
+    assert ts == datetime.fromtimestamp(_TS_UNIX, tz=UTC).replace(tzinfo=None)
 
 
 def test_qc_range_valid() -> None:

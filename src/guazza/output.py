@@ -510,7 +510,7 @@ def get_current_conditions(
     # recente nella finestra), poi blend con SUM(v*w)/SUM(w).
     blend_sql = """
         WITH obs AS (
-            SELECT o.ts, o.temp_c, o.humidity_pct, o.precip_mm,
+            SELECT 'sir' AS src, o.ts, o.temp_c, o.humidity_pct, o.precip_mm,
                    o.wind_speed_ms, o.wind_dir_deg, sw.weight AS w
             FROM observations o
             JOIN station_weights sw
@@ -523,7 +523,7 @@ def get_current_conditions(
 
             UNION ALL
 
-            SELECT o.ts, o.temp_c, o.humidity_pct, o.precip_mm,
+            SELECT 'netatmo' AS src, o.ts, o.temp_c, o.humidity_pct, o.precip_mm,
                    o.wind_speed_ms, o.wind_dir_deg, o.weight AS w
             FROM observations o
             WHERE o.source = 'netatmo'
@@ -534,7 +534,11 @@ def get_current_conditions(
             QUALIFY ROW_NUMBER() OVER (PARTITION BY o.station_id ORDER BY o.ts DESC) = 1
         )
         SELECT
-            strftime(MAX(ts), '%Y-%m-%dT%H:%M:%SZ')                                      AS ts,
+            -- ts_sir: MIN tra le stazioni SIR = dato più datato che contribuisce
+            -- (freshness onesta). ts_netatmo: MAX (i moduli sono indipendenti).
+            strftime(MIN(ts) FILTER (WHERE src = 'sir'),     '%Y-%m-%dT%H:%M:%SZ') AS ts_sir,
+            strftime(MAX(ts) FILTER (WHERE src = 'netatmo'), '%Y-%m-%dT%H:%M:%SZ') AS ts_netatmo,
+            strftime(MAX(ts), '%Y-%m-%dT%H:%M:%SZ')                                AS ts,
             ROUND(SUM(temp_c * w)       / NULLIF(SUM(CASE WHEN temp_c       IS NOT NULL THEN w ELSE 0 END), 0), 1) AS temp_c,
             ROUND(SUM(humidity_pct * w) / NULLIF(SUM(CASE WHEN humidity_pct IS NOT NULL THEN w ELSE 0 END), 0), 0) AS humidity_pct,
             ROUND(SUM(precip_mm * w)    / NULLIF(SUM(CASE WHEN precip_mm    IS NOT NULL THEN w ELSE 0 END), 0), 2) AS precip_mm,
@@ -545,9 +549,10 @@ def get_current_conditions(
     row = db.execute(blend_sql, [location_id, location_id]).fetchone()
 
     from_nwp = False
-    if row is None or row[1] is None:
+    if row is None or row[3] is None:
         # Fallback NWP: nessuna osservazione realtime utile. Media tra modelli
         # dell'ora forecast più vicina a now (ultimo run per sorgente).
+        # ts_sir/ts_netatmo NULL: i dati non vengono da stazioni osservative.
         fallback_sql = """
             WITH f AS (
                 SELECT temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg, ts_valid
@@ -562,6 +567,8 @@ def get_current_conditions(
                 ) = 1
             )
             SELECT
+                NULL                                          AS ts_sir,
+                NULL                                          AS ts_netatmo,
                 strftime(MAX(ts_valid), '%Y-%m-%dT%H:%M:%SZ') AS ts,
                 ROUND(AVG(temp_c), 1)                        AS temp_c,
                 ROUND(AVG(humidity_pct), 0)                  AS humidity_pct,
@@ -573,10 +580,10 @@ def get_current_conditions(
         row = db.execute(fallback_sql, [location_id]).fetchone()
         from_nwp = True
 
-    if row is None or row[1] is None:
+    if row is None or row[3] is None:
         return None
 
-    ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg = row
+    ts_sir, ts_netatmo, ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg = row
     if from_nwp:
         logger.debug(f"[{location_id}] current da fallback NWP (nessuna obs realtime)")
 
@@ -618,6 +625,8 @@ def get_current_conditions(
 
     return {
         "ts":            ts,
+        "ts_sir":        ts_sir,
+        "ts_netatmo":    ts_netatmo,
         "temp_c":        t,
         "humidity_pct":  rh,
         "precip_mm":     float(precip_mm) if precip_mm is not None else None,

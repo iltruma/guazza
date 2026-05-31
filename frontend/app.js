@@ -427,9 +427,11 @@ function renderHero(data) {
   const condEl = document.getElementById('hero-condition');
   const condText = cond.text;
   if (condEl) {
+    const fmtHm = ts => new Date(ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     const meta = [
       current?.feels_like_c != null ? `percepita ${current.feels_like_c.toFixed(1)}°` : null,
-      current?.ts ? `dati SIR ${new Date(current.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : null,
+      current?.ts_sir ? `dati SIR ${fmtHm(current.ts_sir)}` : null,
+      current?.ts_netatmo ? `dati Netatmo ${fmtHm(current.ts_netatmo)}` : null,
     ].filter(Boolean).join(' · ');
     condEl.innerHTML = `<span>${escHtml(condText)}</span>${meta ? `<span class="g-hero__condition-meta">${escHtml(meta)}</span>` : ''}`;
   }
