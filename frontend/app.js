@@ -475,7 +475,7 @@ function renderHeroIndicators(todayDay) {
   if (!el) return;
   if (!todayDay) { el.innerHTML = ''; return; }
 
-  el.innerHTML = Object.entries(todayDay.indicators).map(([id, ind], i) => {
+  el.innerHTML = '<span class="g-indicators-kicker">Oggi</span>' + Object.entries(todayDay.indicators).map(([id, ind], i) => {
     const meta    = INDICATOR_META[id] ?? { label: id, icon: '?' };
     const verdict = ind.verdict ?? 'giallo';
     const verdCap = verdict.charAt(0).toUpperCase() + verdict.slice(1);
@@ -723,7 +723,7 @@ function renderDayDetail(day) {
 function renderIndicatorChips(indicators) {
   const el = document.getElementById('detail-indicators');
   if (!el) return;
-  el.innerHTML = Object.entries(indicators).map(([id, ind], i) => {
+  el.innerHTML = '<span class="g-indicators-kicker">Giorno selezionato</span>' + Object.entries(indicators).map(([id, ind], i) => {
     const meta    = INDICATOR_META[id] ?? { label: id, icon: '?' };
     const verdict = ind.verdict ?? 'giallo';
     const verdCap = verdict.charAt(0).toUpperCase() + verdict.slice(1);
