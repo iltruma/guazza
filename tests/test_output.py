@@ -861,6 +861,37 @@ def test_current_conditions_excludes_netatmo_qc_fail(seeded_db: Path) -> None:
     assert result["temp_c"] == pytest.approx(19.0)
 
 
+def test_current_conditions_netatmo_sublinear_weight(seeded_db: Path) -> None:
+    """Il peso aggregato Netatmo cresce come sqrt(N), non come N: la densità di
+    moduli non sommerge le stazioni SIR validate."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    # 1 SIR a 10°C (peso 1.0) + 4 moduli Netatmo a 20°C (peso 1.0 ciascuno).
+    con.execute("""
+        INSERT INTO observations (source, station_id, location_id, ts, granularity, temp_c)
+        VALUES ('sir_toscana', 'ST_A', 'casa_campi', ?, 'realtime', 10.0)
+    """, [now - timedelta(minutes=5)])
+    _seed_sir_weight(con, "ST_A", "casa_campi", weight=1.0)
+    con.executemany("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, weight, qc_pass)
+        VALUES ('netatmo', ?, 'casa_campi', ?, 'realtime', 20.0, 1.0, TRUE)
+    """, [[f"70:ee:50:{i:02x}", now - timedelta(minutes=5)] for i in range(4)])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    # Senza scalatura: (10 + 20*4)/(1+4) = 18.0.
+    # Con 1/sqrt(4)=0.5: (10 + 20*0.5*4)/(1 + 0.5*4) = 50/3 = 16.67.
+    assert result["temp_c"] == pytest.approx(50.0 / 3.0, abs=0.05)
+
+
 def test_dewpoint_known_value() -> None:
     """T=20°C, RH=50% → Td ≈ 9.3°C (valore di riferimento Magnus)."""
     assert _dewpoint(20.0, 50.0) == pytest.approx(9.3, abs=0.2)

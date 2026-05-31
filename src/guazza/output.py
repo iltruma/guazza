@@ -509,7 +509,20 @@ def get_current_conditions(
     # Netatmo pesato via observations.weight. Una lettura per stazione (la più
     # recente nella finestra), poi blend con SUM(v*w)/SUM(w).
     blend_sql = """
-        WITH obs AS (
+        WITH netatmo_latest AS (
+            -- Una lettura per modulo (la più recente nella finestra), già filtrata QC.
+            SELECT o.ts, o.temp_c, o.humidity_pct, o.precip_mm,
+                   o.wind_speed_ms, o.wind_dir_deg, o.weight
+            FROM observations o
+            WHERE o.source = 'netatmo'
+              AND o.location_id = ?
+              AND o.granularity = 'realtime'
+              AND o.weight IS NOT NULL
+              AND o.qc_pass
+              AND o.ts >= NOW() - INTERVAL 3 HOURS
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY o.station_id ORDER BY o.ts DESC) = 1
+        ),
+        obs AS (
             SELECT 'sir' AS src, o.ts, o.temp_c, o.humidity_pct, o.precip_mm,
                    o.wind_speed_ms, o.wind_dir_deg, sw.weight AS w
             FROM observations o
@@ -523,16 +536,14 @@ def get_current_conditions(
 
             UNION ALL
 
-            SELECT 'netatmo' AS src, o.ts, o.temp_c, o.humidity_pct, o.precip_mm,
-                   o.wind_speed_ms, o.wind_dir_deg, o.weight AS w
-            FROM observations o
-            WHERE o.source = 'netatmo'
-              AND o.location_id = ?
-              AND o.granularity = 'realtime'
-              AND o.weight IS NOT NULL
-              AND o.qc_pass
-              AND o.ts >= NOW() - INTERVAL 3 HOURS
-            QUALIFY ROW_NUMBER() OVER (PARTITION BY o.station_id ORDER BY o.ts DESC) = 1
+            -- Crescita sublineare del peso aggregato Netatmo: N sensori consumer
+            -- indipendenti riducono la varianza come sqrt(N), non N. Dividere ogni
+            -- peso per sqrt(N) impedisce che la mera densità di moduli (es. 130 a
+            -- Firenze urbana) sommerga le stazioni SIR validate per conteggio.
+            SELECT 'netatmo' AS src, ts, temp_c, humidity_pct, precip_mm,
+                   wind_speed_ms, wind_dir_deg,
+                   weight / sqrt(COUNT(*) OVER ()) AS w
+            FROM netatmo_latest
         )
         SELECT
             -- ts_sir: MIN tra le stazioni SIR = dato più datato che contribuisce
