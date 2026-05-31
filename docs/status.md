@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-31 (v0.8.0 — blend realtime √N + qc_pass, redesign grafici daily/weekly)
+> Aggiornato: 2026-05-31 (v0.8.0 + rifinitura frontend critique/audit: palette a token, a11y, rem)
 
 ## Cosa è stato fatto
 
@@ -496,6 +496,24 @@ a `Europe/Rome`.
   intraday in `renderDayDetail`). `buildChartPoints`/`buildWeeklyPoints`: `h.hour` è ora
   locale → costruttore `new Date(...)` locale invece di `Date.UTC`.
 - 280 test verdi, ruff + mypy OK.
+
+### Rifinitura frontend — critique + audit (2026-05-31)
+
+Pass di review guidata (impeccable critique → 30→33/40; audit tecnico → 17/20) con
+remediation. Solo frontend, nessun tocco al contract JSON.
+
+- **Palette grafici → token**: `--chart-temp/precip/wind/grid/axis` in `:root` come unica
+  fonte (legenda/tooltip via `var()`, canvas via `getComputedStyle`). Rimossi il secondo
+  blu `#2563EB` e lo slate degli assi; documentato in `DESIGN.md §Chart series`.
+- **A11y / responsive**: scala font px → `rem` (resize testo, WCAG 1.4.4); `<h1>` sul
+  brand; `aria-label` sui canvas; `aria-hidden` sulle icone decorative; `aria-current`
+  sul tab attivo; touch target model-switch/pill a 44px su pointer coarse; `--text-3` a
+  0.55 per il contrasto.
+- **UX / pulizia**: griglie indicatori hero/dettaglio differenziate ("Oggi" / "Giorno
+  selezionato"); copy coverage e label model-switch chiarite; rimosso CSS morto; blur
+  header sticky a 12px.
+- 🟡 Lasciati di proposito: transition su `width`/`left` (guadagno nullo, rischio
+  regressione) e supporto `forced-colors`/`prefers-contrast` (non testabile alla cieca).
 
 ### Baseline backtest D+0 — de-risking della tesi (2026-05-29)
 

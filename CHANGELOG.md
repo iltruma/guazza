@@ -8,6 +8,21 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Changed
+- Frontend: palette dei grafici spostata su token `--chart-*` in `:root` come unica
+  fonte (legenda/tooltip via `var()`, canvas via `getComputedStyle`); eliminato il
+  secondo blu `#2563EB` e lo slate degli assi. Documentata in `DESIGN.md §Chart series`.
+- Frontend: scala tipografica migrata da px a `rem` (rispetto del resize testo del
+  browser, WCAG 1.4.4).
+
+### Fixed
+- Frontend a11y: aggiunto `<h1>` sul brand, `aria-label` sui canvas, `aria-hidden` sulle
+  icone decorative, `aria-current` sul tab attivo; touch target di model-switch e pill a
+  44px su pointer coarse; contrasto `--text-3` alzato a 0.55.
+- Frontend UX: griglie indicatori hero/dettaglio differenziate ("Oggi" / "Giorno
+  selezionato"); copy coverage e label model-switch chiarite (tooltip esteso); rimosso
+  CSS morto (`live-badge`, keyframe `live-pulse`); blur header sticky ridotto a 12px.
+
 ## [0.8.0] — 2026-05-31
 
 ### Added
