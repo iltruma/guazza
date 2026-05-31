@@ -789,8 +789,8 @@ function renderNwpList(day) {
 
   const thead = `<thead><tr>
     <th>Modello</th>
-    <th>T min</th>
     <th>T max</th>
+    <th>T min</th>
     <th>Precip TOT</th>
     <th>Um. Media</th>
     <th>Vento Max</th>
@@ -805,8 +805,8 @@ function renderNwpList(day) {
 
   const guazzaRow = `<tr class="g-nwp__row g-nwp__row--guazza" data-source="guazza">
     <td><span class="g-nwp__name g-nwp__name--guazza">★ Guazza ML</span></td>
-    <td>${gTmin != null ? gTmin.toFixed(1)+'°' : '—'}</td>
     <td>${gTmax != null ? gTmax.toFixed(1)+'°' : '—'}</td>
+    <td>${gTmin != null ? gTmin.toFixed(1)+'°' : '—'}</td>
     <td>${gPrec != null ? gPrec.toFixed(1)+' mm' : '—'}</td>
     <td>${gHum  != null ? gHum.toFixed(0)+'%'                   : '—'}</td>
     <td>${gWind != null ? (gWind * 3.6).toFixed(0)+' km/h'      : '—'}</td>
@@ -827,8 +827,8 @@ function renderNwpList(day) {
         <span class="g-nwp__name">${escHtml(m.label)}</span>
         <span class="g-nwp__run">${fmtLastRun(m.last_run)}</span>
       </td>
-      <td class="g-nwp__val">${m.tmin_c != null ? m.tmin_c.toFixed(1)+'°' : '—'}${dTmin.text ? `<span class="g-delta ${dTmin.cls}">${dTmin.text}</span>` : ''}</td>
       <td class="g-nwp__val">${m.tmax_c != null ? m.tmax_c.toFixed(1)+'°' : '—'}${dTmax.text ? `<span class="g-delta ${dTmax.cls}">${dTmax.text}</span>` : ''}</td>
+      <td class="g-nwp__val">${m.tmin_c != null ? m.tmin_c.toFixed(1)+'°' : '—'}${dTmin.text ? `<span class="g-delta ${dTmin.cls}">${dTmin.text}</span>` : ''}</td>
       <td class="g-nwp__val">${m.precip_mm != null ? m.precip_mm.toFixed(1)+' mm' : '—'}${dPrec.text ? `<span class="g-delta ${dPrec.cls}">${dPrec.text}</span>` : ''}</td>
       <td class="g-nwp__val">${hum}</td>
       <td class="g-nwp__val">${wind}</td>
