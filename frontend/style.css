@@ -72,7 +72,7 @@ body {
   background: var(--surface-0);
   color: var(--text-1);
   font-family: var(--ff-sans);
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   min-height: 100svh;
@@ -138,7 +138,9 @@ img.emoji {
   z-index: 50;
   background: rgba(12,12,12,0.88);
   border-bottom: 1px solid var(--border-1);
-  backdrop-filter: blur(20px);
+  /* blur 12 anziché 20: il kernel è più economico in repaint sullo scroll a
+     parità di resa visiva (header sticky a tutta larghezza). */
+  backdrop-filter: blur(12px);
 }
 
 .g-header__top {
@@ -162,7 +164,7 @@ img.emoji {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text-1);
@@ -171,7 +173,7 @@ img.emoji {
 
 .g-header__meta {
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
@@ -183,7 +185,7 @@ img.emoji {
   background: var(--giallo-bg);
   border: 1px solid var(--giallo-bd);
   color: var(--giallo);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-family: var(--ff-mono);
   font-weight: 600;
   animation: stale-pulse 2s ease-in-out infinite;
@@ -216,7 +218,7 @@ img.emoji {
   align-items: center;
   padding: 5px 12px;
   border-radius: var(--r-md);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-family: var(--ff-mono);
   font-weight: 500;
   white-space: nowrap;
@@ -301,10 +303,10 @@ img.emoji {
   padding: 16px 20px;
   color: var(--rosso);
   font-family: var(--ff-mono);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .g-error__msg { font-weight: 600; }
-.g-error__hint { font-size: 11px; margin-top: 4px; color: var(--text-3); }
+.g-error__hint { font-size: 0.6875rem; margin-top: 4px; color: var(--text-3); }
 
 /* =============================================================
    HERO BAND
@@ -345,7 +347,7 @@ img.emoji {
 }
 
 .g-hero__loc {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-family: var(--ff-mono);
   font-weight: 600;
   text-transform: uppercase;
@@ -405,7 +407,7 @@ img.emoji {
 
 .g-hero__condition-text > span:first-child {
   font-family: var(--ff-sans);
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 500;
   color: var(--text-1);
   line-height: 1.2;
@@ -413,7 +415,7 @@ img.emoji {
 
 .g-hero__condition-meta {
   font-family: var(--ff-mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
@@ -476,7 +478,7 @@ img.emoji {
 }
 
 .g-hero__stat-icon {
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1;
   margin-bottom: 1px;
 }
@@ -487,7 +489,7 @@ img.emoji {
 }
 
 .g-hero__stat-lbl {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.10em;
@@ -499,7 +501,7 @@ img.emoji {
 }
 
 .g-hero__stat-val {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-1);
   white-space: nowrap;
@@ -560,7 +562,7 @@ img.emoji {
 
 .g-aq-section__source {
   font-family: var(--ff-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.10em;
@@ -592,7 +594,7 @@ img.emoji {
 
 .g-aq-cell__label {
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -601,7 +603,7 @@ img.emoji {
 
 .g-aq-cell__val {
   font-family: var(--ff-mono);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text-1);
@@ -614,7 +616,7 @@ img.emoji {
 
 .g-aq-cell__unit {
   font-family: var(--ff-mono);
-  font-size: 8px;
+  font-size: 0.5rem;
   color: var(--text-3);
 }
 
@@ -644,7 +646,7 @@ img.emoji {
   grid-column: 1;
   grid-row: 1 / span 2;
   align-self: center;
-  font-size: 18px;
+  font-size: 1.125rem;
   line-height: 1;
 }
 .g-pill__icon img.emoji {
@@ -656,7 +658,7 @@ img.emoji {
   grid-column: 2;
   grid-row: 1;
   font-family: var(--ff-sans);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 500;
   color: var(--text-1);
 }
@@ -664,7 +666,7 @@ img.emoji {
   grid-column: 2;
   grid-row: 2;
   font-family: var(--ff-mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.01em;
 }
@@ -759,7 +761,7 @@ img.emoji {
 
 .g-strip__label {
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.10em;
@@ -771,7 +773,7 @@ img.emoji {
 
 .g-strip__date {
   font-family: var(--ff-mono);
-  font-size: 9px;
+  font-size: 0.5625rem;
   color: var(--text-3);
   text-align: center;
   line-height: 1;
@@ -790,7 +792,7 @@ img.emoji {
 
 .g-strip__tmax {
   font-family: var(--ff-sans);
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--text-1);
   font-variant-numeric: tabular-nums;
@@ -799,7 +801,7 @@ img.emoji {
 
 .g-strip__tmin {
   font-family: var(--ff-sans);
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -825,7 +827,7 @@ img.emoji {
 
 .g-strip__precip-val {
   font-family: var(--ff-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -909,7 +911,7 @@ img.emoji {
 
 .g-detail__lead {
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: var(--r-sm);
@@ -920,7 +922,7 @@ img.emoji {
 
 .g-detail__emessa {
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-3);
 }
 
@@ -947,7 +949,7 @@ img.emoji {
 
 .g-detail__subtitle {
   font-family: var(--ff-mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-3);
   text-transform: capitalize;
 }
@@ -985,7 +987,7 @@ img.emoji {
 .g-metric__label {
   display: block;
   font-family: var(--ff-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -1048,7 +1050,7 @@ img.emoji {
 .g-indicators-kicker {
   grid-column: 1 / -1;
   font-family: var(--ff-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -1106,13 +1108,13 @@ img.emoji {
   align-items: center;
   margin-top: 6px;
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   color: var(--text-3);
 }
 
 .g-ci-bar__note {
-  font-size: 9px;
+  font-size: 0.5625rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-3);
@@ -1128,7 +1130,7 @@ img.emoji {
 
 .g-section__kicker {
   font-family: var(--ff-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.14em;
@@ -1145,13 +1147,13 @@ img.emoji {
 .g-nwp__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-family: var(--ff-mono);
   font-variant-numeric: tabular-nums;
 }
 
 .g-nwp__table th {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.10em;
@@ -1196,11 +1198,11 @@ img.emoji {
 .g-nwp__row--active:hover td { background: var(--accent-soft); }
 .g-nwp__row--guazza.g-nwp__row--active td { background: var(--accent-dim); }
 
-.g-nwp__name { font-family: var(--ff-sans); font-size: 13px; }
+.g-nwp__name { font-family: var(--ff-sans); font-size: 0.8125rem; }
 .g-nwp__name--guazza { color: var(--accent); }
 .g-nwp__run {
   display: block;
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--text-3);
   margin-top: 2px;
   font-family: var(--ff-mono);
@@ -1210,7 +1212,7 @@ img.emoji {
 
 .g-delta {
   display: inline-block;
-  font-size: 10px;
+  font-size: 0.625rem;
   padding: 1px 5px;
   border-radius: var(--r-sm);
   margin-left: 4px;
@@ -1262,7 +1264,7 @@ img.emoji {
   align-items: center;
   gap: 5px;
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-3);
 }
 .g-chart-legend__dot {
@@ -1296,7 +1298,7 @@ img.emoji {
   z-index: 1;
   padding: 4px 10px;
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: var(--text-3);
   border-radius: var(--r-sm);
@@ -1305,6 +1307,12 @@ img.emoji {
 }
 .g-model-switch__btn--active { color: var(--accent); font-weight: 600; }
 .g-model-switch__btn:hover:not(.g-model-switch__btn--active) { color: var(--text-2); }
+
+/* Touch target: i controlli compatti su puntatore grosso vanno portati a 44px */
+@media (pointer: coarse) {
+  .g-model-switch__btn { min-height: 44px; display: inline-flex; align-items: center; }
+  .g-pill { min-height: 44px; }
+}
 
 /* Chart canvas wrapper */
 .g-chart-wrap {
@@ -1453,7 +1461,7 @@ img.emoji {
 
 .g-radar__label {
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -1461,7 +1469,7 @@ img.emoji {
 }
 
 .g-radar__frame-badge {
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 700;
   padding: 2px 6px;
   border-radius: var(--r-sm);
@@ -1486,7 +1494,7 @@ img.emoji {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 700;
   line-height: 1;
   transition: background var(--dur-fast), color var(--dur-fast);
@@ -1542,7 +1550,7 @@ img.emoji {
 
 .g-radar__time {
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   color: var(--text-3);
   white-space: nowrap;
@@ -1596,7 +1604,7 @@ img.emoji {
 
 .g-coverage__calibrating {
   font-family: var(--ff-mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--accent);
   background: var(--accent-soft);
   border: 1px solid rgba(107,127,212,0.20);
@@ -1607,7 +1615,7 @@ img.emoji {
 .g-coverage__kicker {
   display: block;
   font-family: var(--ff-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -1620,7 +1628,7 @@ img.emoji {
   flex-wrap: wrap;
   gap: 6px 16px;
   font-family: var(--ff-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
@@ -1637,11 +1645,11 @@ img.emoji {
   background: var(--surface-2);
   border: 1px solid var(--border-1);
   font-family: var(--ff-mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
   color: var(--text-2);
 }
-.g-sun-pill span:first-child { font-size: 13px; }
+.g-sun-pill span:first-child { font-size: 0.8125rem; }
 
 /* =============================================================
    INDICATOR TOOLTIP (global)
@@ -1653,7 +1661,7 @@ img.emoji {
   max-width: 220px;
   padding: 9px 12px;
   border-radius: var(--r-md);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-family: var(--ff-mono);
   color: var(--text-2);
   background: rgba(12,12,12,0.96);

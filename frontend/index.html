@@ -21,10 +21,10 @@
 
   <header class="g-header" id="g-header">
     <div class="g-header__top">
-      <div class="g-header__brand">
-        <span>🌧️</span>
+      <h1 class="g-header__brand">
+        <span aria-hidden="true">🌧️</span>
         <span>Guazza</span>
-      </div>
+      </h1>
       <div id="header-meta" class="g-header__meta"></div>
     </div>
     <div class="g-tabs-wrap">
@@ -205,7 +205,7 @@
 
             <div class="g-chart-scroll">
               <div class="g-chart-wrap g-chart-wrap--icons g-chart-wrap--scroll">
-                <canvas id="meteo-chart"></canvas>
+                <canvas id="meteo-chart" role="img" aria-label="Profilo orario del giorno selezionato: temperatura, precipitazione e vento. Valori in dettaglio nella tabella Confronto modelli."></canvas>
                 <div id="chart-tooltip" class="g-chart-tooltip"></div>
                 <div id="meteo-chart-icons" class="g-chart-icons"></div>
               </div>
@@ -230,7 +230,7 @@
     <!-- ③ GRAFICO SETTIMANALE -->
     <section id="chart-weekly-section" class="g-card hidden">
       <div class="g-card__header">
-        <span class="g-section__kicker" style="padding:0;font-size:10px">7 giorni</span>
+        <span class="g-section__kicker" style="padding:0;font-size:0.625rem">7 giorni</span>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
           <div id="weekly-model-switch" class="g-model-switch">
             <span id="weekly-model-pill" class="g-model-switch__pill"></span>
@@ -250,7 +250,7 @@
       </div>
       <div class="g-chart-scroll">
         <div class="g-chart-wrap g-chart-wrap--icons g-chart-wrap--scroll g-chart-wrap--weekly">
-          <canvas id="multiday-chart"></canvas>
+          <canvas id="multiday-chart" role="img" aria-label="Profilo a 7 giorni: temperatura, precipitazione e vento."></canvas>
           <div id="chart-weekly-tooltip" class="g-chart-tooltip"></div>
           <div id="multiday-chart-icons" class="g-chart-icons"></div>
         </div>

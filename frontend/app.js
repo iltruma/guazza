@@ -129,7 +129,7 @@ const _weatherSvgCache = new Map();  // iconName -> Promise<string> (markup SVG 
 // Placeholder sincrono; l'SVG inline viene iniettato dopo da hydrateWeatherIcons.
 // Serve l'inline (non <img>) per poter riscrivere il viewBox e togliere il margine.
 function weatherIconHtml(iconName, emojiFallback, cls) {
-  return `<span class="g-wicon ${cls}" data-wicon="${iconName}" data-wicon-fb="${emojiFallback}"></span>`;
+  return `<span class="g-wicon ${cls}" data-wicon="${iconName}" data-wicon-fb="${emojiFallback}" aria-hidden="true"></span>`;
 }
 
 function loadWeatherSvg(iconName) {
@@ -324,7 +324,7 @@ function renderTabs(activeLoc) {
   const nav = document.getElementById('tabs');
   nav.innerHTML = LOCATIONS.map(l => {
     const active = l.id === activeLoc;
-    return `<button class="g-tab${active ? ' g-tab--active' : ''}" data-loc="${l.id}">${escHtml(l.label)}</button>`;
+    return `<button class="g-tab${active ? ' g-tab--active' : ''}" data-loc="${l.id}"${active ? ' aria-current="page"' : ''}>${escHtml(l.label)}</button>`;
   }).join('');
 
   nav.querySelectorAll('[data-loc]').forEach(btn => {
@@ -1109,14 +1109,14 @@ function _makeTooltipHandler(elId) {
 
     const row = (dotColor, label, val) =>
       `<div style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:3px 0">
-         <span style="display:flex;align-items:center;gap:6px;font-size:11px;font-family:var(--ff-mono);color:var(--text-3)"><span style="width:6px;height:6px;border-radius:50%;background:${dotColor};flex-shrink:0;display:inline-block"></span>${label}</span>
-         <span style="font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--ff-mono);color:var(--text-1)">${val}</span>
+         <span style="display:flex;align-items:center;gap:6px;font-size:0.6875rem;font-family:var(--ff-mono);color:var(--text-3)"><span style="width:6px;height:6px;border-radius:50%;background:${dotColor};flex-shrink:0;display:inline-block"></span>${label}</span>
+         <span style="font-size:0.6875rem;font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--ff-mono);color:var(--text-1)">${val}</span>
        </div>`;
 
     el.innerHTML = `
       <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border-1)">
-        <span style="font-size:10px;font-family:var(--ff-mono);text-transform:capitalize;color:var(--text-3)">${date}</span>
-        <span style="font-size:13px;font-weight:700;font-family:var(--ff-mono);font-variant-numeric:tabular-nums;color:var(--text-1)">${time}</span>
+        <span style="font-size:0.625rem;font-family:var(--ff-mono);text-transform:capitalize;color:var(--text-3)">${date}</span>
+        <span style="font-size:0.8125rem;font-weight:700;font-family:var(--ff-mono);font-variant-numeric:tabular-nums;color:var(--text-1)">${time}</span>
       </div>
       ${temp ? row('var(--chart-temp)', 'Temp',    `${temp.raw.y.toFixed(1)}°C`)   : ''}
       ${prec && prec.raw.y > 0.05 ? row('var(--chart-precip)', 'Precip', `${prec.raw.y.toFixed(1)} mm`) : ''}
