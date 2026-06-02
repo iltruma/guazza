@@ -53,6 +53,7 @@ from guazza.fetchers import (  # noqa: E402
     fetch_sir_historical,
     fetch_sir_stations_realtime,
 )
+from guazza.netatmo_daily import aggregate_netatmo_daily  # noqa: E402
 from guazza.storage import DuckDBClient  # noqa: E402
 
 # ── Costanti ─────────────────────────────────────────────────────────────────
@@ -463,6 +464,12 @@ def cmd_daily(
                         if records:
                             om_total += db.upsert_forecasts(records)
                 logger.info(f"daily Open-Meteo: {om_total} record")
+
+            # Accumulo Netatmo daily del giorno: aggrega il realtime già in DB
+            # (nessuna rete). Non entra nel training, storico per Sprint 9+.
+            local_day = datetime.strptime(date, "%Y-%m-%d").date()
+            nd = aggregate_netatmo_daily(db, target_day=local_day)
+            logger.info(f"daily Netatmo: {nd['rows']} record")
 
     except Exception as e:
         logger.error(f"daily fallito: {e}")

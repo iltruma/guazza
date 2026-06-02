@@ -11,6 +11,7 @@ const LOCATIONS = [
   { id: 'lavoro_madda',  label: 'Lav. Madda',  lat: 43.88,  lon: 11.09  },
   { id: 'casa_cesto',    label: 'Casa Cesto',  lat: 43.59,  lon: 11.46  },
   { id: 'casa_nicco',    label: 'Casa Nicco',  lat: 43.791, lon: 11.219 },
+  { id: 'casa_cercina',  label: 'Casa Cercina', lat: 43.884, lon: 11.277 },
 ];
 
 const INDICATOR_META = {

@@ -195,6 +195,52 @@ locations:
       Termo pesato su Orto Botanico (TOS03001097) ΔQ+8m come prima scelta per temperatura.
       Nessuna stazione idrometrica assegnata.
 
+  casa_cercina:
+    upstream_pluvio_stations:
+      - TOS11000503   # Vaiano acquedotto     ~14km NW
+      - TOS01001273   # Fattoria Iavello      ~12km NW  Montemurlo
+      - TOS11000093   # Santomato             ~15km NW  Pistoia
+      - TOS11000077   # Albano                ~28km W   Monsummano
+    label: "Casa Cercina - Sesto Fiorentino"
+    address: "Sesto Fiorentino (FI)"
+    lat: 43.884
+    lon: 11.277
+    elevation_m: 311
+    # SIR primaria/termo: Vaiano — 13.7km, 322m, ΔQ=+11m.
+    # Unica SIR alla quota di Cercina (Monte Morello). Le NWP Open-Meteo sono già
+    # downscalate a 311m: ancorare a una SIR di pianura (ΔQ -200/-280m) sarebbe un
+    # train/serve skew in quota. Caveat: Vaiano è in valle Bisenzio (NW), regime
+    # notturno diverso (fondovalle con pooling freddo vs thermal belt di mezza
+    # costa) — residuo da caratterizzare con Netatmo (Sprint 9+).
+    sir_station_id: TOS11000503
+    sir_stations:
+      termo:  [TOS11000503]
+      # Vaiano 13.7km 322m ΔQ+11m — sola opzione SIR alla quota giusta.
+      # Stazioni di pianura escluse dal termo: ΔQ -200/-280m (vedi nota sopra).
+      pluvio: [TOS01004784, TOS01001096, TOS01001225, TOS03001097]
+      # Calenzano 9.0km | Firenze Univ 9.7km | Case Passerini 11.3km | Orto Botanico 11.7km
+      anemo:  [TOS01001096, TOS01001225, TOS03001099, TOS11000503]
+      # Firenze Univ 9.7km | Case Passerini 11.3km | Boboli 13.7km | Vaiano 13.7km
+      igro:   [TOS11000503, TOS03001099]
+      # Vaiano (quota) | Boboli (pianura alta) — umidità collina ≠ pianura
+    arpat_station_id: FI-MOSSE
+    arpat_stations:
+      - id: FI-MOSSE
+        weight: 0.6    # NW Firenze, urbana
+      - id: FI-LAVAGNINI
+        weight: 0.4    # N Firenze
+    arpat_zone: "agglomerato_firenze"
+    extras:
+      - aria_qualita
+    notes: >
+      Sesto Fiorentino, versante S di Monte Morello, 311m a mezza costa sul
+      catino fiorentino. Microclima da thermal belt: nelle notti serene l'aria
+      fredda drena in pianura e la mezza costa resta più calda — le NWP non lo
+      vedono. SIR termo: Vaiano (TOS11000503) 13.7km ΔQ+11m, unico target
+      validato alla quota giusta (vedi nota sir_station_id). Pluvio/anemo su
+      vicine di pianura (meno quota-sensibili). Nessuna idrometrica (collina).
+      Qualità aria approssimata dal catino urbano (FI-MOSSE/FI-LAVAGNINI).
+
 # ── Metadati globali ────────────────────────────────────────────────────────
 metadata:
   coordinate_source: "geocoding manuale"

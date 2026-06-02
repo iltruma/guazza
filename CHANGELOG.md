@@ -8,6 +8,19 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Added
+- Sesta location `casa_cercina` (Sesto Fiorentino, versante S di Monte Morello,
+  311m). Termo ancorato a Vaiano (TOS11000503, 322m, ΔQ+11m): unica SIR alla quota
+  di Cercina. Le NWP Open-Meteo sono già downscalate a 311m, quindi un target SIR di
+  pianura (ΔQ -200/-280m) introdurrebbe un train/serve skew in quota (vedi D-018).
+  Pluvio/anemo su vicine di pianura, nessuna idrometrica, ARPAT FI-MOSSE/FI-LAVAGNINI.
+- Accumulo Netatmo daily forward-looking (`netatmo_daily.py`, job
+  `guazza.jobs.netatmo_daily`): aggrega il realtime Netatmo in righe
+  `granularity='daily'` (tmin/tmax/humidity; precip esclusa per overlap `rain_1h`)
+  sul giorno locale Europe/Rome. Non entra nel training (`features.py` resta
+  `source='sir_toscana'`); costruisce lo storico per caratterizzare in Sprint 9+
+  l'offset SIR-pianura ↔ microclima (vedi D-018). Agganciato al job `daily`.
+
 ### Changed
 - Frontend: palette dei grafici spostata su token `--chart-*` in `:root` come unica
   fonte (legenda/tooltip via `var()`, canvas via `getComputedStyle`); eliminato il

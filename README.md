@@ -42,7 +42,7 @@ DB_PATH=/tmp/guazza_test.duckdb uv run python -m guazza.storage verify-schema
 ```
 guazza/
 ├── config/
-│   ├── locations.yaml      # 5 location con stazioni SIR e upstream_pluvio_stations
+│   ├── locations.yaml      # 6 location con stazioni SIR e upstream_pluvio_stations
 │   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio ring); stazioni ARPAT qualità aria in locations.yaml (arpat_stations)
 │   ├── indicators.yaml     # 8 indicatori DLE con soglie e costi asimmetrici
 │   ├── arpat_levels.yaml   # Scale qualità aria D.Lgs.155/2010
@@ -124,11 +124,15 @@ Vedi `docs/decisions.md` per motivazioni complete.
 # Backfill storico one-shot (SIR + Open-Meteo 2022→oggi)
 uv run python -m guazza.jobs.ingest historical
 
-# Delta giornaliero — schedulare a 06:00 UTC
+# Delta giornaliero — schedulare a 06:00 UTC (include l'accumulo Netatmo daily di ieri)
 uv run python -m guazza.jobs.ingest daily
 
 # Realtime SIR + Netatmo — schedulare ogni 15-30 min
 uv run python -m guazza.jobs.ingest realtime
+
+# Accumulo Netatmo realtime → daily (storico forward-looking, non-training).
+# Già incluso in `ingest daily`; standalone per backfill dell'accumulato:
+uv run python -m guazza.jobs.netatmo_daily run --all
 
 # Forecast NWP — schedulare ogni 6h (02/08/14/20 UTC)
 uv run python -m guazza.jobs.ingest forecasts

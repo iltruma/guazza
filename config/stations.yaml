@@ -34,7 +34,7 @@ sir_stations:
     hysto: true
     type: meteo
     sensors: [termometro, igrometro, anemometro, pluviometro, barometro, radiometro_diretta, radiometro_UV]
-    used_by: [casa_campi]
+    used_by: [casa_campi, casa_cercina]
     notes: "Stazione primaria casa_campi. ΔQ=-9m."
 
   TOS01001215:
@@ -95,7 +95,7 @@ sir_stations:
     hysto: true
     type: meteo
     sensors: [termometro, igrometro, anemometro, pluviometro, radiometro_solare]
-    used_by: [lavoro_cosimo, casa_nicco]
+    used_by: [lavoro_cosimo, casa_nicco, casa_cercina]
 
   TOS03001097:
     nome: "Firenze Orto Botanico"
@@ -106,7 +106,7 @@ sir_stations:
     hysto: true
     type: meteo
     sensors: [termometro, igrometro, pluviometro, radiometro_solare]
-    used_by: [lavoro_cosimo, casa_nicco]
+    used_by: [lavoro_cosimo, casa_nicco, casa_cercina]
     notes: "NO anemometro — esclusa da lista anemo."
 
   TOS01001096:
@@ -118,7 +118,7 @@ sir_stations:
     hysto: true
     type: meteo
     sensors: [termometro, igrometro, anemometro, pluviometro, radiometro_diretta]
-    used_by: [lavoro_cosimo, casa_nicco]
+    used_by: [lavoro_cosimo, casa_nicco, casa_cercina]
     notes: "Stazione primaria casa_nicco (Novoli, ~1km). ΔQ=+44m."
 
   TOS01001269:
@@ -141,7 +141,7 @@ sir_stations:
     hysto: true
     type: meteo
     sensors: [termometro, igrometro, anemometro, pluviometro, radiometro_solare]
-    used_by: []
+    used_by: [casa_cercina]
     notes: "Esclusa da obs_weighted (quota 322m, ΔQ>250m in pianura). Attiva per ring upstream (solo distanza)."
 
   TOS01004571:
@@ -203,7 +203,7 @@ sir_stations:
     hysto: true
     type: meteo+idro
     sensors: [pluviometro, idrometro]
-    used_by: [casa_campi, lavoro_madda]
+    used_by: [casa_campi, lavoro_madda, casa_cercina]
 
   TOS01004811:
     nome: "Ponte a Signa"
@@ -506,7 +506,7 @@ arpat_stations:
     zona_omogenea: "Agglomerato di Firenze"
     sensors_nrt:   [NO2, PM10]
     sensors_daily: [NO2, PM10, PM2.5]
-    used_by: [casa_nicco]
+    used_by: [casa_nicco, casa_cercina]
     notes: "Novoli, stazione più vicina a casa_nicco. Primaria ARPAT."
 
   FI-BOBOLI:
@@ -531,5 +531,5 @@ arpat_stations:
     zona_omogenea: "Agglomerato di Firenze"
     sensors_nrt:   [NO2]
     sensors_daily: [NO2, PM10]
-    used_by: [casa_nicco]
+    used_by: [casa_nicco, casa_cercina]
 

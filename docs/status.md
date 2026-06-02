@@ -1,8 +1,35 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-05-31 (v0.8.0 + rifinitura frontend critique/audit: palette a token, a11y, rem)
+> Aggiornato: 2026-06-02 (sesta location casa_cercina + accumulo Netatmo daily)
 
 ## Cosa è stato fatto
+
+### Sesta location casa_cercina + accumulo Netatmo daily (2026-06-02)
+
+**casa_cercina** (Sesto Fiorentino, versante S di Monte Morello, 311m) — prima
+location a quota collinare. Tutte le SIR vicine sono nel catino fiorentino
+(ΔQ -200/-280m); l'unica a quota comparabile è Vaiano (TOS11000503, 322m, ΔQ+11m,
+13.7km, valle Bisenzio). Poiché Open-Meteo downscala già la temperatura a 311m,
+ancorare il termo a una SIR di pianura sarebbe un train/serve skew in quota →
+**termo ancorato a Vaiano** (`termo: [TOS11000503]`); pluvio/anemo su vicine di
+pianura; nessuna idrometrica; ARPAT FI-MOSSE/FI-LAVAGNINI. Dettaglio in D-018.
+
+- `config/locations.yaml`: blocco `casa_cercina`; `config/stations.yaml`: `used_by`
+  aggiornato su 8 stazioni; `frontend/app.js`: tab "Casa Cercina".
+- **Accumulo Netatmo daily** (`src/guazza/netatmo_daily.py` + job
+  `guazza.jobs.netatmo_daily`): aggrega il realtime Netatmo in righe
+  `granularity='daily'` (tmin/tmax/humidity, giorno locale Europe/Rome). **Non**
+  entra nel training (`features.py` resta `source='sir_toscana'`): costruisce lo
+  storico per stimare in Sprint 9+ l'offset Cercina↔Vaiano. Agganciato al job
+  `daily`. Precip non aggregata (overlap `rain_1h`); tmax grezza ma con bias
+  solare noto. 6 test in `tests/test_netatmo_daily.py`.
+
+🟡 **Punto aperto — onboarding live casa_cercina** (lanciato dall'utente, rete + DB):
+   `weights refresh` (popola i pesi SIR di Cercina) → `ingest historical`
+   (backfill SIR+OM: senza, features_daily resta a ~7 righe) → `features build` →
+   `train` (il modello globale deve imparare la nuova categoria `location_id`) →
+   `predict`. Finché non completato, "dati SIR" e le previsioni di Cercina non
+   sono affidabili.
 
 ### Sprint 0 — Ricognizione (completato)
 - Identificate 22 stazioni SIR, 6 stazioni ARPAT

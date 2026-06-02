@@ -331,3 +331,17 @@ SIR realtime (CET naive, UTC+1 fisso), ARPAT NRT (locale CEST naive), Netatmo (U
 - `strftime` in `output.py` usa `%Y-%m-%dT%H:%M:%SZ` per tutti i campi UTC (`current.ts`, `last_run`, `ts_valid` fallback NWP).
 - `coverage_empirical_30d` resta misurata sui `forecasts` grezzi ML, non su valori corretti intraday.
 - Nota: SIR realtime storici registrati in CEST (estate) avevano CET naive invece di CEST naive → errore residuo di 1h non recuperabile su quei record. Accettato.
+
+## D-018 — `casa_cercina`: target temperatura in quota + accumulo Netatmo forward-looking
+
+**Data**: 2026-06-02
+
+**Contesto**: `casa_cercina` (Sesto Fiorentino, versante S di Monte Morello, 311m) è la prima location a quota collinare. Tutte le stazioni SIR vicine sono nel catino fiorentino, 200-280m più in basso (ΔQ -200/-280m); l'unica SIR a quota comparabile è Vaiano (TOS11000503, 322m, ΔQ+11m) ma a 13.7km, in valle Bisenzio. Le richieste Open-Meteo (`fetchers.py`) non passano `elevation`: il servizio fa downscaling della temperatura sulla quota reale del punto (DEM 90m), quindi le **feature NWP per Cercina sono già a ~311m**.
+
+**Decisione (target)**: ancorare il termo a **Vaiano** (`termo: [TOS11000503]`), non alle SIR di pianura. Allenare "NWP@311m → SIR@pianura" insegnerebbe al modello a ri-scaldare un forecast già corretto in quota: è un train/serve skew in quota, lo stesso errore vietato per ERA5 (D-001). Vaiano è inoltre una correzione di lapse rate **empirica e inversion-aware** (stazione reale), migliore di un lapse rate teorico fisso che sbaglia proprio sulle inversioni notturne — dove Cercina, a mezza costa in *thermal belt*, è più interessante. Caveat documentato: Vaiano è fondovalle Bisenzio (pooling freddo notturno) vs mezza costa di Cercina → residuo di rappresentatività. Pluvio/anemo/igro restano su vicine di pianura (meno quota-sensibili).
+
+**Decisione (Netatmo)**: Netatmo **non** entra nel training (`features.py` resta `source='sir_toscana'` — ground truth validato, D-005/anti-pattern). Resta però l'unico potenziale dato iperlocale alla quota giusta. Si avvia quindi un **accumulo daily forward-looking** (`netatmo_daily.py`): il realtime Netatmo viene aggregato in righe `granularity='daily'` (tmin/tmax/humidity) sul giorno locale Europe/Rome, senza toccare il modello. Scopo: in Sprint 9+, con storico sufficiente, **stimare l'offset Cercina↔Vaiano** (residuo del proxy) tenendo SIR come backbone. La precipitazione non è aggregata: il realtime salva `rain_1h` (finestra 60min mobile, campionata ~30min) → la somma raddoppia; serve dedup oraria dedicata. `tmax` Netatmo è conservata grezza ma inaffidabile (bias solare sui moduli outdoor): QC schermatura-aware rimandato a Sprint 9+.
+
+**Conseguenze**:
+- Netatmo migliora comunque il blocco `current` ("adesso") dell'hero, gratis, via selezione bbox dinamica — nessuna config per Cercina.
+- Lo storico Netatmo parte dal deploy: l'analisi offset (D-018 punto 3) non è eseguibile prima di 12-18 mesi di realtime.

@@ -17,7 +17,7 @@ di riferimento pesante scaricato on-demand:
 
 **Guazza** è un sistema ML di post-processing meteo iper-locale per microclimi toscani. Duplice scopo:
 
-1. **Strumento personale** — previsioni affinate per 5 location con indicatori operativi diretti (panni, motorino, gelata, ecc.)
+1. **Strumento personale** — previsioni affinate per 6 location con indicatori operativi diretti (panni, motorino, gelata, ecc.)
 2. **Case study pubblicabile** — articolo LinkedIn/Medium con metodologia rigorosa, bibliografia scientifica, repo pubblico
 
 **Tesi**: le previsioni pubbliche (ECMWF, LAMMA, 3BMeteo, ecc.) sbagliano sistematicamente sui microclimi specifici. Dimostrarlo con dati e fare meglio, ammettendo onestamente dove si fallisce.
@@ -34,7 +34,7 @@ Cloud Architect e Solution Architect con background ML applicato. Programmatore 
 - Non spiegare cose ovvie
 - Preferisce SQL diretto su DuckDB per query ad-hoc
 
-## Le 5 location
+## Le 6 location
 
 Vedi `config/locations.yaml` — coordinate complete, stazioni SIR primarie e secondarie,
 stazioni ARPAT, stazioni upstream pluvio per ogni location.
