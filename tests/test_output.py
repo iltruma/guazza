@@ -22,6 +22,7 @@ from guazza.output import (
     build_signals_today,
     compute_coverage_30d,
     compute_hourly_profile,
+    get_current_air_quality,
     get_current_conditions,
     get_daily_weather_code,
     get_intraday_observed,
@@ -729,6 +730,93 @@ def test_current_conditions_returns_data(seeded_db: Path) -> None:
     assert result["humidity_pct"] == pytest.approx(65.0)
     assert result["precip_mm"] == pytest.approx(0.0)
     assert result["wind_speed_ms"] == pytest.approx(1.2)
+
+
+def _seed_arpat_weight(
+    con: object, station_id: str, location_id: str, weight: float = 1.0
+) -> None:
+    """Riga station_weights per una stazione ARPAT (mapping stazione→location)."""
+    con.execute(  # type: ignore[attr-defined]
+        "INSERT INTO station_weights (station_id, source, location_id, weight) "
+        "VALUES (?, 'arpat', ?, ?)",
+        [station_id, location_id, weight],
+    )
+
+
+def test_air_quality_resolved_via_station_weights(seeded_db: Path) -> None:
+    """L'AQ si risolve via station_weights, non via obs.location_id: una stazione
+    condivisa, taggata in obs ad un'altra location, contribuisce comunque alla
+    location target (scenario casa_cercina/casa_nicco con stazioni ARPAT condivise)."""
+    from datetime import timedelta
+
+    import duckdb
+
+    ts_recent = datetime.now() - timedelta(hours=1)
+    con = duckdb.connect(str(seeded_db))
+    # obs taggata 'casa_nicco' (ha vinto la PK), ma il peso la mappa a 'casa_cercina'
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, no2_ugm3, o3_ugm3)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ["arpat", "FI-MOSSE", "casa_nicco", ts_recent, "hourly", 40.0, 60.0])
+    _seed_arpat_weight(con, "FI-MOSSE", "casa_cercina")
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_air_quality(db, "casa_cercina")
+
+    assert result is not None
+    assert result["no2_ugm3"] == pytest.approx(40.0)
+    assert result["o3_ugm3"] == pytest.approx(60.0)
+
+
+def test_air_quality_weighted_average(seeded_db: Path) -> None:
+    """Media pesata per stazione: due stazioni con pesi diversi sullo stesso inquinante."""
+    from datetime import timedelta
+
+    import duckdb
+
+    ts = datetime.now() - timedelta(hours=1)
+    con = duckdb.connect(str(seeded_db))
+    con.executemany("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, no2_ugm3)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, [
+        ["arpat", "FI-MOSSE",     "x", ts, "hourly", 30.0],
+        ["arpat", "FI-LAVAGNINI", "x", ts, "hourly", 50.0],
+    ])
+    _seed_arpat_weight(con, "FI-MOSSE", "casa_cercina", 0.75)
+    _seed_arpat_weight(con, "FI-LAVAGNINI", "casa_cercina", 0.25)
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_air_quality(db, "casa_cercina")
+
+    assert result is not None
+    # 30*0.75 + 50*0.25 = 35.0
+    assert result["no2_ugm3"] == pytest.approx(35.0)
+
+
+def test_air_quality_none_without_weights(seeded_db: Path) -> None:
+    """Senza station_weights ARPAT (weights refresh non eseguito) l'AQ è None."""
+    from datetime import timedelta
+
+    import duckdb
+
+    ts = datetime.now() - timedelta(hours=1)
+    con = duckdb.connect(str(seeded_db))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, no2_ugm3)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, ["arpat", "FI-MOSSE", "casa_cercina", ts, "hourly", 40.0])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_air_quality(db, "casa_cercina")
+
+    assert result is None
 
 
 def test_current_conditions_old_data_ignored(seeded_db: Path) -> None:

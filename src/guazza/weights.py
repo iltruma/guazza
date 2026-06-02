@@ -191,6 +191,22 @@ def refresh_station_weights(
                 "computed_at": now,
             })
 
+        # ARPAT: peso preso dal config (le stazioni ARPAT non hanno coordinate in
+        # stations.yaml, quindi niente decay distanza/quota). Serve a get_current_air_quality
+        # per risolvere location→stazioni via JOIN station_weights invece di obs.location_id,
+        # robusto a stazioni condivise tra location (la PK observations non include location_id).
+        for arpat in loc.get("arpat_stations", []):
+            records.append({
+                "station_id": arpat["id"],
+                "source": "arpat",
+                "location_id": loc_id,
+                "weight": float(arpat.get("weight", 1.0)),
+                "distance_km": None,
+                "delta_elev_m": None,
+                "nome": arpat["id"],
+                "computed_at": now,
+            })
+
     if not records:
         logger.warning("Nessun record da inserire in station_weights")
         return records

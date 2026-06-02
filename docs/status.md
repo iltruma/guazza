@@ -23,12 +23,17 @@ pianura; nessuna idrometrica; ARPAT FI-MOSSE/FI-LAVAGNINI. Dettaglio in D-018.
   storico per stimare in Sprint 9+ l'offset Cercina↔Vaiano. Agganciato al job
   `daily`. Precip non aggregata (overlap `rain_1h`); tmax grezza ma con bias
   solare noto. 6 test in `tests/test_netatmo_daily.py`.
+- **Fix qualità aria (KI-021)**: `get_current_air_quality` risolve le stazioni via
+  JOIN `station_weights` (`source='arpat'`) invece di `observations.location_id` —
+  robusto a stazioni ARPAT condivise tra location (la PK observations non include
+  location_id). `weights refresh` ora popola anche i pesi ARPAT dal config. Media
+  pesata per stazione. 4 test nuovi (`test_output.py`, `test_weights.py`).
 
 🟡 **Punto aperto — onboarding live casa_cercina** (lanciato dall'utente, rete + DB):
-   `weights refresh` (popola i pesi SIR di Cercina) → `ingest historical`
+   `weights refresh` (popola pesi SIR **e** ARPAT di Cercina) → `ingest historical`
    (backfill SIR+OM: senza, features_daily resta a ~7 righe) → `features build` →
    `train` (il modello globale deve imparare la nuova categoria `location_id`) →
-   `predict`. Finché non completato, "dati SIR" e le previsioni di Cercina non
+   `predict`. Finché non completato, "dati SIR"/AQ e le previsioni di Cercina non
    sono affidabili.
 
 ### Sprint 0 — Ricognizione (completato)

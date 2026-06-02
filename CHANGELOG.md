@@ -29,6 +29,13 @@ Versioning: major per sprint, minor per milestone interne.
   browser, WCAG 1.4.4).
 
 ### Fixed
+- Qualità aria: `get_current_air_quality` risolve le stazioni via JOIN
+  `station_weights` (source='arpat') invece di `observations.location_id`. La PK di
+  `observations` non include `location_id`, quindi una stazione ARPAT condivisa tra
+  location porta un solo tag arbitrario: la query precedente perdeva l'AQ per le
+  location che condividono tutte le stazioni (es. casa_cercina ↔ casa_nicco) ed era
+  una race. Ora media pesata per stazione (peso dal config). `weights refresh`
+  popola anche i pesi ARPAT.
 - Frontend a11y: aggiunto `<h1>` sul brand, `aria-label` sui canvas, `aria-hidden` sulle
   icone decorative, `aria-current` sul tab attivo; touch target di model-switch e pill a
   44px su pointer coarse; contrasto `--text-3` alzato a 0.55.

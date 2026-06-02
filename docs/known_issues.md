@@ -5,6 +5,25 @@
 
 ---
 
+## KI-021 — Qualità aria: serve `weights refresh` (stazioni ARPAT risolte via station_weights)
+
+**Severità**: media (config-step obbligatorio per nuove location)
+**Stato**: risolto in codice; richiede `weights refresh` dopo modifiche al config ARPAT
+
+`get_current_air_quality` risolve le stazioni ARPAT via JOIN `station_weights`
+(`source='arpat'`), **non** via `observations.location_id`. Motivo: la PK di
+`observations` è `(source, station_id, ts, granularity)` — non include
+`location_id`. Una stazione ARPAT condivisa tra più location (es. FI-MOSSE usata
+da casa_nicco e casa_cercina) viene riscritta in upsert con un solo `location_id`
+arbitrario (l'ultimo ingest vince). La query precedente, filtrando su
+`obs.location_id`, perdeva l'AQ per la location "perdente" ed era una race tra
+location vicine.
+
+**Conseguenza operativa**: dopo aver aggiunto/modificato `arpat_stations` in
+`locations.yaml`, eseguire `weights refresh` — popola i pesi `source='arpat'` in
+`station_weights`. Senza, `air_quality` è `null` per tutte le location (la JOIN
+non trova pesi). È lo stesso meccanismo già usato dal SIR (vedi `get_current_conditions`).
+
 ## KI-019 — SIR download.php: rate-limit per IP ~4s/req dopo la 1ª chiamata
 
 **Severità**: informativa (limite architetturale, non aggirabile)

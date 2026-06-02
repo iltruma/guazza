@@ -360,26 +360,42 @@ def get_current_air_quality(
     Con il cron ogni 30min, senza margine sufficiente i valori sparirebbero tra un fetch
     e il successivo aggiornamento ARPAT.
 
+    Le stazioni sono risolte via JOIN su station_weights (source='arpat'), non su
+    observations.location_id: la PK observations non include location_id, quindi una
+    stazione condivisa tra location porta un solo tag arbitrario. Media pesata per
+    stazione (peso dal config), stessa logica del blend SIR. Richiede station_weights
+    popolata da `weights refresh`.
+
     Returns:
         {pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3, co_mgm3, benzene_ugm3, so2_ugm3}
-        oppure None se nessun dato nelle ultime 3h.
+        oppure None se nessun dato nella finestra.
     """
     row = db.execute("""
+        WITH aq AS (
+            SELECT o.pm10_ugm3, o.pm25_ugm3, o.no2_ugm3, o.o3_ugm3,
+                   o.co_mgm3, o.benzene_ugm3, o.so2_ugm3, sw.weight AS w
+            FROM observations o
+            JOIN station_weights sw
+              ON o.station_id = sw.station_id AND sw.source = 'arpat'
+            WHERE sw.location_id = ?
+              AND o.source = 'arpat'
+              AND (
+                  (o.granularity = 'hourly' AND o.ts >= CURRENT_TIMESTAMP - INTERVAL 6 HOURS)
+               OR (o.granularity = 'daily'  AND o.ts >= CURRENT_TIMESTAMP - INTERVAL 3 DAYS)
+              )
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY o.station_id, o.granularity ORDER BY o.ts DESC
+            ) = 1
+        )
         SELECT
-            ROUND(AVG(pm10_ugm3)    FILTER (WHERE pm10_ugm3    IS NOT NULL), 1) AS pm10_ugm3,
-            ROUND(AVG(pm25_ugm3)    FILTER (WHERE pm25_ugm3    IS NOT NULL), 1) AS pm25_ugm3,
-            ROUND(AVG(no2_ugm3)     FILTER (WHERE no2_ugm3     IS NOT NULL), 1) AS no2_ugm3,
-            ROUND(AVG(o3_ugm3)      FILTER (WHERE o3_ugm3      IS NOT NULL), 1) AS o3_ugm3,
-            ROUND(AVG(co_mgm3)      FILTER (WHERE co_mgm3      IS NOT NULL), 2) AS co_mgm3,
-            ROUND(AVG(benzene_ugm3) FILTER (WHERE benzene_ugm3 IS NOT NULL), 2) AS benzene_ugm3,
-            ROUND(AVG(so2_ugm3)     FILTER (WHERE so2_ugm3     IS NOT NULL), 1) AS so2_ugm3
-        FROM observations
-        WHERE location_id = ?
-          AND source = 'arpat'
-          AND (
-              (granularity = 'hourly' AND ts >= CURRENT_TIMESTAMP - INTERVAL 6 HOURS)
-           OR (granularity = 'daily'  AND ts >= CURRENT_TIMESTAMP - INTERVAL 3 DAYS)
-          )
+            ROUND(SUM(pm10_ugm3 * w)    / NULLIF(SUM(CASE WHEN pm10_ugm3    IS NOT NULL THEN w ELSE 0 END), 0), 1) AS pm10_ugm3,
+            ROUND(SUM(pm25_ugm3 * w)    / NULLIF(SUM(CASE WHEN pm25_ugm3    IS NOT NULL THEN w ELSE 0 END), 0), 1) AS pm25_ugm3,
+            ROUND(SUM(no2_ugm3 * w)     / NULLIF(SUM(CASE WHEN no2_ugm3     IS NOT NULL THEN w ELSE 0 END), 0), 1) AS no2_ugm3,
+            ROUND(SUM(o3_ugm3 * w)      / NULLIF(SUM(CASE WHEN o3_ugm3      IS NOT NULL THEN w ELSE 0 END), 0), 1) AS o3_ugm3,
+            ROUND(SUM(co_mgm3 * w)      / NULLIF(SUM(CASE WHEN co_mgm3      IS NOT NULL THEN w ELSE 0 END), 0), 2) AS co_mgm3,
+            ROUND(SUM(benzene_ugm3 * w) / NULLIF(SUM(CASE WHEN benzene_ugm3 IS NOT NULL THEN w ELSE 0 END), 0), 2) AS benzene_ugm3,
+            ROUND(SUM(so2_ugm3 * w)     / NULLIF(SUM(CASE WHEN so2_ugm3     IS NOT NULL THEN w ELSE 0 END), 0), 1) AS so2_ugm3
+        FROM aq
     """, [location_id]).fetchone()
 
     if row is None or all(v is None for v in row):

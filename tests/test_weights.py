@@ -109,6 +109,29 @@ def test_refresh_sources_correct(seeded_db: Path) -> None:
     assert sources == {"sir"}
 
 
+def test_refresh_arpat_weights_from_config(seeded_db: Path) -> None:
+    """Le stazioni ARPAT generano record source='arpat' col peso dal config
+    (no decay distanza/quota — ARPAT non ha coordinate in stations.yaml)."""
+    loc = {
+        "test_loc": {
+            **_LOC["test_loc"],
+            "arpat_stations": [
+                {"id": "FI-MOSSE", "weight": 0.6},
+                {"id": "FI-LAVAGNINI", "weight": 0.4},
+            ],
+        }
+    }
+    with DuckDBClient(db_path=seeded_db) as db:
+        refresh_station_weights(db, loc, _STATIONS)
+        rows = {
+            row[0]: row[1]
+            for row in db.execute(
+                "SELECT station_id, weight FROM station_weights WHERE source='arpat'"
+            ).fetchall()
+        }
+    assert rows == {"FI-MOSSE": pytest.approx(0.6), "FI-LAVAGNINI": pytest.approx(0.4)}
+
+
 def test_refresh_near_heavier_than_far(seeded_db: Path) -> None:
     with DuckDBClient(db_path=seeded_db) as db:
         refresh_station_weights(db, _LOC, _STATIONS)
