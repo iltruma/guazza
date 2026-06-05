@@ -313,6 +313,34 @@ con il multimodello-mean per-location e ricomputare lo skill contro di esso. Lo 
 baseline va usato anche per il confronto esterno (LAMMA) quando `benchmark_forecasts` sarà
 popolata. Onestà sul baseline = credibilità del case study.
 
+**Riconciliazione (2026-06-05)** — i due numeri non erano in conflitto: misurano l'errore
+NWP contro **ground truth diversi**, e il backtest 0.75 non riguarda nemmeno il modello ML.
+
+- **+25.6% (Sprint 4)** = skill del **modello ML** vs NWP-ensemble-mean, entrambi valutati
+  contro il **target pesato** multi-stazione (il target di training), walk-forward CV con
+  embargo. Ri-eseguito oggi a 6 modelli (`walk_forward_cv`): **tmin +32.5%, tmax +42.8%,
+  precip −2.4%** (precip pareggia il NWP, conferma D-014). MAE NWP-mean vs target pesato
+  ≈ **1.34°C** tmin / **1.43°C** tmax. Il +25.6% era a 4 modelli: passare a 6 ha *alzato*
+  lo skill, non gonfiato il baseline.
+- **~0.75°C (backtest 2025)** = MAE del **NWP grezzo** (non il modello ML) vs la **stazione
+  SIR primaria**, debias-only, solo 2025, sulle location migliori. È un *floor-of-skill*
+  esplorativo, non uno skill score del modello.
+
+Fattore dominante del divario 1.34↔0.75 = **definizione del ground truth**. NWP-mean tmin
+2025 per location: vs primaria 0.75–1.33°C, vs target pesato 0.92–1.58°C. Il blend pesato
+diverge dalla singola stazione fino a **2.14°C** (lavoro_madda): il NWP grezzo lo manca di
+più perché il blend rappresenta il punto-microclima, non il pluviometro più vicino.
+L'aggregazione su giorno UTC (in `features_daily`) vs Europe/Rome (nel backtest) è invece
+**trascurabile** (~0.01°C su min/max): ipotesi testata e scartata.
+
+**Decisione finale**: ground truth e baseline del case study = **target pesato** (proxy del
+microclima, già scelta di prodotto D-005/D-018). Lo skill si cita come ML vs NWP-ensemble-mean
+su quel target, walk-forward + embargo → **+32% tmin / +43% tmax**. Il numero 0.75°C **non è
+confrontabile** con lo skill ML e non va citato come "il NWP è già buono": è una metrica
+diversa (NWP grezzo vs singolo gauge). Per trasparenza, nel case study si riporta comunque
+la MAE NWP-vs-primaria come contesto ("il NWP grezzo non è pessimo al pluviometro, ma manca
+il microclima"). Punto chiuso.
+
 ## D-017 — Convenzione timestamp nel DB: UTC naive ovunque
 
 **Data**: 2026-05-30

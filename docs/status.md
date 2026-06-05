@@ -29,12 +29,10 @@ pianura; nessuna idrometrica; ARPAT FI-MOSSE/FI-LAVAGNINI. Dettaglio in D-018.
   location_id). `weights refresh` ora popola anche i pesi ARPAT dal config. Media
   pesata per stazione. 4 test nuovi (`test_output.py`, `test_weights.py`).
 
-🟡 **Punto aperto — onboarding live casa_cercina** (lanciato dall'utente, rete + DB):
-   `weights refresh` (popola pesi SIR **e** ARPAT di Cercina) → `ingest historical`
-   (backfill SIR+OM: senza, features_daily resta a ~7 righe) → `features build` →
-   `train` (il modello globale deve imparare la nuova categoria `location_id`) →
-   `predict`. Finché non completato, "dati SIR"/AQ e le previsioni di Cercina non
-   sono affidabili.
+**Onboarding live casa_cercina completato (2026-06-05)**: `weights refresh` →
+   `ingest historical` (SIR + OM) → `features build` → `train run` → `ingest forecasts`
+   + `realtime` → `predict`. `data/output/casa_cercina.json` generato, 4 giorni
+   (D+0…D+3, lead 72-144h — si estende man mano che i cron accumulano run più recenti).
 
 ### Sprint 0 — Ricognizione (completato)
 - Identificate 22 stazioni SIR, 6 stazioni ARPAT
@@ -214,16 +212,18 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 - 11 test pytest, fixture `fast_lgbm` (n_estimators=50) per contenere il tempo sotto 60s
 - Artefatti persistiti in `data/models/artifacts.pkl`
 
-#### Risultati walk-forward CV (4 fold, 2023-01 → 2026-05, dati reali)
+#### Risultati walk-forward CV (4 fold, 2023-01 → 2026-06, 6 modelli — ri-eseguito 2026-06-05)
 
-| Target | MAE | CRPS | Coverage 80% | Coverage 90% | Skill vs NWP |
-|---|---|---|---|---|---|
-| tmin_c | 0.906°C | 0.500 | 0.794 | 0.896 | +25.6% |
-| tmax_c | 0.801°C | 0.452 | 0.816 | 0.912 | +26.9% |
-| precip_mm | 1.526mm | 0.924 | 0.788 | 0.908 | -1.2% |
+| Target | MAE | Coverage 80% | Coverage 90% | Skill vs NWP-mean |
+|---|---|---|---|---|
+| tmin_c | 0.905°C | 0.801 | 0.909 | +32.5% |
+| tmax_c | 0.821°C | 0.826 | 0.913 | +42.8% |
+| precip_mm | 1.592mm | 0.814 | 0.908 | -2.4% |
 
-**Temperatura**: skill +25–27% vs ensemble NWP mean. CQR calibrato (coverage ~0.90 su target 90%).
+**Temperatura**: skill +32/+43% vs ensemble NWP mean (target pesato). CQR calibrato (coverage ~0.90 su target 90%).
 **Precipitazione**: skill ≈ 0 — il modello pareggia il NWP grezzo ma non lo batte (vedi D-014).
+Lo skill è salito rispetto al +25–27% storico (4 modelli): aggiungere GFS/AROME/ICON-2I peggiora
+l'ensemble-mean grezzo ma il modello, che li usa come feature, regge → vedi riconciliazione baseline (D-016).
 
 #### CQR corrections produzione (cal set 2026-02-14 → 2026-05-15, 364 righe)
 
@@ -233,8 +233,10 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 | tmax_c | +0.405°C | +0.519°C |
 | precip_mm | +0.006mm | +0.009mm |
 
-🟡 **Punto aperto — benchmark_forecasts**: tabella prevista per confronto sistematico in produzione
-(NWP grezzo vs modello nel tempo). Non implementata — da aggiungere in Sprint 5 o come task separato.
+**benchmark_forecasts implementata (2026-06-05)**: confronto sistematico NWP grezzo vs ML nel
+tempo. `ensure_benchmark_schema()` migra il vecchio schema; `upsert_benchmark_forecasts()` e
+`backfill_benchmark_obs()` in `storage.py`; `jobs/predict.py` popola una riga per (source,
+location, target_date) ad ogni run da `nwp_comparison`. Si accumula dal deploy in poi.
 
 ### Sprint 5 — Output JSON + Decision Logic Engine (completato — 2026-05-17)
 
@@ -431,15 +433,21 @@ interventi.
 - **Stile dark**: override CSS per Leaflet attribution e zoom bar
 - **max zoom 7**: limite RainViewer (non Leaflet) — tile non disponibili a zoom 8+
 
-#### Intraday correction D+0 — da fare (opzione B)
+#### Intraday correction D+0 (completato — 2026-05-31)
 
-Correzione aritmetica delle ore rimanenti per D+0, senza nuovo modello:
+Correzione aritmetica D+0 ancorata alle osservazioni SIR realtime, senza nuovo modello.
 
-- In `compute_hourly_profile`: per le ore già trascorse usare SIR osservato (già in DB);
-  calcolare `somma_osservata` dalle righe `observations` con `granularity='realtime'` del giorno corrente
-- `remaining = max(0, E[precip] - somma_osservata)`; riscalare il profilo NWP sulle sole ore future con questo anchor
-- Se `remaining == 0` e `somma_osservata > E[precip]`: mostrare le ore future a 0 (ha già piovuto più del previsto)
-- Nessuna modifica al modello ML né alle feature; solo `output.py` + `jobs/predict.py`
+- `get_intraday_observed()` in `output.py`: legge `MIN(temp_c)`, `MAX(temp_c)`,
+  `MAX(precip_cumday_mm)` dalle obs realtime SIR del giorno corrente (solo `source='sir_toscana'`
+  per evitare il bias da irraggiamento dei moduli Netatmo outdoor).
+- `apply_intraday_correction()` in `output.py`: `precip_remaining = max(0, p50 - observed)`;
+  CI scalato linearmente per `hours_remaining/24`. `tmin_corrected` attivo da ora ≥ 09:00 locale;
+  `tmax_corrected` attivo da ora ≥ 14:00 locale. Soglia minima `_N_MIN_INTRADAY=3` osservazioni.
+- Risultato salvato nel campo `intraday` di `days[0]` nel JSON di output.
+- `jobs/predict.py`: chiama entrambe le funzioni solo per `target_date == date.today()`.
+- `app.js` — helper `dayTemps()`: `intraday.tmin_corrected_c` / `tmax_corrected_c` /
+  `precip_remaining_mm` hanno priorità sul forecast ML nella striscia e nel dettaglio.
+- Test in `tests/test_output.py` (8 casi: precip exceeded, CI scaling, tmin/tmax before/after soglia).
 
 #### Raffinamenti frontend (2026-05-20 → 2026-05-22)
 
@@ -562,12 +570,13 @@ Europe/Rome, ground truth = stazione SIR **primaria**, debias mensile appreso su
 - `lavoro_madda` ecmwf tmin: bias −2.49°C → 2.52→1.12 (+56%).
 - Il bias è **model-specific** (nessun NWP universalmente migliore) → conferma D-005.
 
-🟡 **Punto aperto — riconciliare il baseline di skill (vs claim +25% Sprint 4)**: il
-multimodello-mean grezzo D+0 2025 ha MAE tmin ~0.75°C sulle location migliori, mentre lo
-skill +25.6% di Sprint 4 implica un NWP baseline ~1.22°C. Differenze da chiarire: set
-modelli (4 vs 6), ground truth (SIR pesato vs stazione primaria), periodo (CV multi-anno
-vs 2025). Per un case study che afferma "meglio degli altri" il baseline di confronto va
-fissato e giustificato (vedi D-016).
+**Riconciliazione baseline skill (chiuso — 2026-06-05)**: i due numeri non erano in
+conflitto, misurano l'errore NWP contro ground truth diversi. Il backtest 0.75°C = NWP
+**grezzo** vs stazione **primaria** (no ML); il +25.6% = skill **modello ML** vs NWP-mean
+sul target **pesato**. Fattore dominante = ground truth (blend pesato vs singolo gauge,
+gap fino a 2.14°C); aggregazione UTC vs Rome trascurabile (~0.01°C, ipotesi scartata).
+Baseline del case study fissato sul target pesato; skill ricomputato a 6 modelli:
+**+32% tmin / +43% tmax**. Dettaglio in D-016.
 
 🟡 **Punto aperto — backfill multi-lead per D+1…D+7** (estende il 🟡 di Sprint 3, lead_time_h):
 il backtest multi-giorno non è eseguibile finché lo storico contiene solo lead 0-5h. Due
