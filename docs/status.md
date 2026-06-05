@@ -420,9 +420,12 @@ aperto, definito turno per turno: bug fix, raffinamenti UX, micro-feature.
 Criterio di uscita: tutto gira pulito in locale per ≥1 settimana senza
 interventi.
 
-**Stato roadmap (aggiornato 2026-06-05, v0.8.2):**
+**Stato roadmap (aggiornato 2026-06-05, v0.8.3):**
 
 Fatto in Sprint 7:
+- ✅ Backfill + backtest multi-lead D+0…D+7 (`ingest multilead` via `previous_dayN`) — 2026-06-05
+- ✅ Job `guazza-skill` + `skill.json` (curva MAE per-location vs gauge primario) + sezione
+  frontend "Quanto è affidabile" — 2026-06-05
 - ✅ Radar RainViewer (frontend) — 2026-05-22
 - ✅ Standardizzazione timestamp UTC naive (D-017) — 2026-05-30
 - ✅ Rifinitura frontend da critique/audit (a11y, palette token) — 2026-05-29
@@ -434,6 +437,12 @@ Fatto in Sprint 7:
 - ✅ Verdetto DLE `grigio` per segnale mancante (`requires`) — 2026-06-05
 
 Resta in Sprint 7:
+- 🟡 **Separare il confronto modelli/affidabilità in una pagina dedicata**, fuori dalla
+  pagina delle location. Oggi la sezione "Quanto è affidabile" (curva skill) è embedded
+  nello SPA per-location; va spostata in una pagina statica a sé (es. `affidabilita.html`
+  + link nell'header). Da decidere: per-location con selettore vs vista d'insieme su tutte
+  e 6 le location (taglio case-study). `skill.json` è già un file globale, quindi la pagina
+  separata non richiede nuovi artefatti backend.
 - 🟡 Far scorrere la finestra di stabilità (≥1 settimana pulito in locale) — gate verso Sprint 8
 - 🟢 Eventuali micro-raffinamenti UX/logica a discrezione, turno per turno
 
