@@ -1244,6 +1244,55 @@ img.emoji {
 }
 
 /* =============================================================
+   SKILL — MAE Guazza vs NWP per orizzonte
+   ============================================================= */
+
+.g-skill__head { display: flex; flex-direction: column; gap: 2px; }
+.g-skill__sub {
+  font-family: var(--ff-mono);
+  font-size: 0.625rem;
+  color: var(--text-3);
+}
+
+.g-skill__seg {
+  display: inline-flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--r-md);
+  padding: 2px;
+}
+.g-skill__seg-btn {
+  font-family: var(--ff-sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  padding: 5px 12px;
+  min-height: 32px;
+  cursor: pointer;
+  transition: color .15s, background .15s;
+}
+.g-skill__seg-btn.is-active {
+  color: var(--text-1);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-1);
+}
+
+.g-skill__wrap { padding: 8px 8px 0; height: 240px; }
+@media (min-width: 768px) { .g-skill__wrap { height: 280px; } }
+
+.g-skill__caption {
+  padding: 8px 20px 16px;
+  font-family: var(--ff-mono);
+  font-size: 0.625rem;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+@media (min-width: 768px) { .g-skill__caption { padding: 8px 24px 18px; } }
+
+/* =============================================================
    CHART (in right column)
    ============================================================= */
 

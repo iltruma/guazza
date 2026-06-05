@@ -61,6 +61,9 @@ let selectedDayIdx      = 0;
 let selectedModel       = 'guazza';
 let meteoChart          = null;
 let multiDayChart       = null;
+let skillChart          = null;
+let skillVar            = 'tmax_c';
+let skillData; // undefined = non ancora caricato, null = fetch fallito
 let radarMap     = null;
 let radarLayers  = [];
 let radarFrames  = [];
@@ -879,6 +882,109 @@ function renderCoverage(cov) {
   showEl('coverage-bar');
 }
 
+// ── Skill: MAE Guazza vs NWP per orizzonte ───────────────────────────────────
+
+const SKILL_URL = '/data/skill.json';
+
+// skill.json è un file globale (tutte le location): lo carico una volta sola.
+async function ensureSkillData() {
+  if (skillData !== undefined) return skillData;
+  try {
+    const r = await fetch(SKILL_URL, { cache: 'no-store' });
+    skillData = r.ok ? await r.json() : null;
+  } catch { skillData = null; }
+  return skillData;
+}
+
+function fmtIsoDate(iso) {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y.slice(2)}`;
+}
+
+function renderSkill(locationId) {
+  const section = document.getElementById('skill-section');
+  if (!section) return;
+  const loc = skillData?.locations?.[locationId];
+  const points = loc?.[skillVar];
+  if (!points || !points.some(p => p.mae_ml != null)) {
+    section.classList.add('hidden');
+    return;
+  }
+  section.classList.remove('hidden');
+
+  document.getElementById('skill-sub').textContent =
+    `MAE °C · verità: stazione SIR ${loc.sir_station_id}`;
+
+  const valid = points.filter(p => p.n != null);
+  const nMin = Math.min(...valid.map(p => p.n));
+  const nMax = Math.max(...valid.map(p => p.n));
+  const win = `${fmtIsoDate(skillData.window_start)}→${fmtIsoDate(skillData.window_end)}`;
+  document.getElementById('skill-caption').textContent =
+    `Errore medio assoluto out-of-sample contro il termometro SIR primario, per orizzonte. ` +
+    `Sotto la linea NWP = Guazza è più accurato. Finestra ${win} ` +
+    `(${nMin}–${nMax} giorni per orizzonte): è una finestra di mesi, non lifetime.`;
+
+  drawSkillChart(points);
+}
+
+function drawSkillChart(points) {
+  const canvas = document.getElementById('skill-chart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (skillChart) { skillChart.destroy(); skillChart = null; }
+
+  const css = getComputedStyle(document.documentElement);
+  const v = name => css.getPropertyValue(name).trim();
+  const accent = v('--accent');
+  const axis = v('--chart-axis');
+  const grid = v('--chart-grid');
+
+  const labels = points.map(p => `D+${p.lead_h / 24}`);
+  skillChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Consensus NWP', data: points.map(p => p.mae_nwp),
+          borderColor: axis, backgroundColor: axis, borderDash: [5, 4],
+          borderWidth: 1.5, pointRadius: 3, spanGaps: true, tension: 0.25 },
+        { label: 'Guazza ML', data: points.map(p => p.mae_ml),
+          borderColor: accent, backgroundColor: accent,
+          borderWidth: 2, pointRadius: 3, spanGaps: true, tension: 0.25 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { grid: { color: grid }, ticks: { color: axis } },
+        y: { grid: { color: grid }, ticks: { color: axis, callback: x => `${x}°` },
+             title: { display: true, text: 'MAE (°C)', color: axis } },
+      },
+      plugins: {
+        legend: { labels: { color: axis, usePointStyle: true, boxWidth: 8 } },
+        tooltip: {
+          callbacks: {
+            afterBody: items => {
+              const p = points[items[0].dataIndex];
+              if (p.skill_pct == null) return '';
+              const sign = p.skill_pct >= 0 ? '+' : '';
+              return `skill ${sign}${p.skill_pct}%  ·  n=${p.n}`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+function setSkillVar(varName) {
+  if (varName === skillVar) return;
+  skillVar = varName;
+  document.querySelectorAll('#skill-seg .g-skill__seg-btn').forEach(b =>
+    b.classList.toggle('is-active', b.dataset.var === varName));
+  if (currentData) renderSkill(currentData.location_id);
+}
+
 // ── Model switches (segmented control) ───────────────────────────────────────
 
 function setActiveModel(src) {
@@ -1547,6 +1653,7 @@ function render(data) {
   }
 
   renderCoverage(data.coverage_empirical_30d);
+  ensureSkillData().then(() => { if (currentData === data) renderSkill(data.location_id); });
   renderHeroSun(LOCATIONS.find(l => l.id === data.location_id), new Date());
   initRadar(data.location_id);
 
@@ -1562,11 +1669,12 @@ async function loadLocation(locId) {
 
   const fs = document.getElementById('forecast-section');
   if (fs) fs.classList.add('hidden');
-  ['hero-card','aq-section','chart-weekly-section','coverage-bar','error-state'].forEach(hideEl);
+  ['hero-card','aq-section','chart-weekly-section','skill-section','coverage-bar','error-state'].forEach(hideEl);
   showSkeleton();
 
   if (meteoChart)    { meteoChart.destroy();    meteoChart    = null; }
   if (multiDayChart) { multiDayChart.destroy(); multiDayChart = null; }
+  if (skillChart)    { skillChart.destroy();    skillChart    = null; }
 
   try {
     const r = await fetch(DATA_URL(locId));
@@ -1592,6 +1700,12 @@ if (typeof Chart !== 'undefined') {
 }
 
 document.addEventListener('click', hideIndicatorTooltip);
+
+document.getElementById('skill-seg')?.addEventListener('click', e => {
+  const btn = e.target.closest('.g-skill__seg-btn');
+  if (btn) setSkillVar(btn.dataset.var);
+});
+
 window.addEventListener('popstate', () => loadLocation(getActiveLoc()));
 
 loadLocation(getActiveLoc());
