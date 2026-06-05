@@ -59,6 +59,39 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 - `days[].weather_code` è il codice WMO modale giornaliero (moda su 24h × N modelli, ultimo run per fonte) — `null` se assente.
 - `nwp_models_hourly[].data[].weather_code` è il codice WMO per quell'ora e modello — `int | null`.
 
+## `skill.json` — curva di skill (file globale)
+
+File separato `data/output/skill.json`, **uno solo** (non per-location): generato dal job
+`guazza-skill` (`jobs/skill.py`), letto dal frontend per la sezione "Quanto è affidabile".
+Misura retrospettiva MAE Guazza vs consensus NWP per orizzonte D+0…D+7, contro il
+**termometro SIR primario** di ogni location (verità indipendente, non il target pesato).
+
+```json
+{
+  "generated_at": "2026-06-05T...Z",
+  "ground_truth": "sir_primary",
+  "window_start": "2025-10-15",
+  "window_end": "2026-06-05",
+  "embargo_days": 7,
+  "leads_h": [0, 24, 48, 72, 96, 120, 144, 168],
+  "min_samples_per_lead": 5,
+  "locations": {
+    "casa_cercina": {
+      "sir_station_id": "TOS01001215",
+      "tmin_c": [{"lead_h": 0, "n": 232, "mae_nwp": 1.85, "mae_ml": 1.46, "skill_pct": 21.1}, ...],
+      "tmax_c": [{...}, ...]
+    }
+  }
+}
+```
+
+- Solo `tmin_c` e `tmax_c`: la MAE su precip è troppo rumorosa per una curva pulita.
+- Un punto con `n < min_samples_per_lead` ha `mae_*`/`skill_pct` a `null` (campione insufficiente).
+- `skill_pct = (1 − mae_ml/mae_nwp)·100`; negativo = Guazza peggiora il NWP su quella location/lead.
+- `window_end` è l'ultima data con osservazione SIR reale (le date forecast future sono escluse).
+- Finestra limitata dall'archivio `previous_dayN` di Open-Meteo (~ott 2025→oggi): è una
+  finestra di mesi, non lifetime — il frontend lo dichiara esplicitamente.
+
 ## Decision Logic Engine — logging obbligatorio
 
 Ogni invocazione DLE deve produrre log in DuckDB (`indicator_log`):
