@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-06-02 (sesta location casa_cercina + accumulo Netatmo daily)
+> Aggiornato: 2026-06-05 (riconciliazione baseline skill D-016 + verdetto DLE grigio, v0.8.1)
 
 ## Cosa è stato fatto
 

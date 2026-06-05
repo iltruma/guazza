@@ -8,6 +8,8 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-06-05
+
 ### Added
 - DLE: verdetto `grigio` (`rule_matched: "unknown"`) quando un segnale dichiarato in
   `requires` manca o è `None`. Sostituisce il fuorviante fallback giallo (falso allarme)
