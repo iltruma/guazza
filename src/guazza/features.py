@@ -28,9 +28,14 @@ _BUILD_SQL = """\
 CREATE OR REPLACE TABLE features_daily AS
 WITH
 -- ── 1. Osservazioni SIR pesate per location e giorno ─────────────────────────
+-- station_weights è la mappa autorevole stazione→location: una stazione pesa su più
+-- location. Il join va SOLO su station_id (come ring_precip_raw); usare anche
+-- o.location_id scarterebbe i contributi delle stazioni condivise, perché le obs sono
+-- salvate sotto una sola location_id "home". La PK di observations non include
+-- location_id → una riga daily per stazione/giorno, nessun doppio conteggio.
 obs_weighted AS (
     SELECT
-        o.location_id,
+        sw.location_id,
         o.ts::DATE AS obs_date,
         SUM(o.tmin_c * sw.weight)
             / NULLIF(SUM(CASE WHEN o.tmin_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
@@ -47,10 +52,9 @@ obs_weighted AS (
     FROM observations o
     JOIN station_weights sw
         ON o.station_id = sw.station_id
-       AND o.location_id = sw.location_id
     WHERE o.source = 'sir_toscana'
       AND o.granularity = 'daily'
-    GROUP BY o.location_id, o.ts::DATE
+    GROUP BY sw.location_id, o.ts::DATE
 ),
 
 -- ── 2. Climatologia mensile (media/std multi-anno da obs_weighted) ────────────

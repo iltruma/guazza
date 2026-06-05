@@ -24,6 +24,33 @@ location vicine.
 `station_weights`. Senza, `air_quality` è `null` per tutte le location (la JOIN
 non trova pesi). È lo stesso meccanismo già usato dal SIR (vedi `get_current_conditions`).
 
+## KI-022 — Target di training corrotto: `obs_weighted` joinava anche su `location_id`
+
+**Severità**: alta (target ML errato per le stazioni condivise — scoperto 2026-06-05)
+**Stato**: risolto (`features.py`, fix + rebuild + retrain 2026-06-05)
+
+Stesso pattern di KI-021/KI-020 ma sul percorso del **target di training**, dove è
+sfuggito più a lungo. `obs_weighted` in `features.py` joinava `observations` e
+`station_weights` su `station_id` **e** `location_id`. Ma `station_weights` è la mappa
+autorevole stazione→location (una stazione pesa su più location); le obs sono salvate
+sotto una sola `location_id` "home" (la PK di `observations` non include `location_id`).
+Il join scartava quindi i contributi delle stazioni condivise.
+
+**Sintomo estremo**: `lavoro_cosimo` aveva `target_tmin_c` **nullo al 100%** — la sua
+stazione primaria TOS01001215 ha le obs salvate sotto `casa_campi`/`casa_nicco`, mai
+`lavoro_cosimo`. Il modello non veniva mai addestrato per quella location. `lavoro_madda`
+aveva il target tmin sistematicamente **−2.09°C** rispetto alla primaria (blend con mix
+di stazioni non voluto). 8 stazioni totali col mismatch.
+
+**Scoperto** dal robustness check `analysis/skill_vs_primary.py` (D-016): lo skill ML vs
+gauge primario risultava net negativo su tmin (−31%), tracciato fino a questo bug.
+
+**Fix**: join solo su `station_id`, `GROUP BY sw.location_id` — identico a
+`ring_precip_raw` poco sotto. Nessun doppio conteggio (una riga daily per stazione/giorno).
+Dopo rebuild+retrain: copertura target a ~99% per tutte le location; skill vs gauge
+primario tmin +8%, tmax +26% (vs target pesato +17/+45%, prima gonfiati anche dal target
+corrotto).
+
 ## KI-019 — SIR download.php: rate-limit per IP ~4s/req dopo la 1ª chiamata
 
 **Severità**: informativa (limite architetturale, non aggirabile)

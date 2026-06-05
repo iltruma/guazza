@@ -341,6 +341,27 @@ diversa (NWP grezzo vs singolo gauge). Per trasparenza, nel case study si riport
 la MAE NWP-vs-primaria come contesto ("il NWP grezzo non è pessimo al pluviometro, ma manca
 il microclima"). Punto chiuso.
 
+**Robustness check + scoperta KI-022 (2026-06-05)** — `analysis/skill_vs_primary.py` valuta
+sia NWP sia modello ML contro la **stazione primaria** (gauge fisico indipendente),
+out-of-sample con lo stesso split walk-forward. Prima esecuzione: skill ML tmin **−31%**
+(modello peggio del NWP grezzo!), trainato fino a un **bug di pipeline** (KI-022):
+`obs_weighted` joinava anche su `location_id`, scartando i contributi delle stazioni
+condivise → target di training corrotto. `lavoro_cosimo` aveva il target **nullo al 100%**
+(mai addestrato); `lavoro_madda` un bias di −2°C.
+
+Dopo fix + rebuild + retrain:
+- **Skill vs target pesato (CV canonica)**: tmin +15.6%, tmax +42.6%, precip −2.9%. Il
+  +32.5% tmin precedente era gonfiato anche dal target corrotto: il numero onesto è ~+16%.
+  tmax era robusto (+43%).
+- **Skill vs gauge primario indipendente**: tmin **+8.1%**, tmax **+26.1%**. Modesto ma
+  positivo. Star: casa_cesto (+28% tmin), casa_cercina (+49% tmax). Punto debole: casa_nicco
+  (negativo su entrambi) — da indagare separatamente.
+
+**Conclusione per il case study**: la claim "meglio degli altri" regge in modo robusto su
+**tmax** (+26% vs gauge indipendente, +43% vs target), in modo **modesto** su tmin (+8/+16%),
+ed è **nulla** su precip. Va dichiarata così, per location, senza headline unico gonfiato.
+Numeri di skill: usare la CV corretta post-KI-022, mai i pre-fix.
+
 ## D-017 — Convenzione timestamp nel DB: UTC naive ovunque
 
 **Data**: 2026-05-30

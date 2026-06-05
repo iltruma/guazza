@@ -8,6 +8,22 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Fixed
+- Target di training corrotto per le stazioni condivise (KI-022): `obs_weighted` in
+  `features.py` joinava `observations` con `station_weights` anche su `location_id`,
+  scartando i contributi delle stazioni che pesano su più location (le obs sono salvate
+  sotto una sola `location_id` "home"). `lavoro_cosimo` aveva il target `tmin` **nullo al
+  100%** (modello mai addestrato); `lavoro_madda` un bias di −2°C. Fix: join solo su
+  `station_id`, `GROUP BY sw.location_id` (come `ring_precip_raw`). Dopo rebuild+retrain
+  la copertura target sale a ~99% per tutte le location. Lo skill CV tmin scende da +32.5%
+  a +15.6% (era gonfiato dal target corrotto); tmax resta +42.6%. Scoperto dal robustness
+  check `analysis/skill_vs_primary.py` (D-016).
+
+### Added
+- `analysis/skill_vs_primary.py`: robustness check read-only che valuta lo skill ML vs
+  NWP-mean contro la **stazione SIR primaria** (gauge indipendente), out-of-sample, oltre
+  che contro il target pesato. Risultato: tmin +8%, tmax +26% vs gauge (D-016).
+
 ## [0.8.1] - 2026-06-05
 
 ### Added

@@ -212,18 +212,19 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 - 11 test pytest, fixture `fast_lgbm` (n_estimators=50) per contenere il tempo sotto 60s
 - Artefatti persistiti in `data/models/artifacts.pkl`
 
-#### Risultati walk-forward CV (4 fold, 2023-01 → 2026-06, 6 modelli — ri-eseguito 2026-06-05)
+#### Risultati walk-forward CV (4 fold, 2023-01 → 2026-06, 6 modelli — target corretto KI-022, 2026-06-05)
 
 | Target | MAE | Coverage 80% | Coverage 90% | Skill vs NWP-mean |
 |---|---|---|---|---|
-| tmin_c | 0.905°C | 0.801 | 0.909 | +32.5% |
-| tmax_c | 0.821°C | 0.826 | 0.913 | +42.8% |
-| precip_mm | 1.592mm | 0.814 | 0.908 | -2.4% |
+| tmin_c | 0.850°C | 0.788 | 0.905 | +15.6% |
+| tmax_c | 0.813°C | 0.810 | 0.898 | +42.6% |
+| precip_mm | 1.545mm | 0.814 | 0.903 | -2.9% |
 
-**Temperatura**: skill +32/+43% vs ensemble NWP mean (target pesato). CQR calibrato (coverage ~0.90 su target 90%).
+**Temperatura**: skill +16% tmin / +43% tmax vs ensemble NWP mean (target pesato). CQR calibrato (coverage ~0.90 su target 90%).
 **Precipitazione**: skill ≈ 0 — il modello pareggia il NWP grezzo ma non lo batte (vedi D-014).
-Lo skill è salito rispetto al +25–27% storico (4 modelli): aggiungere GFS/AROME/ICON-2I peggiora
-l'ensemble-mean grezzo ma il modello, che li usa come feature, regge → vedi riconciliazione baseline (D-016).
+Lo skill tmin scende da +32.5% a +15.6% dopo il fix di KI-022 (il bug `obs_weighted` gonfiava
+quasi al doppio lo skill apparente su tmin; tmax era robusto). Robustness check vs gauge
+indipendente: tmin +8%, tmax +26% (vedi D-016).
 
 #### CQR corrections produzione (cal set 2026-02-14 → 2026-05-15, 364 righe)
 

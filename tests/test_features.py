@@ -120,6 +120,33 @@ def test_target_present_for_observed_dates(db: DuckDBClient) -> None:
     db.__exit__(None, None, None)
 
 
+def test_shared_station_contributes_via_weights(db: DuckDBClient) -> None:
+    """Una stazione che pesa su loc1 ma con obs salvate sotto un'altra location_id
+    deve comunque alimentare il blend di loc1 (join solo su station_id)."""
+    _populate(db, n_days=5)
+    # STA_SHARED pesa su loc1 ma le sue obs sono salvate sotto 'loc_home'.
+    db.execute("""
+        INSERT INTO station_weights (station_id, source, location_id, weight, distance_km, delta_elev_m)
+        VALUES ('STA_SHARED', 'sir', 'loc1', 2.0, 0.5, 0.0)
+    """)
+    base = datetime(2024, 1, 1)
+    for i in range(6):
+        ts = base + timedelta(days=i)
+        db.execute("""
+            INSERT INTO observations
+                (source, station_id, location_id, ts, granularity, tmin_c, tmax_c, precip_mm, humidity_pct)
+            VALUES ('sir_toscana', 'STA_SHARED', 'loc_home', ?, 'daily', ?, ?, ?, ?)
+        """, [ts, -10.0, 0.0, 0.0, 50.0])  # tmin -10: trascina il blend se conta
+    build_features_daily(db)
+    # Con peso 2.0 e tmin -10, il blend di loc1 deve scendere ben sotto il valore di STA1.
+    row = db.execute(
+        "SELECT MIN(target_tmin_c) FROM features_daily WHERE location_id = 'loc1'"
+    ).fetchone()
+    assert row is not None and row[0] is not None
+    assert row[0] < 0.0
+    db.__exit__(None, None, None)
+
+
 def test_obs_features_use_previous_day(db: DuckDBClient) -> None:
     """obs_tmin_c deve essere NULL per il primo giorno (nessun giorno precedente)."""
     _populate(db, n_days=5)
