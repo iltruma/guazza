@@ -9,6 +9,12 @@ Versioning: major per sprint, minor per milestone interne.
 ## [Unreleased]
 
 ### Added
+- DLE: verdetto `grigio` (`rule_matched: "unknown"`) quando un segnale dichiarato in
+  `requires` manca o è `None`. Sostituisce il fuorviante fallback giallo (falso allarme)
+  e il falso "verde nella norma" che la regola dava interpretando `None` come 0.0.
+  Applicato a `bisenzio` (`requires: ["level_sir"]`): senza livello idrometrico mostra
+  "Dato non disponibile" invece di un semaforo arbitrario. Frontend: pill/dot grigi
+  (`--grigio`), contract aggiornato.
 - Sesta location `casa_cercina` (Sesto Fiorentino, versante S di Monte Morello,
   311m). Termo ancorato a Vaiano (TOS11000503, 322m, ΔQ+11m): unica SIR alla quota
   di Cercina. Le NWP Open-Meteo sono già downscalate a 311m, quindi un target SIR di

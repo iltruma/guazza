@@ -183,6 +183,33 @@ def test_bisenzio_rosso() -> None:
     assert r.verdict == "rosso"
 
 
+_CFG_BISENZIO_REQ = {**_CFG_BISENZIO, "requires": ["level_sir"]}
+
+
+def test_bisenzio_grigio_signal_assente() -> None:
+    # level_sir non nel SignalBag → verdetto indecidibile, non fallback giallo
+    r = evaluate_indicator("bisenzio", _CFG_BISENZIO_REQ, {}, "casa_campi")
+    assert r is not None
+    assert r.verdict == "grigio"
+    assert r.rule_matched == "unknown"
+
+
+def test_bisenzio_grigio_signal_none() -> None:
+    # level_sir presente ma None → grigio, non un falso "verde nella norma"
+    signals: SignalBag = {"level_sir": None}
+    r = evaluate_indicator("bisenzio", _CFG_BISENZIO_REQ, signals, "casa_campi")
+    assert r is not None
+    assert r.verdict == "grigio"
+
+
+def test_bisenzio_verde_con_requires() -> None:
+    # requires soddisfatto → la logica normale si applica
+    signals: SignalBag = {"level_sir": 0.5}
+    r = evaluate_indicator("bisenzio", _CFG_BISENZIO_REQ, signals, "casa_campi")
+    assert r is not None
+    assert r.verdict == "verde"
+
+
 def test_motorino_rosso_freddo() -> None:
     signals: SignalBag = {"P(precip > 0.2mm)": 0.10, "Tmin_p10": 1.0}
     r = evaluate_indicator("motorino", _CFG_MOTORINO, signals, "casa_campi")

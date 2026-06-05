@@ -117,6 +117,7 @@ indicators:
     icon: "waves"
     horizon_h: 0          # real-time da SIR idrometria
     location_specific: ["casa_campi"]
+    requires: ["level_sir"]   # senza livello idrometrico il verdetto è grigio (dato assente)
     costs:
       fn: 10  # allerta mancata — rischio esondazione
       fp: 1   # allerta inutile — disagio trascurabile

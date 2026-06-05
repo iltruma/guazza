@@ -32,6 +32,9 @@
   --rosso: #F87171;
   --rosso-bg: rgba(248,113,113,0.10);
   --rosso-bd: rgba(248,113,113,0.22);
+  --grigio: #94A3B8;
+  --grigio-bg: rgba(148,163,184,0.10);
+  --grigio-bd: rgba(148,163,184,0.22);
 
   --warm: #F97316;
   --warm-bg: rgba(249,115,22,0.08);
@@ -677,6 +680,8 @@ img.emoji {
 .g-pill--giallo .g-pill__verdict { color: var(--giallo); }
 .g-pill--rosso  { background: var(--rosso-bg);  border-color: var(--rosso-bd);  }
 .g-pill--rosso  .g-pill__verdict { color: var(--rosso); }
+.g-pill--grigio { background: var(--grigio-bg); border-color: var(--grigio-bd); }
+.g-pill--grigio .g-pill__verdict { color: var(--grigio); }
 
 /* Forecast section: striscia giorni + dettaglio (visibilità via .hidden) */
 .g-forecast {
@@ -852,6 +857,7 @@ img.emoji {
 .g-strip__dot--verde  { background: var(--verde); }
 .g-strip__dot--giallo { background: var(--giallo); }
 .g-strip__dot--rosso  { background: var(--rosso); }
+.g-strip__dot--grigio { background: var(--grigio); }
 
 /* =============================================================
    DAY DETAIL

@@ -250,8 +250,11 @@ location, target_date) ad ogni run da `nwp_comparison`. Si accumula dal deploy i
 **Signal bridge**: ML quantile → CDF inversa lineare per tmin/tmax/precip; NWP ensemble empirico per vento/umidità.
 **`coverage_empirical_30d`**: tutti `null` al primo run — si popola dopo il primo mese operativo (via `backfill_prediction_obs`).
 
-🟡 **Punto aperto — `bisenzio` threshold**: `threshold_1`/`threshold_2` non sono nel SignalBag → fallback giallo.
-   Nessuna sorgente dati per le soglie idrometriche di allerta SIR. Da implementare in Sprint 7+ (config o API SIR).
+**`bisenzio` (chiuso — 2026-06-05)**: le soglie (3.5/5.5m per TOS01004791) erano già in
+`indicators.yaml` e iniettate nel namespace di eval; l'indicatore funziona end-to-end
+(casa_campi verde, `level_sir=0.7m`). Il fallback giallo scattava solo a `level_sir` assente.
+Aggiunto meccanismo `requires` nel DLE → verdetto **grigio** ("Dato non disponibile") quando
+il segnale chiave manca o è `None`, invece di un semaforo arbitrario (vedi CHANGELOG).
 
 ### Pre-Sprint 6 — completato (2026-05-18)
 

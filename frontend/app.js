@@ -489,7 +489,7 @@ function renderHeroIndicators(todayDay) {
 
   el.innerHTML = '<span class="g-indicators-kicker">Oggi</span>' + Object.entries(todayDay.indicators).map(([id, ind], i) => {
     const meta    = INDICATOR_META[id] ?? { label: id, icon: '?' };
-    const verdict = ind.verdict ?? 'giallo';
+    const verdict = ind.verdict ?? 'grigio';
     const verdCap = verdict.charAt(0).toUpperCase() + verdict.slice(1);
     const tip     = escHtml(ind.rule_text || ind.rule_matched || '');
     return `<button class="g-pill g-pill--${verdict}"${tip ? ` data-hero-chip data-tip="${tip}"` : ' data-hero-chip'}
@@ -616,7 +616,7 @@ function renderDayStrip(days, activeDayIdx) {
 
     const dotsHtml = indicators && Object.keys(indicators).length
       ? `<div class="g-strip__dots">${Object.entries(indicators).map(([, ind]) => {
-          const v = ind.verdict ?? 'unknown';
+          const v = ind.verdict ?? 'grigio';
           return `<span class="g-strip__dot g-strip__dot--${v}"></span>`;
         }).join('')}</div>`
       : '';
@@ -737,7 +737,7 @@ function renderIndicatorChips(indicators) {
   if (!el) return;
   el.innerHTML = '<span class="g-indicators-kicker">Giorno selezionato</span>' + Object.entries(indicators).map(([id, ind], i) => {
     const meta    = INDICATOR_META[id] ?? { label: id, icon: '?' };
-    const verdict = ind.verdict ?? 'giallo';
+    const verdict = ind.verdict ?? 'grigio';
     const verdCap = verdict.charAt(0).toUpperCase() + verdict.slice(1);
     const tip     = escHtml(ind.rule_text || ind.rule_matched || '');
     return `<button class="g-pill g-pill--${verdict}"${tip ? ` data-detail-chip data-tip="${tip}"` : ' data-detail-chip'}

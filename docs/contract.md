@@ -40,7 +40,7 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
         "precip_mm": {"p50": float, ...}
       },
       "indicators": {
-        "panni":    {"verdict": "verde|giallo|rosso", "rule_matched": "green|yellow|red|fallback"},
+        "panni":    {"verdict": "verde|giallo|rosso|grigio", "rule_matched": "green|yellow|red|fallback|unknown"},
         "motorino": {"verdict": "...", "rule_matched": "..."}
       },
       "hourly": [{...}],

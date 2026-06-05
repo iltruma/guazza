@@ -96,6 +96,22 @@ def evaluate_indicator(
     static_thresholds = {k: float(v) for k, v in cfg.get("thresholds", {}).items()}
     effective_signals: SignalBag = {**signals, **static_thresholds}
 
+    # Segnali indispensabili: se mancano (assenti o None) il verdetto è indecidibile.
+    # Senza questo, una regola come "level_sir < soglia" valuterebbe il None come 0.0
+    # → falso "verde nella norma", oppure (segnale assente) cadrebbe nel fallback giallo.
+    required: list[str] = cfg.get("requires", [])
+    if any(effective_signals.get(s) is None for s in required):
+        return IndicatorResult(
+            indicator_id=indicator_id,
+            location_id=location_id,
+            verdict="grigio",
+            rule_matched="unknown",
+            rule_text="Dato non disponibile",
+            alpha=alpha,
+            cost_fn=float(costs["fn"]),
+            cost_fp=float(costs["fp"]),
+        )
+
     for rule in ("red", "yellow", "green"):
         condition = logic.get(rule, "")
         if condition and _eval_condition(condition, effective_signals):
@@ -197,7 +213,7 @@ def cmd_evaluate(
     indicators = load_indicators(Path(config_dir) / "indicators.yaml")
     results = evaluate_all(indicators, signals, location)
 
-    verdict_icon = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴"}
+    verdict_icon = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴", "grigio": "⚪"}
     typer.echo(f"\n{location} — {len(results)} indicatori:")
     for r in results:
         icon = verdict_icon.get(r.verdict, "⚪")
