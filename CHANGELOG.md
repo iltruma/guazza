@@ -8,6 +8,15 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Added
+- Backfill multi-lead D+1…D+7 (`ingest multilead` / `fetch_openmeteo_multilead_batch`):
+  ricostruisce dallo storico cosa ogni modello prevedeva 1-7 giorni prima, via le variabili
+  `<var>_previous_dayN` della Historical Forecast API. Mappa `previous_dayN` →
+  `lead_time_h=24N`, `ts_run=mezzanotte(T−N)`, upsert in `forecasts`; la pipeline features
+  aggrega senza modifiche. Abilita il backtest multi-giorno **senza deploy**. Orizzonte
+  model-dependent (ECMWF D+7, ICON-EU D+4, ICON-2I D+2, ICON-D2/AROME D+1; GFS escluso —
+  non archivia run precedenti). Vedi D-016 / punto aperto Sprint 7.
+
 ## [0.8.2] - 2026-06-05
 
 ### Fixed

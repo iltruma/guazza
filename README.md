@@ -124,6 +124,9 @@ Vedi `docs/decisions.md` per motivazioni complete.
 # Backfill storico one-shot (SIR + Open-Meteo 2022→oggi)
 uv run python -m guazza.jobs.ingest historical
 
+# Backfill multi-lead D+1…D+7 one-shot (run precedenti via *_previous_dayN, per il backtest)
+uv run python -m guazza.jobs.ingest multilead
+
 # Delta giornaliero — schedulare a 06:00 UTC (include l'accumulo Netatmo daily di ieri)
 uv run python -m guazza.jobs.ingest daily
 

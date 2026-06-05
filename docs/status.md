@@ -605,11 +605,16 @@ gap fino a 2.14°C); aggregazione UTC vs Rome trascurabile (~0.01°C, ipotesi sc
 Baseline del case study fissato sul target pesato; skill ricomputato a 6 modelli:
 **+32% tmin / +43% tmax**. Dettaglio in D-016.
 
-🟡 **Punto aperto — backfill multi-lead per D+1…D+7** (estende il 🟡 di Sprint 3, lead_time_h):
-il backtest multi-giorno non è eseguibile finché lo storico contiene solo lead 0-5h. Due
-strade: (a) ri-ingestare l'orizzonte completo per run dalla Open-Meteo Historical Forecast
-API se l'API lo consente, (b) accumularlo dal deploy in poi (Sprint 8). Gate della tesi
-completa sui giorni a venire.
+**Backfill multi-lead D+1…D+7 — sbloccato (2026-06-05)**: la via (a) funziona. La Historical
+Forecast API espone i run precedenti via variabili `<var>_previous_dayN` (verificato con sonda),
+quindi il backtest multi-giorno è ricostruibile **in locale, senza deploy**. Nuovo comando
+`ingest multilead` (`fetch_openmeteo_multilead_batch`): mappa `previous_dayN` → `lead_time_h=24N`,
+`ts_run=mezzanotte(T−N)`, upsert in `forecasts`; la pipeline features lo aggrega senza modifiche.
+Orizzonte model-dependent: ECMWF D+7, ICON-EU D+4, ICON-2I D+2, ICON-D2/AROME D+1, GFS escluso
+(non archivia run precedenti). A lead lungo l'ensemble è ECMWF-centrico — da dichiarare nel
+case study. Validato su casa_campi (aprile 2026): forecasts e features_daily multi-lead corretti.
+🟡 Resta da eseguire il **backfill completo** (6 location, 2022→oggi) e il **backtest multi-lead**
+(walk-forward CV per lead bucket; lo skill atteso degrada D+1→D+7).
 
 ### Sprint 8 — Deploy nel homelab (Dell Optiplex 3050 / Proxmox + Cloudflare Tunnel)
 **Dipendenza**: Sprint 7 chiuso, sistema stabile in locale

@@ -1455,6 +1455,190 @@ def fetch_openmeteo_historical_batch(
     return results
 
 
+# ── Backfill multi-lead (D+1…D+7) via variabili *_previous_dayN ────────────────
+# La Historical Forecast API restituisce di default la stima migliore (run più
+# fresco per ogni ora → lead 0-5h). Le variabili `<var>_previous_dayN` espongono
+# invece cosa il run di N giorni prima prevedeva per quella stessa ora valida →
+# ricostruisce i lead D+1…D+7 senza deploy. L'orizzonte è model-dependent (oltre
+# i giorni di forecast del modello la serie torna vuota). Verificato 2026-06-05.
+_OM_PREVIOUS_DAY_MAX: dict[str, int] = {
+    "ecmwf_ifs":                  7,
+    "icon_eu":                    4,
+    "icon_d2":                    1,
+    "gfs025":                     0,  # non archivia run precedenti su questo endpoint
+    "arome_france":               1,
+    "italia_meteo_arpae_icon_2i": 2,
+}
+
+# Solo le variabili usate dalla feature pipeline (features.py daily_nwp). Le altre
+# (pressione, raffica, weather_code) non entrano nel modello → non servono al backtest.
+_OM_MULTILEAD_VARS: dict[str, str] = {
+    "temperature_2m":       "temp_c",
+    "precipitation":        "precip_mm",
+    "relative_humidity_2m": "humidity_pct",
+    "wind_speed_10m":       "wind_speed_ms",
+}
+
+
+def _multilead_hourly_params(model: str) -> list[str]:
+    """Variabili `<var>_previous_dayN` per i lead archiviati dal modello."""
+    max_n = _OM_PREVIOUS_DAY_MAX.get(model, 0)
+    return [f"{var}_previous_day{n}"
+            for n in range(1, max_n + 1)
+            for var in _OM_MULTILEAD_VARS]
+
+
+def _parse_om_multilead(
+    data: dict[str, Any],
+    model: str,
+    location_id: str,
+) -> list[dict[str, Any]]:
+    """Espande le serie `<var>_previous_dayN` in record forecasts multi-lead.
+
+    Per ogni ora valida T e ogni N disponibile: ts_valid=T, lead_time_h=24N,
+    ts_run = mezzanotte UTC del giorno (T − N giorni). Così features.daily_nwp
+    calcola DATEDIFF=N → lead_time_days=N e aggrega l'intera giornata a un daily
+    a lead 24N. Le righe con tutte le variabili null vengono saltate.
+    """
+    hourly = data.get("hourly", {})
+    times: list[str] = hourly.get("time", [])
+    if not times:
+        return []
+
+    max_n = _OM_PREVIOUS_DAY_MAX.get(model, 0)
+    records: list[dict[str, Any]] = []
+    for i, time_str in enumerate(times):
+        try:
+            ts_valid = datetime.fromisoformat(time_str).replace(tzinfo=UTC)
+        except ValueError:
+            continue
+        for n in range(1, max_n + 1):
+            vals: dict[str, float | None] = {}
+            for om_var, col in _OM_MULTILEAD_VARS.items():
+                series = hourly.get(f"{om_var}_previous_day{n}", [])
+                v = series[i] if i < len(series) else None
+                vals[col] = float(v) if v is not None else None
+            if all(v is None for v in vals.values()):
+                continue
+            ts_run = datetime(
+                ts_valid.year, ts_valid.month, ts_valid.day, tzinfo=UTC
+            ) - timedelta(days=n)
+            records.append({
+                "source": f"open_meteo_{model}",
+                "location_id": location_id,
+                "ts_run": ts_run,
+                "ts_valid": ts_valid,
+                "lead_time_h": 24 * n,
+                **vals,
+            })
+    return records
+
+
+def _fetch_one_model_multilead(
+    model: str,
+    chunks: list[tuple[str, str]],
+    loc_ids: list[str],
+    lats: list[float],
+    lons: list[float],
+    results: dict[str, dict[str, list[dict[str, Any]]]],
+) -> None:
+    """Fetch multi-lead per un singolo modello su tutti i chunk."""
+    hourly_vars = _multilead_hourly_params(model)
+    if not hourly_vars:
+        return  # modello senza run archiviati (gfs025)
+    for c_start, c_end in chunks:
+        params: dict[str, str | int | float | list[str]] = {
+            "latitude": ",".join(map(str, lats)),
+            "longitude": ",".join(map(str, lons)),
+            "hourly": ",".join(hourly_vars),
+            "models": model,
+            "start_date": c_start,
+            "end_date": c_end,
+            "timezone": "UTC",
+            "wind_speed_unit": "ms",
+        }
+        try:
+            data = _fetch_om_json_historical(_OM_HISTORICAL_URL, params)
+            responses = data if isinstance(data, list) else [data]
+            for lid, resp in zip(loc_ids, responses, strict=True):
+                records = _parse_om_multilead(resp, model, lid)
+                results[lid][model].extend(records)
+                _log_scrape(
+                    f"openmeteo_multilead:{lid}:{model}",
+                    "ok",
+                    rows=len(records),
+                    detail=f"{c_start} to {c_end}",
+                )
+        except Exception as e:
+            logger.error(f"Open-Meteo multilead [{model}] [{c_start}→{c_end}] fallito: {e}")
+            for lid in loc_ids:
+                _log_scrape(f"openmeteo_multilead:{lid}:{model}", "fail", detail=str(e))
+        time.sleep(3.0)
+
+
+def fetch_openmeteo_multilead_batch(
+    locations: dict[str, Any],
+    start_date: str,
+    end_date: str,
+    models: list[str] | None = None,
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Backfill multi-lead D+1…D+7 da Open-Meteo (variabili `*_previous_dayN`).
+
+    Stessa struttura di fetch_openmeteo_historical_batch (chunk + ThreadPool(3)),
+    ma richiede i run precedenti. Salta i modelli senza orizzonte archiviato.
+
+    Returns:
+        Dict {location_id: {model: [record_wide, ...]}}
+    """
+    if models is None:
+        models = [m for m in _OM_MODELS if _OM_PREVIOUS_DAY_MAX.get(m, 0) > 0]
+
+    _HIGH_RES = {"icon_d2", "arome_france", "italia_meteo_arpae_icon_2i"}
+    _DEFAULT_CHUNK = 180
+    _HR_CHUNK = 90
+
+    results: dict[str, dict[str, list[dict[str, Any]]]] = {
+        loc_id: {model: [] for model in models} for loc_id in locations
+    }
+
+    loc_ids = sorted(locations.keys())
+    lats = [locations[lid]["lat"] for lid in loc_ids]
+    lons = [locations[lid]["lon"] for lid in loc_ids]
+
+    model_chunks: dict[str, list[tuple[str, str]]] = {}
+    for model in models:
+        chunk_days = _HR_CHUNK if model in _HIGH_RES else _DEFAULT_CHUNK
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+        chunks: list[tuple[str, str]] = []
+        curr_start = start_dt
+        while curr_start <= end_dt:
+            curr_end = min(curr_start + timedelta(days=chunk_days - 1), end_dt)
+            chunks.append((curr_start.isoformat(), curr_end.isoformat()))
+            curr_start = curr_end + timedelta(days=1)
+        model_chunks[model] = chunks
+
+    _tty = sys.stderr.isatty()
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(
+                _fetch_one_model_multilead,
+                model, model_chunks[model], loc_ids, lats, lons, results,
+            ): model
+            for model in models
+        }
+        for future in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="OM multilead batch",
+            unit="model",
+            disable=not _tty,
+        ):
+            future.result()
+
+    return results
+
+
 def fetch_openmeteo_all_locations(
     locations: dict[str, Any],
     models: list[str] | None = None,

@@ -49,6 +49,7 @@ from guazza.fetchers import (  # noqa: E402
     fetch_netatmo_all_locations,
     fetch_openmeteo_all_locations,
     fetch_openmeteo_historical_batch,
+    fetch_openmeteo_multilead_batch,
     fetch_sir_bulk_realtime,
     fetch_sir_historical,
     fetch_sir_stations_realtime,
@@ -390,6 +391,76 @@ def cmd_historical(
                 rows=sir_total + om_total if ok else None)
     _ping_healthchecks()
     typer.echo(f"\nCompletato in {elapsed:.0f}s — SIR:{sir_total} OM:{om_total}")
+
+
+@app.command("multilead")
+def cmd_multilead(
+    db_path: Path = _DB_OPT,
+    config_dir: str = _CFG_OPT,
+    start_date: str = typer.Option("2022-01-01", "--start-date", help="Inizio intervallo YYYY-MM-DD"),
+    end_date: str = typer.Option("", "--end-date", help="Fine intervallo YYYY-MM-DD (default: oggi-2gg)"),
+    location: list[str] | None = typer.Option(None, "--location", help="Limita a questa location (ripetibile)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Stampa cosa farebbe senza scrivere"),
+) -> None:
+    """Backfill multi-lead D+1…D+7 da Open-Meteo (variabili *_previous_dayN).
+
+    Una tantum: aggiunge a `forecasts` i lead lunghi (24/48/…/168h) che lo storico
+    best-estimate non contiene, per abilitare il backtest multi-giorno senza deploy.
+    L'orizzonte è model-dependent (ECMWF→D+7, ICON-EU→D+4, ICON-2I→D+2, ICON-D2/AROME→D+1,
+    GFS escluso: non archivia run precedenti). Non tocca le righe lead-0 esistenti.
+
+    Esempi:
+        multilead --location casa_campi --start-date 2025-01-01
+        multilead --start-date 2022-01-01
+    """
+    _setup_logging()
+    if not end_date:
+        end_date = (datetime.now(tz=UTC) - timedelta(days=2)).strftime("%Y-%m-%d")
+
+    cfg = Path(config_dir)
+    locations_all, _stations = _load_config(cfg)
+
+    if location:
+        unknown = set(location) - set(locations_all)
+        if unknown:
+            typer.echo(f"Errore: location sconosciute: {sorted(unknown)}")
+            typer.echo(f"Disponibili: {list(locations_all.keys())}")
+            raise typer.Exit(1)
+        locations = {k: v for k, v in locations_all.items() if k in location}
+    else:
+        locations = locations_all
+
+    typer.echo(f"Multilead backfill: {start_date} → {end_date}")
+    typer.echo(f"Location: {list(locations.keys())}")
+
+    if dry_run:
+        typer.echo("[dry-run] Nessuna scrittura effettuata.")
+        return
+
+    _ping_healthchecks("/start")
+    t0 = time.monotonic()
+    om_total = 0
+    try:
+        with DuckDBClient(db_path=db_path) as db:
+            db.init_schema()
+            results_all = fetch_openmeteo_multilead_batch(
+                locations=locations,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            for _loc_id, model_results in results_all.items():
+                for _model, records in model_results.items():
+                    if records:
+                        om_total += db.upsert_forecasts(records)
+    except Exception as e:
+        logger.error(f"multilead fallito: {e}")
+        _ping_healthchecks("/fail")
+        raise typer.Exit(1) from e
+
+    elapsed = time.monotonic() - t0
+    _log_scrape("job_multilead", "ok", rows=om_total)
+    _ping_healthchecks()
+    typer.echo(f"\nCompletato in {elapsed:.0f}s — OM multilead: {om_total} record")
 
 
 @app.command("daily")

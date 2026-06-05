@@ -13,6 +13,8 @@ from guazza.fetchers import (
     _extract_measures,
     _infer_ts_run,
     _measure_ts,
+    _multilead_hourly_params,
+    _parse_om_multilead,
     _parse_om_response,
     _qc_range,
     _StationData,
@@ -506,6 +508,59 @@ def test_parse_om_response_null_values() -> None:
     assert records[0]["precip_mm"] is None
 
 
+_OM_MULTILEAD_RESPONSE: dict[str, Any] = {
+    "hourly": {
+        "time": ["2026-05-15T00:00", "2026-05-15T12:00"],
+        "temperature_2m_previous_day1": [8.0, 20.0],
+        "precipitation_previous_day1": [0.0, 1.5],
+        "relative_humidity_2m_previous_day1": [80.0, 55.0],
+        "wind_speed_10m_previous_day1": [1.0, 3.0],
+        "temperature_2m_previous_day2": [7.5, 21.0],
+        "precipitation_previous_day2": [0.0, 0.0],
+        "relative_humidity_2m_previous_day2": [82.0, 50.0],
+        "wind_speed_10m_previous_day2": [1.2, 3.5],
+    }
+}
+
+
+def test_multilead_hourly_params_per_model() -> None:
+    """Numero variabili = 4 × orizzonte del modello; gfs025 (orizzonte 0) → vuoto."""
+    assert len(_multilead_hourly_params("ecmwf_ifs")) == 4 * 7
+    assert len(_multilead_hourly_params("italia_meteo_arpae_icon_2i")) == 4 * 2
+    assert _multilead_hourly_params("gfs025") == []
+
+
+def test_parse_om_multilead_lead_and_ts_run() -> None:
+    """Ogni previous_dayN → record a lead 24N con ts_run = mezzanotte(T − N giorni)."""
+    # icon_2i ha orizzonte 2 → due lead (24h, 48h) per ogni ora valida.
+    records = _parse_om_multilead(
+        _OM_MULTILEAD_RESPONSE, "italia_meteo_arpae_icon_2i", "casa_campi"
+    )
+    assert len(records) == 4  # 2 ore × 2 lead
+    by_lead = {(r["ts_valid"], r["lead_time_h"]): r for r in records}
+    r1 = by_lead[(datetime(2026, 5, 15, 0, 0, tzinfo=UTC), 24)]
+    assert r1["ts_run"] == datetime(2026, 5, 14, 0, 0, tzinfo=UTC)
+    assert r1["source"] == "open_meteo_italia_meteo_arpae_icon_2i"
+    assert r1["temp_c"] == pytest.approx(8.0)
+    r2 = by_lead[(datetime(2026, 5, 15, 12, 0, tzinfo=UTC), 48)]
+    assert r2["ts_run"] == datetime(2026, 5, 13, 0, 0, tzinfo=UTC)
+    assert r2["temp_c"] == pytest.approx(21.0)
+
+
+def test_parse_om_multilead_skips_all_null() -> None:
+    """Ora con tutte le variabili null a un lead → record saltato."""
+    data = {
+        "hourly": {
+            "time": ["2026-05-15T00:00"],
+            "temperature_2m_previous_day1": [None],
+            "precipitation_previous_day1": [None],
+            "relative_humidity_2m_previous_day1": [None],
+            "wind_speed_10m_previous_day1": [None],
+        }
+    }
+    assert _parse_om_multilead(data, "arome_france", "casa_campi") == []
+
+
 def test_parse_om_response_weather_code_as_int() -> None:
     """weather_code deve essere int, non float."""
     data = {
@@ -813,6 +868,7 @@ def test_parse_sir_realtime_ts_from_termo() -> None:
 def test_parse_sir_realtime_ts_fallback_now() -> None:
     """Senza campo date deve tornare un ts UTC naive vicino a now UTC."""
     from datetime import UTC
+
     from guazza.fetchers import _parse_sir_realtime_ts
     before = datetime.now(UTC).replace(tzinfo=None)
     ts = _parse_sir_realtime_ts({})
@@ -824,6 +880,7 @@ def test_parse_sir_realtime_ts_fallback_now() -> None:
 def test_parse_sir_realtime_ts_unparsable_fallback() -> None:
     """Se date non è parsabile deve tornare un ts UTC naive vicino a now UTC."""
     from datetime import UTC
+
     from guazza.fetchers import _parse_sir_realtime_ts
     data = {"termo": {"value": "18.0", "date": "invalid-date"}}
     before = datetime.now(UTC).replace(tzinfo=None)
