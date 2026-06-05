@@ -355,12 +355,24 @@ Dopo fix + rebuild + retrain:
   tmax era robusto (+43%).
 - **Skill vs gauge primario indipendente**: tmin **+8.1%**, tmax **+26.1%**. Modesto ma
   positivo. Star: casa_cesto (+28% tmin), casa_cercina (+49% tmax). Punto debole: casa_nicco
-  (negativo su entrambi) — da indagare separatamente.
+  (negativo) — non un difetto ma il floor del post-processing (vedi sotto).
 
 **Conclusione per il case study**: la claim "meglio degli altri" regge in modo robusto su
 **tmax** (+26% vs gauge indipendente, +43% vs target), in modo **modesto** su tmin (+8/+16%),
 ed è **nulla** su precip. Va dichiarata così, per location, senza headline unico gonfiato.
 Numeri di skill: usare la CV corretta post-KI-022, mai i pre-fix.
+
+**`casa_nicco` negativo — floor del post-processing, non un difetto (2026-06-05)**: dopo
+KI-022 casa_nicco resta l'unica location con skill tmin negativo (−8% vs target e vs gauge).
+Causa: il bias grezzo del NWP-mean per casa_nicco tmin è **−0.11°C**, cioè ~zero — il NWP è
+già quasi non distorto lì, non c'è errore sistematico da correggere e il LightGBM quantile
+può solo aggiungere rumore. È il **floor strutturale** del post-processing (si migliora solo
+dove c'è bias: casa_cesto +1.12°C → +28%, casa_cercina −1.69°C → +48%). In assoluto il −8%
+vale **+0.07°C** di MAE (0.92 vs 0.85), operativamente irrilevante. Su tmax il modello
+corregge il bias (−0.85°C → +27% vs target); il −25% vs gauge è solo l'offset target↔primaria
+di +0.6°C (stessa caveat, al piccolo). Nessuna correzione: uno shrinkage modello↔NWP-mean
+dove il bias è ~0 sarebbe un cambio ad ampio impatto per recuperare 0.07°C. Da riportare nel
+case study come onestà sul limite ("dove il NWP è già buono, non miglioriamo").
 
 ## D-017 — Convenzione timestamp nel DB: UTC naive ovunque
 

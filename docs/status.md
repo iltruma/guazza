@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-06-05 (riconciliazione baseline skill D-016 + verdetto DLE grigio, v0.8.1)
+> Aggiornato: 2026-06-05 (fix target KI-022 + robustness check D-016 + verdetto DLE grigio, v0.8.2)
 
 ## Cosa è stato fatto
 

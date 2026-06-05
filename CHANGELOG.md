@@ -8,6 +8,8 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-06-05
+
 ### Fixed
 - Target di training corrotto per le stazioni condivise (KI-022): `obs_weighted` in
   `features.py` joinava `observations` con `station_weights` anche su `location_id`,
