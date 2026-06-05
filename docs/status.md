@@ -612,9 +612,14 @@ quindi il backtest multi-giorno è ricostruibile **in locale, senza deploy**. Nu
 `ts_run=mezzanotte(T−N)`, upsert in `forecasts`; la pipeline features lo aggrega senza modifiche.
 Orizzonte model-dependent: ECMWF D+7, ICON-EU D+4, ICON-2I D+2, ICON-D2/AROME D+1, GFS escluso
 (non archivia run precedenti). A lead lungo l'ensemble è ECMWF-centrico — da dichiarare nel
-case study. Validato su casa_campi (aprile 2026): forecasts e features_daily multi-lead corretti.
-🟡 Resta da eseguire il **backfill completo** (6 location, 2022→oggi) e il **backtest multi-lead**
-(walk-forward CV per lead bucket; lo skill atteso degrada D+1→D+7).
+case study. **Limite archivio**: `previous_dayN` parte da ~nov 2025 (non multi-anno): la
+versione rigorosa multi-stagione si accumula solo in avanti.
+
+**Backfill eseguito (2025-10-15→oggi, 6 location, 495k record) + backtest multi-lead**
+(`analysis/backtest_multilead.py`): **Guazza batte il NWP a ogni lead D+0→D+7**. tmin skill
+vs gauge +13…+33% (crescente col lead), tmax +5…+13%. Il NWP degrada 1.0→2.75°C su tmin,
+Guazza 0.8→2.0°C: il valore della correzione cresce in assoluto col lead. Dettaglio e caveat
+in D-016. 🟡 La versione multi-anno resta gated sull'accumulo forward (deploy).
 
 ### Sprint 8 — Deploy nel homelab (Dell Optiplex 3050 / Proxmox + Cloudflare Tunnel)
 **Dipendenza**: Sprint 7 chiuso, sistema stabile in locale

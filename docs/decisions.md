@@ -362,6 +362,25 @@ Dopo fix + rebuild + retrain:
 ed è **nulla** su precip. Va dichiarata così, per location, senza headline unico gonfiato.
 Numeri di skill: usare la CV corretta post-KI-022, mai i pre-fix.
 
+**Backtest multi-lead D+0…D+7 (2026-06-05)** — con `ingest multilead` (archivio
+`previous_dayN`, disponibile da ~nov 2025) e `analysis/backtest_multilead.py`: modello
+addestrato sui dati prima del 2025-10-08 (embargo), valutato out-of-sample sulla finestra
+nov 2025→giu 2026, lead per lead. **Guazza batte il NWP-mean a ogni lead.**
+
+- **tmin**: MAE NWP degrada 1.04→2.75°C (D+0→D+7), Guazza 0.81→2.04°C. Skill vs target
+  +19…+36%, vs gauge primario +13…+33% — **positivo a ogni lead e crescente** con
+  l'orizzonte (a D+5 salva ~0.9°C in assoluto).
+- **tmax**: MAE NWP 1.30→2.30°C, Guazza 0.80→1.86°C. Skill vs target +19…+38%; vs gauge
+  più marginale a corto lead (+5/+3% a D+1/D+3) ma positivo (+10/+13%) a lead lungo.
+- **Lettura**: il valore del post-processing **cresce in assoluto col lead**, perché la
+  previsione pubblica peggiora di più dove il microclima conta. La tesi regge su tutto
+  l'orizzonte, non solo nel nowcast.
+
+**Caveat**: finestra ~7 mesi (una stagione, inverno-primavera), contigua e singola (non
+multi-fold); a lead lungo l'ensemble è solo-ECMWF (orizzonte degli altri modelli più corto).
+La versione multi-anno/multi-stagione si accumula solo in avanti dal deploy. Questi numeri
+sono un risultato **preliminare ma onesto**, sufficiente per il primo articolo.
+
 **`casa_nicco` negativo — floor del post-processing, non un difetto (2026-06-05)**: dopo
 KI-022 casa_nicco resta l'unica location con skill tmin negativo (−8% vs target e vs gauge).
 Causa: il bias grezzo del NWP-mean per casa_nicco tmin è **−0.11°C**, cioè ~zero — il NWP è

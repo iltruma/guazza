@@ -16,6 +16,10 @@ Versioning: major per sprint, minor per milestone interne.
   aggrega senza modifiche. Abilita il backtest multi-giorno **senza deploy**. Orizzonte
   model-dependent (ECMWF D+7, ICON-EU D+4, ICON-2I D+2, ICON-D2/AROME D+1; GFS escluso —
   non archivia run precedenti). Vedi D-016 / punto aperto Sprint 7.
+- `analysis/backtest_multilead.py`: backtest multi-lead D+0…D+7 (modello addestrato prima
+  della finestra, valutato out-of-sample). Risultato: Guazza batte il NWP-mean a ogni lead;
+  skill tmin vs gauge +13…+33% crescente col lead, tmax +5…+13% (D-016). Archivio
+  `previous_dayN` disponibile da ~nov 2025 → backtest su ~7 mesi (inverno-primavera).
 
 ## [0.8.2] - 2026-06-05
 
