@@ -420,6 +420,29 @@ aperto, definito turno per turno: bug fix, raffinamenti UX, micro-feature.
 Criterio di uscita: tutto gira pulito in locale per ≥1 settimana senza
 interventi.
 
+**Stato roadmap (aggiornato 2026-06-05, v0.8.2):**
+
+Fatto in Sprint 7:
+- ✅ Radar RainViewer (frontend) — 2026-05-22
+- ✅ Standardizzazione timestamp UTC naive (D-017) — 2026-05-30
+- ✅ Rifinitura frontend da critique/audit (a11y, palette token) — 2026-05-29
+- ✅ Intraday correction D+0 (ancoraggio obs SIR realtime) — 2026-05-31
+- ✅ Sesta location `casa_cercina` + accumulo Netatmo daily (D-018) — 2026-06-02
+- ✅ `benchmark_forecasts` (NWP daily vs ML nel tempo) — 2026-06-05
+- ✅ Riconciliazione baseline skill + robustness check vs gauge primario (D-016) — 2026-06-05
+- ✅ Fix target KI-022 (`obs_weighted` su stazioni condivise) + rebuild/retrain — 2026-06-05
+- ✅ Verdetto DLE `grigio` per segnale mancante (`requires`) — 2026-06-05
+
+Resta in Sprint 7:
+- 🟡 Far scorrere la finestra di stabilità (≥1 settimana pulito in locale) — gate verso Sprint 8
+- 🟢 Eventuali micro-raffinamenti UX/logica a discrezione, turno per turno
+
+Prossimi sprint (bloccati dal deploy, rimandato finché l'homelab non è pronto):
+- Sprint 8 — Deploy homelab (Proxmox + Cloudflare Tunnel + cron + backup R2)
+- Sprint 9 — Model monitoring (coverage rolling) + nowcasting orario
+- Sprint 10 — Calibrazione soglie DLE su 30-60 giorni di `indicator_log` in produzione
+- Sprint 11 — Case study / pubblicazione (numeri di skill già fissati in D-016)
+
 #### Radar RainViewer (2026-05-22)
 
 - **Sezione radar** inserita tra condizioni attuali e previsioni giornaliere
