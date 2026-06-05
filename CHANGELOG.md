@@ -8,6 +8,8 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-06-05
+
 ### Added
 - Backfill multi-lead D+1…D+7 (`ingest multilead` / `fetch_openmeteo_multilead_batch`):
   ricostruisce dallo storico cosa ogni modello prevedeva 1-7 giorni prima, via le variabili

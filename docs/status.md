@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-06-05 (fix target KI-022 + robustness check D-016 + verdetto DLE grigio, v0.8.2)
+> Aggiornato: 2026-06-05 (backfill + backtest multi-lead D+0…D+7, fix KI-022, robustness D-016, v0.8.3)
 
 ## Cosa è stato fatto
 
