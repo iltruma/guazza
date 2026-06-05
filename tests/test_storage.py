@@ -445,3 +445,123 @@ def test_backfill_prediction_obs_shared_station(tmp_db: Path) -> None:
 
     assert updated == 1
     assert row == (pytest.approx(7.5), pytest.approx(17.5), pytest.approx(2.0))
+
+
+# ── benchmark_forecasts ───────────────────────────────────────────────────────
+
+def test_upsert_benchmark_forecasts_basic(tmp_db: Path) -> None:
+    from datetime import date
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        n = db.upsert_benchmark_forecasts([{
+            "source": "open_meteo_ecmwf_ifs", "location_id": "casa_campi",
+            "target_date": date(2026, 6, 1), "lead_time_h": 24,
+            "tmin_c": 10.0, "tmax_c": 22.0, "precip_mm": 1.5,
+        }])
+        row = db.execute(
+            "SELECT source, tmin_c, tmax_c, precip_mm FROM benchmark_forecasts"
+        ).fetchone()
+    assert n == 1
+    assert row == ("open_meteo_ecmwf_ifs", pytest.approx(10.0), pytest.approx(22.0), pytest.approx(1.5))
+
+
+def test_upsert_benchmark_forecasts_replace(tmp_db: Path) -> None:
+    """INSERT OR REPLACE su stessa PK: il record più recente vince."""
+    from datetime import date
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        d = date(2026, 6, 1)
+        db.upsert_benchmark_forecasts([{
+            "source": "open_meteo_ecmwf_ifs", "location_id": "loc",
+            "target_date": d, "lead_time_h": 48, "tmin_c": 8.0, "tmax_c": 20.0, "precip_mm": 0.0,
+        }])
+        db.upsert_benchmark_forecasts([{
+            "source": "open_meteo_ecmwf_ifs", "location_id": "loc",
+            "target_date": d, "lead_time_h": 24, "tmin_c": 9.0, "tmax_c": 21.0, "precip_mm": 0.5,
+        }])
+        row = db.execute(
+            "SELECT lead_time_h, tmin_c FROM benchmark_forecasts"
+        ).fetchone()
+    assert row == (24, pytest.approx(9.0))
+
+
+def test_upsert_benchmark_forecasts_empty(tmp_db: Path) -> None:
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        n = db.upsert_benchmark_forecasts([])
+    assert n == 0
+
+
+def test_backfill_benchmark_obs(tmp_db: Path) -> None:
+    from datetime import date, datetime
+    target_date = date(2026, 5, 10)
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        db.upsert_benchmark_forecasts([{
+            "source": "open_meteo_icon_eu", "location_id": "casa_campi",
+            "target_date": target_date, "lead_time_h": 24,
+            "tmin_c": 11.0, "tmax_c": 23.0, "precip_mm": 2.0,
+        }])
+        db.upsert_sir_observations([{
+            "source": "sir_toscana", "station_id": "ST_A",
+            "location_id": "casa_campi", "ts": datetime(2026, 5, 10),
+            "granularity": "daily", "tmin_c": 10.5, "tmax_c": 22.5, "precip_mm": 3.0,
+        }])
+        db.execute(
+            "INSERT INTO station_weights (station_id, source, location_id, weight) "
+            "VALUES (?, 'sir', ?, ?)",
+            ["ST_A", "casa_campi", 1.0],
+        )
+        updated = db.backfill_benchmark_obs()
+        row = db.execute(
+            "SELECT tmin_obs, tmax_obs, precip_obs FROM benchmark_forecasts"
+        ).fetchone()
+    assert updated == 1
+    assert row == (pytest.approx(10.5), pytest.approx(22.5), pytest.approx(3.0))
+
+
+def test_backfill_benchmark_obs_idempotent(tmp_db: Path) -> None:
+    """Seconda chiamata non aggiorna righe già backfillate."""
+    from datetime import date, datetime
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        db.upsert_benchmark_forecasts([{
+            "source": "open_meteo_icon_eu", "location_id": "loc",
+            "target_date": date(2026, 5, 10), "lead_time_h": 24,
+            "tmin_c": 11.0, "tmax_c": 23.0, "precip_mm": 2.0,
+        }])
+        db.upsert_sir_observations([{
+            "source": "sir_toscana", "station_id": "ST_B",
+            "location_id": "loc", "ts": datetime(2026, 5, 10),
+            "granularity": "daily", "tmin_c": 10.0, "tmax_c": 22.0, "precip_mm": 1.0,
+        }])
+        db.execute(
+            "INSERT INTO station_weights (station_id, source, location_id, weight) "
+            "VALUES (?, 'sir', ?, ?)",
+            ["ST_B", "loc", 1.0],
+        )
+        db.backfill_benchmark_obs()
+        second = db.backfill_benchmark_obs()
+    assert second == 0
+
+
+def test_ensure_benchmark_schema_migration(tmp_db: Path) -> None:
+    """Vecchio schema (colonna provider/temp_c) viene ricreato con il nuovo."""
+    with DuckDBClient(db_path=tmp_db) as db:
+        db.init_schema()
+        # Simula vecchio schema: drop + ricrea con colonne obsolete
+        db.execute("DROP TABLE benchmark_forecasts")
+        db.execute("""
+            CREATE TABLE benchmark_forecasts (
+                provider VARCHAR NOT NULL,
+                location_id VARCHAR NOT NULL,
+                ts_run TIMESTAMP NOT NULL,
+                ts_valid TIMESTAMP NOT NULL,
+                temp_c DOUBLE,
+                PRIMARY KEY (provider, location_id, ts_run, ts_valid)
+            )
+        """)
+        db.ensure_benchmark_schema()
+        # Deve avere la nuova colonna tmin_obs
+        row = db.execute("SELECT tmin_obs FROM benchmark_forecasts LIMIT 0").fetchone()
+    assert row is None  # query ok, tabella vuota

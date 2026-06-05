@@ -110,9 +110,13 @@ def cmd_run(
         with DuckDBClient(db_path=db_path) as db:
             if not dry_run:
                 db.ensure_predictions_schema()
+                db.ensure_benchmark_schema()
                 n_backfilled = db.backfill_prediction_obs()
                 if n_backfilled:
                     logger.info(f"Obs backfilled: {n_backfilled} predictions aggiornate")
+                n_bench_backfilled = db.backfill_benchmark_obs()
+                if n_bench_backfilled:
+                    logger.info(f"Obs backfilled: {n_bench_backfilled} benchmark aggiornati")
 
             # Per ogni (location, data): forecast più recente = lead_time_h più corto
             df_all = db.execute("""
@@ -201,6 +205,18 @@ def cmd_run(
                         target_date_obj.year, target_date_obj.month, target_date_obj.day,
                         tzinfo=None,
                     )
+                    db.upsert_benchmark_forecasts([
+                        {
+                            "source":      cmp["source"],
+                            "location_id": location_id,
+                            "target_date": target_date_obj,
+                            "lead_time_h": lead_time_h,
+                            "tmin_c":      cmp["tmin_c"],
+                            "tmax_c":      cmp["tmax_c"],
+                            "precip_mm":   cmp["precip_mm"],
+                        }
+                        for cmp in nwp_comparison
+                    ])
                     db.upsert_predictions([{
                         "model_version": model_version,
                         "location_id":   location_id,

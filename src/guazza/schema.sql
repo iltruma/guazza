@@ -110,18 +110,22 @@ CREATE TABLE IF NOT EXISTS predictions (
 CREATE INDEX IF NOT EXISTS idx_predictions_location_ts
     ON predictions (location_id, ts_valid);
 
--- ── Benchmark altri provider ────────────────────────────────────────────────
+-- ── Benchmark NWP giornalieri ────────────────────────────────────────────────
+-- Aggregati daily per (source, location, data) con obs backfillate dal job predict.
+-- Permette confronto sistematico NWP grezzo vs ML nel tempo (skill score evolution).
 CREATE TABLE IF NOT EXISTS benchmark_forecasts (
-    provider    VARCHAR   NOT NULL,
-    location_id VARCHAR   NOT NULL,
-    ts_run      TIMESTAMP NOT NULL,
-    ts_valid    TIMESTAMP NOT NULL,
-    temp_c          DOUBLE,
-    humidity_pct    DOUBLE,
-    precip_mm       DOUBLE,
-    wind_speed_ms   DOUBLE,
-    last_modified   TIMESTAMP DEFAULT current_timestamp,
-    PRIMARY KEY (provider, location_id, ts_run, ts_valid)
+    source       VARCHAR NOT NULL,
+    location_id  VARCHAR NOT NULL,
+    target_date  DATE    NOT NULL,
+    lead_time_h  INTEGER,
+    tmin_c       DOUBLE,
+    tmax_c       DOUBLE,
+    precip_mm    DOUBLE,
+    tmin_obs     DOUBLE,
+    tmax_obs     DOUBLE,
+    precip_obs   DOUBLE,
+    last_modified TIMESTAMP DEFAULT current_timestamp,
+    PRIMARY KEY (source, location_id, target_date)
 );
 
 -- ── Allerte ufficiali ─────────────────────────────────────────────────────

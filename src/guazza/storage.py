@@ -90,6 +90,18 @@ class DuckDBClient:
             raise RuntimeError("DuckDBClient non è nel context manager.")
         self._conn.unregister(name)
 
+    def ensure_benchmark_schema(self) -> None:
+        """Ricrea benchmark_forecasts se lo schema è obsoleto (pre-v0.6, manca tmin_obs)."""
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+        try:
+            self._conn.execute("SELECT tmin_obs FROM benchmark_forecasts LIMIT 0")
+        except duckdb.Error:
+            self._conn.execute("DROP TABLE IF EXISTS benchmark_forecasts")
+            sql = _SCHEMA_SQL.read_text()
+            self._conn.execute(sql)
+            logger.info("benchmark_forecasts: schema migrato alla versione corrente (v0.6)")
+
     def ensure_predictions_schema(self) -> None:
         """Ricrea predictions se lo schema è obsoleto (pre-v0.5, manca tmin_p05)."""
         if self._conn is None:
@@ -161,6 +173,94 @@ class DuckDBClient:
         self._conn.unregister("_staging_pred")
         logger.info(f"upsert_predictions: {len(records)} record salvati")
         return len(records)
+
+    def upsert_benchmark_forecasts(self, records: list[dict]) -> int:
+        """UPSERT batch per benchmark NWP giornalieri nella tabella benchmark_forecasts.
+
+        Ogni record deve avere: source, location_id, target_date (date o str),
+        lead_time_h, tmin_c, tmax_c, precip_mm.
+
+        INSERT OR REPLACE: l'ultimo run del predict job sovrascrive il precedente
+        per la stessa (source, location_id, target_date).
+
+        Returns:
+            Numero di record processati.
+        """
+        if not records:
+            return 0
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+
+        _BENCH_COLS = [
+            "source", "location_id", "target_date", "lead_time_h",
+            "tmin_c", "tmax_c", "precip_mm",
+        ]
+        rows = [
+            [
+                rec["source"], rec["location_id"], rec["target_date"],
+                rec.get("lead_time_h"),
+                rec.get("tmin_c"), rec.get("tmax_c"), rec.get("precip_mm"),
+            ]
+            for rec in records
+        ]
+        df = pd.DataFrame(rows, columns=_BENCH_COLS)
+        self._conn.register("_staging_bench", df)
+        self._conn.execute("""
+            INSERT OR REPLACE INTO benchmark_forecasts
+                (source, location_id, target_date, lead_time_h, tmin_c, tmax_c, precip_mm)
+            SELECT source, location_id, target_date, lead_time_h, tmin_c, tmax_c, precip_mm
+            FROM _staging_bench
+        """)
+        self._conn.unregister("_staging_bench")
+        logger.info(f"upsert_benchmark_forecasts: {len(records)} record salvati")
+        return len(records)
+
+    def backfill_benchmark_obs(self) -> int:
+        """Aggiorna *_obs in benchmark_forecasts con le osservazioni SIR pesate.
+
+        Idempotente: aggiorna solo le righe con tmin_obs IS NULL.
+        Stessa logica di backfill_prediction_obs: ground truth = obs SIR daily pesate
+        via station_weights.
+
+        Returns:
+            Numero approssimativo di righe aggiornate.
+        """
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+        result = self._conn.execute("""
+            UPDATE benchmark_forecasts
+            SET
+                tmin_obs   = ow.tmin_c,
+                tmax_obs   = ow.tmax_c,
+                precip_obs = ow.precip_mm
+            FROM (
+                SELECT
+                    sw.location_id,
+                    o.ts::DATE AS obs_date,
+                    SUM(o.tmin_c * sw.weight)
+                        / NULLIF(SUM(CASE WHEN o.tmin_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
+                        AS tmin_c,
+                    SUM(o.tmax_c * sw.weight)
+                        / NULLIF(SUM(CASE WHEN o.tmax_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
+                        AS tmax_c,
+                    SUM(o.precip_mm * sw.weight)
+                        / NULLIF(SUM(CASE WHEN o.precip_mm IS NOT NULL THEN sw.weight ELSE 0 END), 0)
+                        AS precip_mm
+                FROM observations o
+                JOIN station_weights sw
+                    ON o.station_id = sw.station_id
+                WHERE o.source = 'sir_toscana' AND o.granularity = 'daily'
+                GROUP BY sw.location_id, o.ts::DATE
+            ) ow
+            WHERE benchmark_forecasts.location_id = ow.location_id
+              AND benchmark_forecasts.target_date = ow.obs_date
+              AND benchmark_forecasts.tmin_obs IS NULL
+        """)
+        n = result.fetchone()
+        count = int(n[0]) if n else 0
+        if count:
+            logger.info(f"backfill_benchmark_obs: {count} righe aggiornate")
+        return count
 
     def backfill_prediction_obs(self) -> int:
         """Aggiorna *_obs nelle predictions passate con le osservazioni SIR pesate.
