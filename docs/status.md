@@ -1,8 +1,29 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-06-05 (backfill + backtest multi-lead D+0…D+7, fix KI-022, robustness D-016, v0.8.3)
+> Aggiornato: 2026-06-13 (rifattorizzazione manutenibilità/sicurezza/performance, v0.9.0)
 
 ## Cosa è stato fatto
+
+### Rifattorizzazione trasversale (2026-06-13, v0.9.0)
+
+Pass di refactoring su tutto il backend senza cambiare il contract JSON. Dettaglio in
+CHANGELOG v0.9.0. Sintesi:
+
+- **Sicurezza**: DLE valuta le condizioni YAML via interprete AST con whitelist (no più
+  `eval()`); artefatti modello da `pickle` a `artifacts.json` + model-string LightGBM `.txt`
+  (no RCE al load) → **retrain necessario** (`train run`); scrittura atomica dei JSON di
+  output e refresh `.env` Netatmo con `chmod 600`.
+- **Manutenibilità**: `fetchers.py` (2022 righe) splittato in `fetch_sir`/`fetch_openmeteo`/
+  `fetch_netatmo`/`fetch_arpat` + `fetch_common`; nuovi `_paths.py` e `jobs/_common.py`
+  (path env e boilerplate dei job centralizzati); vista `obs_weighted_daily` come fonte
+  unica della media pesata SIR (era triplicata — origine di KI-022); pivot NWP e
+  `FEATURE_COLS` da un'unica mappa; SIR bulk e batch Open-Meteo deduplicati.
+- **Performance**: `predict_frame()` batch per location nel job predict (output identico).
+- 🟡 **Scopato fuori — C1** (consolidamento query multi-day nel job predict): ottimizza un
+  cron che gira in secondi riscrivendo il path che genera il JSON di prodotto, senza
+  possibilità di diff contro dati reali → rischio > beneficio. Da rivalutare solo se il
+  job predict diventasse un collo di bottiglia misurato (improbabile).
+- 315 test verdi, ruff + mypy puliti.
 
 ### Sesta location casa_cercina + accumulo Netatmo daily (2026-06-02)
 

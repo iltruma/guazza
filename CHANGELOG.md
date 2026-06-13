@@ -8,6 +8,51 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-13
+
+Rifattorizzazione trasversale su manutenibilità, sicurezza e performance. Nessun
+cambiamento al contract JSON di output. **Richiede retrain** (`train run`): il formato
+degli artefatti modello è cambiato (vedi Security).
+
+### Added
+- `src/guazza/_paths.py`: path di default centralizzati (DB_PATH, CONFIG_DIR, OUTPUT_DIR)
+  letti dalle env in un unico punto, prima sparsi e ridefiniti in ~7 moduli.
+- `src/guazza/jobs/_common.py`: helper condivisi dei job cron — `ping_healthchecks`,
+  context manager `job_run()` (ping start/ok/fail + timing + `log_scrape` + exit 1 su
+  eccezione, prima duplicato in 6 job), opzioni typer `--db`/`--config-dir`/`--output-dir`.
+- `src/guazza/fetch_common.py`: costanti e helper HTTP condivisi dai fetcher (User-Agent,
+  `is_retryable_http`, timezone CET/Italy).
+- Vista DuckDB `obs_weighted_daily` in `schema.sql`: fonte unica della media pesata SIR
+  daily per location, prima duplicata in 3 punti (features + 2 backfill `*_obs`).
+- `models.predict_frame()`: predizione in batch per più righe (output identico a
+  `predict()` riga-per-riga), usata dal job predict per evitare 15 chiamate-modello
+  per giorno.
+
+### Changed
+- **Split di `fetchers.py`** (2022 righe) nei moduli per dominio `fetch_sir`,
+  `fetch_openmeteo`, `fetch_netatmo`, `fetch_arpat` + `fetch_common`; `fetchers.py` resta
+  la sola CLI. Nessun cambio di comportamento.
+- `_log_scrape` → `log_scrape` in `_logging.py` (sede naturale del logging).
+- Dedup: SIR bulk realtime ora table-driven (4 blocchi → 1 loop); batch Open-Meteo
+  historical/multilead condividono `_chunk_date_range` + un runner comune; pivot NWP e
+  `FEATURE_COLS` derivati da un'unica mappa `NWP_MODEL_PREFIXES` (impossibile divergere).
+- Job predict: `init_schema()` idempotente all'avvio (garantisce la vista
+  `obs_weighted_daily`); predizione in batch per location.
+- SIR historical: loop sequenziale esplicito al posto di `ThreadPoolExecutor(max_workers=1)`
+  (il server SIR serializza per IP — il pool non dava parallelismo reale).
+
+### Security
+- DLE: la valutazione delle condizioni YAML non usa più `eval()` ma un interprete su AST
+  con whitelist di nodi (`indicators.py`). Rimuove il rischio di esecuzione arbitraria e
+  corregge un bug latente sui segnali con `AND`/`OR` interni alla chiave (es. nebbia).
+- Persistenza modelli: da `pickle` a manifest `artifacts.json` + model-string LightGBM
+  `.txt` per quantile. Un artefatto manomesso non può più eseguire codice al load; i file
+  sono ispezionabili. Il vecchio `artifacts.pkl` viene rifiutato con errore esplicito
+  → **retrain necessario**.
+- Scrittura atomica (tmp + `os.replace`) dei JSON di output e di `skill.json` (nginx non
+  può più servire un file troncato durante il cron); refresh del token Netatmo nel `.env`
+  ora atomico + `chmod 600`.
+
 ## [0.8.3] - 2026-06-05
 
 ### Added
