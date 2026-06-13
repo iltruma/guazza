@@ -24,37 +24,44 @@ from __future__ import annotations
 
 from guazza.storage import DuckDBClient
 
+# Mappa modello NWP → (prefisso colonna feature, suffisso source in `forecasts`).
+# Fonte unica condivisa dal pivot wide (sotto) e da FEATURE_COLS (models.py):
+# derivare entrambi da qui impedisce che le due liste divergano in silenzio.
+NWP_MODEL_PREFIXES: list[tuple[str, str]] = [
+    ("ecmwf",  "ecmwf_ifs"),
+    ("icon",   "icon_eu"),
+    ("icond2", "icon_d2"),
+    ("gfs",    "gfs025"),
+    ("arome",  "arome_france"),
+    ("icon2i", "italia_meteo_arpae_icon_2i"),
+]
+# Variabili NWP aggregate a daily — l'ordine fissa quello di pivot e FEATURE_COLS.
+NWP_DAILY_VARS: list[str] = ["tmin_c", "tmax_c", "precip_mm", "humidity_pct", "wind_ms"]
+
+# Colonne feature per-modello, es. "ecmwf_tmin_c". Consumate da models.FEATURE_COLS.
+NWP_FEATURE_COLS: list[str] = [
+    f"{prefix}_{var}" for prefix, _src in NWP_MODEL_PREFIXES for var in NWP_DAILY_VARS
+]
+
+# Blocco pivot: una colonna MAX(CASE …) per (modello × variabile), iniettato in
+# _BUILD_SQL al posto del segnaposto __NWP_PIVOT_COLS__. Genera SQL identico al
+# pivot esplicito precedente, mantenendo la lista derivata da NWP_MODEL_PREFIXES.
+_NWP_PIVOT_COLS = ",\n        ".join(
+    f"MAX(CASE WHEN source = 'open_meteo_{src}' THEN {var} END) AS {prefix}_{var}"
+    for prefix, src in NWP_MODEL_PREFIXES
+    for var in NWP_DAILY_VARS
+)
+
 _BUILD_SQL = """\
 CREATE OR REPLACE TABLE features_daily AS
 WITH
 -- ── 1. Osservazioni SIR pesate per location e giorno ─────────────────────────
--- station_weights è la mappa autorevole stazione→location: una stazione pesa su più
--- location. Il join va SOLO su station_id (come ring_precip_raw); usare anche
--- o.location_id scarterebbe i contributi delle stazioni condivise, perché le obs sono
--- salvate sotto una sola location_id "home". La PK di observations non include
--- location_id → una riga daily per stazione/giorno, nessun doppio conteggio.
+-- Media pesata stazione→location: definizione unica nella vista obs_weighted_daily
+-- (schema.sql), condivisa con i backfill *_obs in storage.py. Alias locale per
+-- leggibilità delle JOIN sottostanti (prev, tgt, climatology).
 obs_weighted AS (
-    SELECT
-        sw.location_id,
-        o.ts::DATE AS obs_date,
-        SUM(o.tmin_c * sw.weight)
-            / NULLIF(SUM(CASE WHEN o.tmin_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
-            AS tmin_c,
-        SUM(o.tmax_c * sw.weight)
-            / NULLIF(SUM(CASE WHEN o.tmax_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
-            AS tmax_c,
-        SUM(o.precip_mm * sw.weight)
-            / NULLIF(SUM(CASE WHEN o.precip_mm IS NOT NULL THEN sw.weight ELSE 0 END), 0)
-            AS precip_mm,
-        SUM(o.humidity_pct * sw.weight)
-            / NULLIF(SUM(CASE WHEN o.humidity_pct IS NOT NULL THEN sw.weight ELSE 0 END), 0)
-            AS humidity_pct
-    FROM observations o
-    JOIN station_weights sw
-        ON o.station_id = sw.station_id
-    WHERE o.source = 'sir_toscana'
-      AND o.granularity = 'daily'
-    GROUP BY sw.location_id, o.ts::DATE
+    SELECT location_id, obs_date, tmin_c, tmax_c, precip_mm, humidity_pct
+    FROM obs_weighted_daily
 ),
 
 -- ── 2. Climatologia mensile (media/std multi-anno da obs_weighted) ────────────
@@ -122,42 +129,13 @@ last_run AS (
     WHERE rn = 1
 ),
 
--- ── 5. Pivot 6 modelli → wide ─────────────────────────────────────────────────
+-- ── 5. Pivot 6 modelli → wide (colonne generate da NWP_MODEL_PREFIXES) ────────
 nwp_wide AS (
     SELECT
         location_id,
         target_date,
         lead_time_h,
-        MAX(CASE WHEN source = 'open_meteo_ecmwf_ifs'     THEN tmin_c END)       AS ecmwf_tmin_c,
-        MAX(CASE WHEN source = 'open_meteo_ecmwf_ifs'     THEN tmax_c END)       AS ecmwf_tmax_c,
-        MAX(CASE WHEN source = 'open_meteo_ecmwf_ifs'     THEN precip_mm END)    AS ecmwf_precip_mm,
-        MAX(CASE WHEN source = 'open_meteo_ecmwf_ifs'     THEN humidity_pct END) AS ecmwf_humidity_pct,
-        MAX(CASE WHEN source = 'open_meteo_ecmwf_ifs'     THEN wind_ms END)      AS ecmwf_wind_ms,
-        MAX(CASE WHEN source = 'open_meteo_icon_eu'      THEN tmin_c END)       AS icon_tmin_c,
-        MAX(CASE WHEN source = 'open_meteo_icon_eu'      THEN tmax_c END)       AS icon_tmax_c,
-        MAX(CASE WHEN source = 'open_meteo_icon_eu'      THEN precip_mm END)    AS icon_precip_mm,
-        MAX(CASE WHEN source = 'open_meteo_icon_eu'      THEN humidity_pct END) AS icon_humidity_pct,
-        MAX(CASE WHEN source = 'open_meteo_icon_eu'      THEN wind_ms END)      AS icon_wind_ms,
-        MAX(CASE WHEN source = 'open_meteo_icon_d2'      THEN tmin_c END)       AS icond2_tmin_c,
-        MAX(CASE WHEN source = 'open_meteo_icon_d2'      THEN tmax_c END)       AS icond2_tmax_c,
-        MAX(CASE WHEN source = 'open_meteo_icon_d2'      THEN precip_mm END)    AS icond2_precip_mm,
-        MAX(CASE WHEN source = 'open_meteo_icon_d2'      THEN humidity_pct END) AS icond2_humidity_pct,
-        MAX(CASE WHEN source = 'open_meteo_icon_d2'      THEN wind_ms END)      AS icond2_wind_ms,
-        MAX(CASE WHEN source = 'open_meteo_gfs025'       THEN tmin_c END)       AS gfs_tmin_c,
-        MAX(CASE WHEN source = 'open_meteo_gfs025'       THEN tmax_c END)       AS gfs_tmax_c,
-        MAX(CASE WHEN source = 'open_meteo_gfs025'       THEN precip_mm END)    AS gfs_precip_mm,
-        MAX(CASE WHEN source = 'open_meteo_gfs025'       THEN humidity_pct END) AS gfs_humidity_pct,
-        MAX(CASE WHEN source = 'open_meteo_gfs025'       THEN wind_ms END)      AS gfs_wind_ms,
-        MAX(CASE WHEN source = 'open_meteo_arome_france' THEN tmin_c END)       AS arome_tmin_c,
-        MAX(CASE WHEN source = 'open_meteo_arome_france' THEN tmax_c END)       AS arome_tmax_c,
-        MAX(CASE WHEN source = 'open_meteo_arome_france' THEN precip_mm END)    AS arome_precip_mm,
-        MAX(CASE WHEN source = 'open_meteo_arome_france' THEN humidity_pct END) AS arome_humidity_pct,
-        MAX(CASE WHEN source = 'open_meteo_arome_france' THEN wind_ms END)      AS arome_wind_ms,
-        MAX(CASE WHEN source = 'open_meteo_italia_meteo_arpae_icon_2i' THEN tmin_c END)       AS icon2i_tmin_c,
-        MAX(CASE WHEN source = 'open_meteo_italia_meteo_arpae_icon_2i' THEN tmax_c END)       AS icon2i_tmax_c,
-        MAX(CASE WHEN source = 'open_meteo_italia_meteo_arpae_icon_2i' THEN precip_mm END)    AS icon2i_precip_mm,
-        MAX(CASE WHEN source = 'open_meteo_italia_meteo_arpae_icon_2i' THEN humidity_pct END) AS icon2i_humidity_pct,
-        MAX(CASE WHEN source = 'open_meteo_italia_meteo_arpae_icon_2i' THEN wind_ms END)      AS icon2i_wind_ms
+        __NWP_PIVOT_COLS__
     FROM last_run
     GROUP BY location_id, target_date, lead_time_h
 ),
@@ -289,6 +267,8 @@ LEFT JOIN ring_pivot rp
     ON  n.location_id = rp.location_id
     AND rp.obs_date   = n.target_date - INTERVAL 1 DAY
 """
+
+_BUILD_SQL = _BUILD_SQL.replace("__NWP_PIVOT_COLS__", _NWP_PIVOT_COLS)
 
 
 def build_features_daily(db: DuckDBClient) -> int:

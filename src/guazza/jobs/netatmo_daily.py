@@ -12,24 +12,20 @@ Variabili d'ambiente: ``DB_PATH``, ``HEALTHCHECKS_URL`` (ping opzionale).
 
 from __future__ import annotations
 
-import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import httpx
 import typer
-from loguru import logger
 
 from guazza._logging import setup_logging
+from guazza.jobs._common import DB_OPTION, job_run
 from guazza.netatmo_daily import aggregate_netatmo_daily
 from guazza.storage import DuckDBClient
 
 app = typer.Typer(help="Aggregazione Netatmo realtime → daily.")
 
 _LOCAL_TZ = ZoneInfo("Europe/Rome")
-_DEFAULT_DB = Path(os.environ.get("DB_PATH", "/var/lib/guazza/guazza.duckdb"))
-_DB_OPT = typer.Option(_DEFAULT_DB, "--db", help="Path file DuckDB")
 
 
 @app.callback()
@@ -37,22 +33,9 @@ def _callback() -> None:
     setup_logging()
 
 
-def _ping_healthchecks(status: str = "") -> None:
-    """Ping Healthchecks.io se HEALTHCHECKS_URL è configurato (altrimenti skip)."""
-    base_url = os.environ.get("HEALTHCHECKS_URL", "").strip()
-    if not base_url:
-        return
-    url = base_url + status
-    try:
-        httpx.get(url, timeout=5)
-        logger.debug(f"Healthchecks ping: {url}")
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Healthchecks ping fallito: {e}")
-
-
 @app.command("run")
 def cmd_run(
-    db_path: Path = _DB_OPT,
+    db_path: Path = DB_OPTION,
     day: str = typer.Option("", "--day", help="Giorno locale YYYY-MM-DD (default: ieri)"),
     all_days: bool = typer.Option(False, "--all", help="Backfill di tutti i giorni accumulati"),
     min_samples: int = typer.Option(6, "--min-samples", help="Minimo campioni temp_c per giorno/stazione"),
@@ -74,22 +57,14 @@ def cmd_run(
     label = "tutti i giorni" if target_day is None else target_day.isoformat()
     typer.echo(f"Netatmo daily: {label}{' [dry-run]' if dry_run else ''}")
 
-    _ping_healthchecks("/start")
-    try:
+    with job_run("job_netatmo_daily") as stats:
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
             summary = aggregate_netatmo_daily(
                 db, target_day=target_day, min_samples=min_samples, dry_run=dry_run
             )
-    except Exception as e:
-        logger.error(f"netatmo_daily fallito: {e}")
-        _ping_healthchecks("/fail")
-        raise typer.Exit(1) from e
-
-    _ping_healthchecks()
-    typer.echo(
-        f"completato — giorni:{summary['days']} righe:{summary['rows']}"
-    )
+        stats.rows = summary["rows"]
+        stats.summary = f"giorni:{summary['days']} righe:{summary['rows']}"
 
 
 if __name__ == "__main__":

@@ -9,27 +9,29 @@ CLI:
 
 from __future__ import annotations
 
+import ast
 import json
-import os
+import operator
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+import typer
 import yaml
 from loguru import logger
+
+from guazza._paths import DEFAULT_CONFIG_DIR
 
 if TYPE_CHECKING:
     from guazza.storage import DuckDBClient
 
 SignalBag = dict[str, float | None]
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_INDICATORS_YAML = Path(
-    os.environ.get("CONFIG_DIR", str(_REPO_ROOT / "config"))
-) / "indicators.yaml"
+_DEFAULT_INDICATORS_YAML = DEFAULT_CONFIG_DIR / "indicators.yaml"
 
 
 @dataclass
@@ -60,20 +62,85 @@ def _compute_alpha(costs: dict[str, Any]) -> float:
     return fp / (fp + fn)
 
 
+# Token segnale probabilistico nelle condizioni YAML, es. "P(precip > 0.2mm)".
+# Non è un identificatore Python: viene sostituito con un placeholder prima del parse.
+_SIGNAL_TOKEN_RE = re.compile(r"P\([^)]+\)")
+
+_COMPARE_OPS: dict[type[ast.cmpop], Callable[[float, float], bool]] = {
+    ast.Lt: operator.lt,
+    ast.LtE: operator.le,
+    ast.Gt: operator.gt,
+    ast.GtE: operator.ge,
+    ast.Eq: operator.eq,
+    ast.NotEq: operator.ne,
+}
+
+
+def _eval_node(node: ast.expr, env: dict[str, float]) -> Any:
+    """Interprete ricorsivo con whitelist di nodi AST — nessun eval().
+
+    Nodi ammessi: and/or, confronti (< <= > >= == !=) anche concatenati,
+    nomi di segnale, costanti numeriche, meno unario. Tutto il resto è errore.
+    """
+    if isinstance(node, ast.BoolOp):
+        values = (_eval_node(v, env) for v in node.values)
+        return all(values) if isinstance(node.op, ast.And) else any(values)
+    if isinstance(node, ast.Compare):
+        left = _eval_node(node.left, env)
+        for op, comparator in zip(node.ops, node.comparators, strict=True):
+            handler = _COMPARE_OPS.get(type(op))
+            if handler is None:
+                raise ValueError(f"operatore di confronto non supportato: {type(op).__name__}")
+            right = _eval_node(comparator, env)
+            if not handler(left, right):
+                return False
+            left = right
+        return True
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return -_eval_node(node.operand, env)
+    if isinstance(node, ast.Name):
+        if node.id not in env:
+            raise ValueError(f"segnale sconosciuto: {node.id!r}")
+        return env[node.id]
+    if (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, int | float)
+        and not isinstance(node.value, bool)
+    ):
+        return float(node.value)
+    raise ValueError(f"espressione non supportata: {type(node).__name__}")
+
+
 def _eval_condition(logic_str: str, signals: SignalBag) -> bool:
-    """Valuta una condizione logica YAML contro un SignalBag."""
+    """Valuta una condizione logica YAML contro un SignalBag.
+
+    I token P(...) vanno sostituiti PRIMA di normalizzare AND/OR: alcune chiavi
+    di segnale contengono "AND" al loro interno (es. "P(RH > 95% AND wind < 3kmh)")
+    e il replace le corromperebbe, facendo fallire il lookup nel SignalBag.
+    Segnali assenti o None valgono 0.0 (stesso default del DLE storico).
+    """
     if not logic_str:
         return False
-    expr = logic_str.replace(" AND ", " and ").replace(" OR ", " or ")
-    expr = re.sub(
-        r"P\([^)]+\)",
-        lambda m: f"_sig.get({m.group()!r}, 0.0)",
-        expr,
-    )
+
+    env: dict[str, float] = {
+        k: (v if v is not None else 0.0) for k, v in signals.items()
+    }
+    placeholders: dict[str, str] = {}
+
+    def _to_placeholder(m: re.Match[str]) -> str:
+        name = f"_sig{len(placeholders)}"
+        placeholders[name] = m.group()
+        return name
+
+    expr = _SIGNAL_TOKEN_RE.sub(_to_placeholder, logic_str)
+    expr = expr.replace(" AND ", " and ").replace(" OR ", " or ")
+    for name, token in placeholders.items():
+        env[name] = env.get(token, 0.0)
+
     try:
-        clean = {k: (v if v is not None else 0.0) for k, v in signals.items()}
-        return bool(eval(expr, {"__builtins__": {}}, {**clean, "_sig": clean}))  # noqa: S307
-    except Exception as exc:
+        tree = ast.parse(expr, mode="eval")
+        return bool(_eval_node(tree.body, env))
+    except (SyntaxError, ValueError) as exc:
         logger.warning(f"Errore eval condizione '{logic_str}': {exc}")
         return False
 
@@ -196,8 +263,6 @@ def log_results(
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
-
-import typer  # noqa: E402
 
 app = typer.Typer(help="Decision Logic Engine — valutazione manuale indicatori.")
 

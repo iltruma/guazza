@@ -9,13 +9,13 @@ Uso:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import typer
 from loguru import logger
 
 from guazza._logging import setup_logging
+from guazza.jobs._common import DB_OPTION
 from guazza.qc import compute_quality_flags
 from guazza.storage import DuckDBClient
 
@@ -26,13 +26,10 @@ app = typer.Typer(help="Quality control osservazioni SIR.")
 def _callback() -> None:
     setup_logging()
 
-_DEFAULT_DB = Path(os.environ.get("DB_PATH", "/var/lib/guazza/guazza.duckdb"))
-_DB_OPT = typer.Option(_DEFAULT_DB, "--db", help="Path file DuckDB")
-
 
 @app.command("run")
 def cmd_run(
-    db_path: Path = _DB_OPT,
+    db_path: Path = DB_OPTION,
     dry_run: bool = typer.Option(False, "--dry-run", help="Mostra cosa farebbe senza scrivere"),
 ) -> None:
     """Ricalcola tutti i flag di qualità e li scrive in quality_flags."""
@@ -50,7 +47,7 @@ def cmd_run(
 
 
 @app.command("report")
-def cmd_report(db_path: Path = _DB_OPT) -> None:
+def cmd_report(db_path: Path = DB_OPTION) -> None:
     """Stampa riepilogo flag per tipo e stazione."""
     with DuckDBClient(db_path=db_path, read_only=True) as db:
         rows = db.execute("""

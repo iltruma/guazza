@@ -18,6 +18,7 @@ from guazza.models import (
     crps_from_quantiles,
     load_artifacts,
     predict,
+    predict_frame,
     train_all,
     walk_forward_cv,
 )
@@ -190,7 +191,8 @@ def test_train_all_returns_artifacts(db: DuckDBClient, tmp_path: Path) -> None:
     assert set(artifacts.targets.keys()) == set(TARGETS)
     assert artifacts.n_train > 0
     assert artifacts.n_cal > 0
-    assert (model_dir / "artifacts.pkl").exists()
+    assert (model_dir / "artifacts.json").exists()
+    assert (model_dir / "tmin_c_q50.txt").exists()
 
 
 def test_train_all_models_have_all_quantiles(db: DuckDBClient, tmp_path: Path) -> None:
@@ -205,11 +207,31 @@ def test_train_all_models_have_all_quantiles(db: DuckDBClient, tmp_path: Path) -
 def test_load_artifacts_roundtrip(db: DuckDBClient, tmp_path: Path) -> None:
     _insert_features(db, n_days=400)
     model_dir = tmp_path / "models"
-    train_all(db, model_dir=model_dir, cal_days=60)
+    trained = train_all(db, model_dir=model_dir, cal_days=60)
 
     loaded = load_artifacts(model_dir)
     assert isinstance(loaded, TrainingArtifacts)
     assert set(loaded.targets.keys()) == set(TARGETS)
+    assert loaded.feature_cols == trained.feature_cols
+    assert loaded.targets["tmin_c"].cqr.keys() == trained.targets["tmin_c"].cqr.keys()
+
+    # I Booster ricostruiti devono predire come i regressor in memoria
+    # (stesso modello serializzato → stessa mediana).
+    from guazza.models import FEATURE_COLS
+    X = db.execute("SELECT * FROM features_daily LIMIT 1").df()
+    X["location_id"] = X["location_id"].astype("category")
+    pred_mem = predict(trained, X[FEATURE_COLS], lead_h=0)
+    pred_disk = predict(loaded, X[FEATURE_COLS], lead_h=0)
+    for target in TARGETS:
+        assert pred_disk[target]["p50"] == pytest.approx(pred_mem[target]["p50"], abs=1e-6)
+
+
+def test_load_artifacts_rejects_legacy_pickle(tmp_path: Path) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    (model_dir / "artifacts.pkl").write_bytes(b"legacy")
+    with pytest.raises(RuntimeError, match="pickle"):
+        load_artifacts(model_dir)
 
 
 def test_predict_returns_all_keys(db: DuckDBClient, tmp_path: Path) -> None:
@@ -242,6 +264,41 @@ def test_predict_ci_ordering(db: DuckDBClient, tmp_path: Path) -> None:
             assert preds["ci90_lo"] <= preds["ci80_lo"], f"{target}: ci90_lo > ci80_lo"
             assert preds["ci80_hi"] <= preds["ci90_hi"], f"{target}: ci80_hi > ci90_hi"
             assert preds["p05"] <= preds["p50"] <= preds["p95"], f"{target}: quantili non ordinati"
+
+
+def test_predict_frame_matches_per_row(db: DuckDBClient, tmp_path: Path) -> None:
+    """predict_frame in batch deve dare lo stesso output di predict() riga-per-riga.
+
+    Invariante alla base dell'ottimizzazione C2 del job predict: include lead time
+    diversi (bucket CQR diversi) per coprire la correzione per-riga.
+    """
+    _insert_features(db, n_days=400)
+    artifacts = train_all(db, model_dir=tmp_path / "m", cal_days=60)
+
+    from guazza.models import FEATURE_COLS
+    X = db.execute("SELECT * FROM features_daily LIMIT 5").df()
+    X["location_id"] = X["location_id"].astype("category")
+    X_feat = X[FEATURE_COLS].reset_index(drop=True)
+    leads = [0, 24, 48, 120, 168]
+
+    batched = predict_frame(artifacts, X_feat, leads)
+    assert len(batched) == len(X_feat)
+    for i, lead in enumerate(leads):
+        single = predict(artifacts, pd.DataFrame([X_feat.iloc[i]])[FEATURE_COLS], lead_h=lead)
+        for target in TARGETS:
+            for key, val in single[target].items():
+                assert batched[i][target][key] == pytest.approx(val, abs=1e-9)
+
+
+def test_predict_frame_length_mismatch_raises(db: DuckDBClient, tmp_path: Path) -> None:
+    _insert_features(db, n_days=400)
+    artifacts = train_all(db, model_dir=tmp_path / "m", cal_days=60)
+
+    from guazza.models import FEATURE_COLS
+    X = db.execute("SELECT * FROM features_daily LIMIT 3").df()
+    X["location_id"] = X["location_id"].astype("category")
+    with pytest.raises(ValueError, match="righe"):
+        predict_frame(artifacts, X[FEATURE_COLS], [0, 24])  # 3 righe, 2 lead
 
 
 def test_walk_forward_cv_returns_dataframe(db: DuckDBClient) -> None:

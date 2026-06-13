@@ -217,3 +217,33 @@ CREATE TABLE IF NOT EXISTS indicator_log (
     last_modified TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (ts, location_id, indicator_id)
 );
+
+-- ── Ground truth: osservazioni SIR daily pesate per location ──────────────────
+-- Fonte unica della media pesata stazione→location (decay distanza/quota in
+-- station_weights). Usata sia come feature/target (features.py) sia per backfillare
+-- i *_obs di predictions e benchmark_forecasts: un'unica definizione evita il
+-- train/serve skew che KI-022 ha causato quando la logica divergeva tra i due usi.
+-- JOIN solo su station_id (non o.location_id): una stazione condivisa contribuisce
+-- a tutte le location che la pesano; la PK di observations non include location_id.
+CREATE OR REPLACE VIEW obs_weighted_daily AS
+SELECT
+    sw.location_id,
+    o.ts::DATE AS obs_date,
+    SUM(o.tmin_c * sw.weight)
+        / NULLIF(SUM(CASE WHEN o.tmin_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
+        AS tmin_c,
+    SUM(o.tmax_c * sw.weight)
+        / NULLIF(SUM(CASE WHEN o.tmax_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
+        AS tmax_c,
+    SUM(o.precip_mm * sw.weight)
+        / NULLIF(SUM(CASE WHEN o.precip_mm IS NOT NULL THEN sw.weight ELSE 0 END), 0)
+        AS precip_mm,
+    SUM(o.humidity_pct * sw.weight)
+        / NULLIF(SUM(CASE WHEN o.humidity_pct IS NOT NULL THEN sw.weight ELSE 0 END), 0)
+        AS humidity_pct
+FROM observations o
+JOIN station_weights sw
+    ON o.station_id = sw.station_id
+WHERE o.source = 'sir_toscana'
+  AND o.granularity = 'daily'
+GROUP BY sw.location_id, o.ts::DATE;

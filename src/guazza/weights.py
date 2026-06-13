@@ -15,17 +15,17 @@ CLI:
 from __future__ import annotations
 
 import math
-import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import pandas as pd
+import typer
 import yaml
 from loguru import logger
 
-if TYPE_CHECKING:
-    from guazza.storage import DuckDBClient
+from guazza._paths import DEFAULT_CONFIG_DIR, DEFAULT_DB_PATH
+from guazza.storage import DuckDBClient
 
 _HALF_DECAY_KM: float = 3.0
 _HALF_DECAY_ELEV: float = 100.0
@@ -37,10 +37,6 @@ _RING_THRESHOLDS: list[tuple[str, float]] = [
     ("ring2", 50.0),   # 20–50 km: sub-regionale
     ("ring3", 100.0),  # 50–100 km: Appennino/Versilia — da popolare con stazioni esterne
 ]
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_CONFIG_DIR = Path(os.environ.get("CONFIG_DIR", str(_REPO_ROOT / "config")))
-
 
 def compute_station_weight(
     station_lat: float,
@@ -132,7 +128,7 @@ def load_configs(
     config_dir: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Carica locations.yaml e stations.yaml dalla directory config."""
-    d = config_dir or _DEFAULT_CONFIG_DIR
+    d = config_dir or DEFAULT_CONFIG_DIR
     with (d / "locations.yaml").open() as f:
         locations_raw = yaml.safe_load(f)
     with (d / "stations.yaml").open() as f:
@@ -232,8 +228,6 @@ def refresh_station_weights(
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
-import typer  # noqa: E402
-
 app = typer.Typer(help="Gestione pesi stazioni per location.")
 
 
@@ -266,13 +260,9 @@ def print_weights_report(
         if not loc_records:
             typer.echo("  (nessuna stazione)")
 
-_DB_OPTION = typer.Option(
-    os.environ.get("DB_PATH", "/var/lib/guazza/guazza.duckdb"),
-    "--db",
-    help="Path del file DuckDB",
-)
+_DB_OPTION = typer.Option(str(DEFAULT_DB_PATH), "--db", help="Path del file DuckDB")
 _CFG_OPTION = typer.Option(
-    str(_DEFAULT_CONFIG_DIR),
+    str(DEFAULT_CONFIG_DIR),
     "--config-dir",
     help="Directory dei file YAML di configurazione",
 )
@@ -284,8 +274,6 @@ def cmd_refresh(
     config_dir: str = _CFG_OPTION,
 ) -> None:
     """Ricalcola i pesi stazione→location e salva in DuckDB. Stampa report."""
-    from guazza.storage import DuckDBClient
-
     locations, stations = load_configs(Path(config_dir))
     with DuckDBClient(db_path=Path(db_path)) as db:
         db.init_schema()
@@ -300,8 +288,6 @@ def cmd_refresh(
 @app.command("show")
 def cmd_show(db_path: str = _DB_OPTION) -> None:
     """Mostra i pesi attualmente salvati in DuckDB (senza ricalcolare)."""
-    from guazza.storage import DuckDBClient
-
     with DuckDBClient(db_path=Path(db_path), read_only=True) as db:
         rows = db.execute(
             """

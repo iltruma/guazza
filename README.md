@@ -48,21 +48,30 @@ guazza/
 │   ├── arpat_levels.yaml   # Scale qualità aria D.Lgs.155/2010
 │   └── sources.yaml        # Endpoint sorgenti dati e stato
 ├── src/guazza/
-│   ├── schema.sql          # Schema DuckDB — unica source of truth
+│   ├── schema.sql          # Schema DuckDB — unica source of truth (+ vista obs_weighted_daily)
 │   ├── storage.py          # DuckDBClient, upsert bulk Arrow, backfill_prediction_obs
-│   ├── fetchers.py         # SIR storico/realtime, Netatmo, Open-Meteo (6 modelli), ARPAT NRT
+│   ├── fetchers.py         # CLI fetcher (sir-historical / sir-realtime / netatmo)
+│   ├── fetch_common.py     # Costanti e helper HTTP condivisi (UA, retry, timezone)
+│   ├── fetch_sir.py        # SIR storico CSV + realtime JSON + bulk
+│   ├── fetch_openmeteo.py  # Open-Meteo forecast / historical / multi-lead (6 modelli)
+│   ├── fetch_netatmo.py    # Netatmo realtime + QC (range, cross, vs SIR)
+│   ├── fetch_arpat.py      # ARPAT qualità aria NRT + bollettino PM10/PM2.5
+│   ├── _paths.py           # Path di default da env (DB_PATH, CONFIG_DIR, OUTPUT_DIR)
 │   ├── weights.py          # Pesi stazione→location, ring upstream pluvio
 │   ├── features.py         # build_features_daily() — 50 feature, tabella materializzata
-│   ├── models.py           # LightGBM quantile + CQR, train_all(), predict()
-│   ├── indicators.py       # Decision Logic Engine: evaluate_all(), log_results()
+│   ├── models.py           # LightGBM quantile + CQR, train_all(), predict(), predict_frame()
+│   ├── indicators.py       # Decision Logic Engine: evaluate_all(), log_results() (eval via AST)
 │   ├── output.py           # build_signals(), build_signals_today(), dewpoint/apparent_temp, write_location_json()
 │   ├── qc.py               # Quality control osservazioni SIR + ARPAT
-│   ├── _logging.py         # setup_logging() — TTY pretty / cron JSON strutturato
+│   ├── _logging.py         # setup_logging() + log_scrape() — TTY pretty / cron JSON
 │   └── jobs/
-│       ├── ingest.py       # Cron: historical / daily / realtime / forecasts
+│       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
+│       ├── ingest.py       # Cron: historical / daily / realtime / forecasts / multilead
 │       ├── features.py     # CLI: features build / info
 │       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
 │       ├── predict.py      # Cron: predict → DuckDB + DLE + JSON output
+│       ├── skill.py        # Cron: curva skill MAE per lead → skill.json
+│       ├── netatmo_daily.py # Cron: aggregazione Netatmo realtime → daily
 │       ├── qc.py           # Cron: qc run / qc report
 │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 8)
 ├── data/

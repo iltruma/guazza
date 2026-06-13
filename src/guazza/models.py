@@ -7,15 +7,17 @@ Per ogni target (tmin_c, tmax_c, precip_mm):
 Walk-forward CV con embargo 7 giorni (D-002).
 CQR stratificato per bucket lead time (D-003).
 
-Persistenza: pickle in MODEL_DIR (default: data/models/ locale,
-/var/lib/guazza/models/ in produzione via env MODEL_DIR).
+Persistenza in MODEL_DIR (default: data/models/ locale, /var/lib/guazza/models/
+in produzione via env MODEL_DIR): manifest artifacts.json + un file testo
+LightGBM per (target, quantile). Niente pickle: un artefatto manomesso non può
+eseguire codice al load e i file sono ispezionabili.
 """
 
 from __future__ import annotations
 
+import json
 import os
-import pickle
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from guazza.features import NWP_FEATURE_COLS
 from guazza.storage import DuckDBClient
 
 _DEFAULT_MODEL_DIR = Path(os.environ.get("MODEL_DIR", "data/models"))
@@ -50,13 +53,9 @@ LEAD_BUCKETS: dict[str, tuple[int, int]] = {
 }
 
 FEATURE_COLS: list[str] = [
-    # NWP per modello (5 modelli)
-    "ecmwf_tmin_c",  "ecmwf_tmax_c",  "ecmwf_precip_mm",  "ecmwf_humidity_pct",  "ecmwf_wind_ms",
-    "icon_tmin_c",   "icon_tmax_c",   "icon_precip_mm",   "icon_humidity_pct",   "icon_wind_ms",
-    "icond2_tmin_c", "icond2_tmax_c", "icond2_precip_mm", "icond2_humidity_pct", "icond2_wind_ms",
-    "gfs_tmin_c",    "gfs_tmax_c",    "gfs_precip_mm",    "gfs_humidity_pct",    "gfs_wind_ms",
-    "arome_tmin_c",  "arome_tmax_c",  "arome_precip_mm",  "arome_humidity_pct",  "arome_wind_ms",
-    "icon2i_tmin_c", "icon2i_tmax_c", "icon2i_precip_mm", "icon2i_humidity_pct", "icon2i_wind_ms",
+    # NWP per modello (6 modelli) — derivate da NWP_MODEL_PREFIXES, stessa fonte del
+    # pivot wide in features.py: le due liste non possono divergere.
+    *NWP_FEATURE_COLS,
     # Ensemble stats
     "nwp_tmin_mean", "nwp_tmin_spread",
     "nwp_tmax_mean", "nwp_tmax_spread",
@@ -92,8 +91,12 @@ class CQRCorrection:
 
 @dataclass
 class ModelBundle:
-    """Modelli quantile + CQR corrections per un singolo target."""
-    models: dict[float, lgb.LGBMRegressor]
+    """Modelli quantile + CQR corrections per un singolo target.
+
+    In training i modelli sono LGBMRegressor; al load da disco sono Booster
+    (ricostruiti da model string). L'API condivisa è .predict().
+    """
+    models: dict[float, lgb.LGBMRegressor | lgb.Booster]
     cqr: dict[str, CQRCorrection]   # bucket_label → correction
 
 
@@ -148,7 +151,7 @@ def _train_lgbm(X: pd.DataFrame, y: pd.Series, quantile: float) -> lgb.LGBMRegre
 
 
 def _compute_cqr(
-    models_q: dict[float, lgb.LGBMRegressor],
+    models_q: dict[float, lgb.LGBMRegressor | lgb.Booster],
     X_cal: pd.DataFrame,
     y_cal: pd.Series,
     lead_h: pd.Series,
@@ -165,7 +168,7 @@ def _compute_cqr(
 
     # Predizioni sul cal set (tutti i quantili in un colpo)
     pred: dict[float, np.ndarray] = {
-        q: m.predict(X) for q, m in models_q.items()
+        q: np.asarray(m.predict(X)) for q, m in models_q.items()
     }
 
     cqr: dict[str, CQRCorrection] = {}
@@ -269,7 +272,7 @@ def train_all(
 
         logger.info(f"[{target}] training su {len(y_tr)} righe con {len(QUANTILES)} quantili")
 
-        models_q: dict[float, lgb.LGBMRegressor] = {}
+        models_q: dict[float, lgb.LGBMRegressor | lgb.Booster] = {}
         for q in QUANTILES:
             models_q[q] = _train_lgbm(X_tr, y_tr, q)
             logger.debug(f"[{target}] q={q:.2f} addestrato")
@@ -299,22 +302,83 @@ def train_all(
 
 
 def _save_artifacts(artifacts: TrainingArtifacts, model_dir: Path) -> None:
+    """Persiste manifest JSON + un file model-string LightGBM per (target, quantile)."""
     model_dir.mkdir(parents=True, exist_ok=True)
-    path = model_dir / "artifacts.pkl"
-    with open(path, "wb") as f:
-        pickle.dump(artifacts, f)
-    logger.info(f"Artefatti salvati: {path}")
+    manifest: dict[str, Any] = {
+        "format_version": 1,
+        "trained_at": artifacts.trained_at.isoformat(),
+        "n_train": artifacts.n_train,
+        "n_cal": artifacts.n_cal,
+        "feature_cols": artifacts.feature_cols,
+        "categorical_cols": artifacts.categorical_cols,
+        "targets": {},
+    }
+    n_files = 0
+    for target, bundle in artifacts.targets.items():
+        model_files: dict[str, str] = {}
+        for q, model in bundle.models.items():
+            booster = model.booster_ if isinstance(model, lgb.LGBMRegressor) else model
+            filename = f"{target}_q{int(q * 100):02d}.txt"
+            (model_dir / filename).write_text(booster.model_to_string())
+            model_files[str(q)] = filename
+            n_files += 1
+        manifest["targets"][target] = {
+            "models": model_files,
+            "cqr": {label: asdict(corr) for label, corr in bundle.cqr.items()},
+        }
+    manifest_path = model_dir / "artifacts.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    logger.info(f"Artefatti salvati: {manifest_path} (+{n_files} modelli .txt)")
 
 
 def load_artifacts(model_dir: Path | None = None) -> TrainingArtifacts:
-    """Carica artefatti dal disco."""
+    """Carica artefatti dal disco (manifest JSON + model string LightGBM)."""
     if model_dir is None:
         model_dir = _DEFAULT_MODEL_DIR
-    path = model_dir / "artifacts.pkl"
-    if not path.exists():
-        raise FileNotFoundError(f"Artefatti non trovati: {path}. Esegui prima: train run")
-    with open(path, "rb") as f:
-        return pickle.load(f)  # type: ignore[no-any-return]  # noqa: S301
+    manifest_path = model_dir / "artifacts.json"
+    if not manifest_path.exists():
+        if (model_dir / "artifacts.pkl").exists():
+            raise RuntimeError(
+                f"Trovato artifacts.pkl obsoleto in {model_dir}: il formato pickle "
+                "è stato sostituito da artifacts.json + modelli .txt. "
+                "Riesegui: train run"
+            )
+        raise FileNotFoundError(
+            f"Artefatti non trovati: {manifest_path}. Esegui prima: train run"
+        )
+
+    manifest = json.loads(manifest_path.read_text())
+    targets: dict[str, ModelBundle] = {}
+    for target, entry in manifest["targets"].items():
+        models: dict[float, lgb.LGBMRegressor | lgb.Booster] = {
+            float(q): lgb.Booster(model_str=(model_dir / filename).read_text())
+            for q, filename in entry["models"].items()
+        }
+        cqr = {label: CQRCorrection(**corr) for label, corr in entry["cqr"].items()}
+        targets[target] = ModelBundle(models=models, cqr=cqr)
+
+    return TrainingArtifacts(
+        targets=targets,
+        feature_cols=manifest["feature_cols"],
+        categorical_cols=manifest["categorical_cols"],
+        trained_at=datetime.fromisoformat(manifest["trained_at"]),
+        n_train=manifest["n_train"],
+        n_cal=manifest["n_cal"],
+    )
+
+
+def _apply_cqr(
+    preds_q: dict[str, float], bundle: ModelBundle, bucket: str
+) -> dict[str, float]:
+    """Aggiunge i bound CI CQR-aggiustati ai 5 quantili predetti per un target."""
+    corr = bundle.cqr.get(bucket, bundle.cqr["0-6h"])
+    return {
+        **preds_q,
+        "ci80_lo": preds_q["p10"] - corr.ci80,
+        "ci80_hi": preds_q["p90"] + corr.ci80,
+        "ci90_lo": preds_q["p05"] - corr.ci90,
+        "ci90_hi": preds_q["p95"] + corr.ci90,
+    }
 
 
 def predict(
@@ -335,20 +399,48 @@ def predict(
 
     bucket = _lead_time_bucket(lead_h)
     out: dict[str, dict[str, float]] = {}
-
     for target, bundle in artifacts.targets.items():
-        preds_q: dict[str, float] = {}
-        for q, model in bundle.models.items():
-            preds_q[f"p{int(q*100):02d}"] = float(model.predict(X)[0])
+        preds_q = {f"p{int(q*100):02d}": float(model.predict(X)[0])
+                   for q, model in bundle.models.items()}
+        out[target] = _apply_cqr(preds_q, bundle, bucket)
 
-        corr = bundle.cqr.get(bucket, bundle.cqr["0-6h"])
-        out[target] = {
-            **preds_q,
-            "ci80_lo": preds_q["p10"] - corr.ci80,
-            "ci80_hi": preds_q["p90"] + corr.ci80,
-            "ci90_lo": preds_q["p05"] - corr.ci90,
-            "ci90_hi": preds_q["p95"] + corr.ci90,
-        }
+    return out
+
+
+def predict_frame(
+    artifacts: TrainingArtifacts,
+    X: pd.DataFrame,
+    lead_h: list[int],
+) -> list[dict[str, dict[str, float]]]:
+    """Predice tutte le righe di X in batch — output identico a predict() riga-per-riga.
+
+    Una sola chiamata model.predict per (target, quantile) sull'intero frame invece
+    di una per riga: LightGBM è row-independent, quindi i quantili sono identici; la
+    correzione CQR resta per-riga in base al bucket di lead_h[i]. Usato dal job predict
+    per evitare 15 chiamate-modello per giorno (15 per location, una sola volta).
+
+    Args:
+        lead_h: lead time orario per ogni riga di X (stesso ordine, stessa lunghezza).
+
+    Returns:
+        Lista di dict per-riga, stesso formato di predict().
+    """
+    if len(X) != len(lead_h):
+        raise ValueError(f"X ha {len(X)} righe ma lead_h ne ha {len(lead_h)}")
+
+    X = X.copy()
+    for col in artifacts.categorical_cols:
+        if col in X.columns:
+            X[col] = X[col].astype("category")
+
+    buckets = [_lead_time_bucket(h) for h in lead_h]
+    out: list[dict[str, dict[str, float]]] = [{} for _ in range(len(X))]
+    for target, bundle in artifacts.targets.items():
+        q_cols = {f"p{int(q*100):02d}": np.asarray(model.predict(X))
+                  for q, model in bundle.models.items()}
+        for i in range(len(X)):
+            preds_q = {k: float(v[i]) for k, v in q_cols.items()}
+            out[i][target] = _apply_cqr(preds_q, bundle, buckets[i])
 
     return out
 
@@ -429,7 +521,7 @@ def walk_forward_cv(
                 logger.warning(f"Fold {i+1} [{target}]: train troppo piccolo ({len(y_tr)}), skip")
                 continue
 
-            models_q: dict[float, lgb.LGBMRegressor] = {}
+            models_q: dict[float, lgb.LGBMRegressor | lgb.Booster] = {}
             for q in QUANTILES:
                 models_q[q] = _train_lgbm(X_tr, y_tr, q)
 
@@ -443,7 +535,9 @@ def walk_forward_cv(
             X_te = df_test.loc[mask_te, FEATURE_COLS]
             y_te = df_test.loc[mask_te, col].values
 
-            preds: dict[float, np.ndarray] = {q: m.predict(X_te) for q, m in models_q.items()}
+            preds: dict[float, np.ndarray] = {
+                q: np.asarray(m.predict(X_te)) for q, m in models_q.items()
+            }
 
             # MAE su mediana
             mae = float(np.mean(np.abs(y_te - preds[0.50])))

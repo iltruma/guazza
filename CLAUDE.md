@@ -122,9 +122,12 @@ Se ERA5 appare come input dinamico a un modello: **è un bug**.
 Struttura **flat** — un file per modulo in `src/guazza/`, no package annidati.
 L'albero completo delle directory è in `README.md`. Mappa dei moduli (responsabilità):
 
-- `schema.sql` — schema DuckDB (unico source of truth)
+- `schema.sql` — schema DuckDB (unico source of truth; include la vista `obs_weighted_daily`)
 - `storage.py` — DuckDBClient, upsert_*, backfill_prediction_obs
-- `fetchers.py` — SIR storico/realtime, Netatmo, Open-Meteo, ARPAT
+- `fetchers.py` — CLI fetcher; la logica è nei moduli `fetch_*` per dominio:
+  - `fetch_common.py` — costanti/helper HTTP condivisi · `fetch_sir.py` — SIR ·
+    `fetch_openmeteo.py` — Open-Meteo · `fetch_netatmo.py` — Netatmo · `fetch_arpat.py` — ARPAT
+- `_paths.py` — path di default da env (DB_PATH, CONFIG_DIR, OUTPUT_DIR)
 - `weights.py` — pesi stazione→location, refresh_upstream_rings()
 - `features.py` — build_features_daily() → tabella features_daily
 - `models.py` — LightGBM quantile + CQR, train_all(), predict()

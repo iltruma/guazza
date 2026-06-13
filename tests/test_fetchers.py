@@ -9,22 +9,23 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from guazza.fetchers import (
+from guazza.fetch_netatmo import (
     _extract_measures,
-    _infer_ts_run,
     _measure_ts,
-    _multilead_hourly_params,
-    _parse_om_multilead,
-    _parse_om_response,
     _qc_range,
     _StationData,
     fetch_netatmo_location,
-    fetch_openmeteo_forecast,
-    fetch_openmeteo_historical,
-    fetch_sir_historical,
-    fetch_sir_realtime,
     save_netatmo_to_db,
 )
+from guazza.fetch_openmeteo import (
+    _infer_ts_run,
+    _multilead_hourly_params,
+    _parse_om_multilead,
+    _parse_om_response,
+    fetch_openmeteo_forecast,
+    fetch_openmeteo_historical,
+)
+from guazza.fetch_sir import fetch_sir_historical, fetch_sir_realtime
 from guazza.storage import DuckDBClient
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -74,7 +75,7 @@ def _patched_sir_fetch(station_id: str, sensor_type: str, csv_text: str, locatio
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get = MagicMock(return_value=mock_resp)
-    with patch("guazza.fetchers.httpx.Client", return_value=mock_client):
+    with patch("guazza.fetch_sir.httpx.Client", return_value=mock_client):
         return fetch_sir_historical(station_id, sensor_type, location_id)
 
 
@@ -203,7 +204,7 @@ def test_fetch_sir_realtime_parses_json() -> None:
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get = MagicMock(return_value=mock_resp)
 
-    with patch("guazza.fetchers.httpx.Client", return_value=mock_client):
+    with patch("guazza.fetch_sir.httpx.Client", return_value=mock_client):
         record = fetch_sir_realtime("TOS01001215")
 
     assert record["source"] == "sir_toscana"
@@ -230,7 +231,7 @@ def test_fetch_sir_realtime_dash_precip() -> None:
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get = MagicMock(return_value=mock_resp)
 
-    with patch("guazza.fetchers.httpx.Client", return_value=mock_client):
+    with patch("guazza.fetch_sir.httpx.Client", return_value=mock_client):
         record = fetch_sir_realtime("TOS01001215")
 
     assert "precip_mm" not in record
@@ -306,14 +307,14 @@ def test_qc_range_temp_high() -> None:
 
 def test_fetch_netatmo_location_returns_stations() -> None:
     env = {"access_token": "fake", "refresh_token": "", "client_id": "", "client_secret": ""}
-    with patch("guazza.fetchers._fetch_public_data", return_value=_MOCK_STATIONS):
+    with patch("guazza.fetch_netatmo._fetch_public_data", return_value=_MOCK_STATIONS):
         stations = fetch_netatmo_location("casa_campi", _LOC, env)
     assert len(stations) == 3
 
 
 def test_fetch_netatmo_location_outlier_flagged() -> None:
     env = {"access_token": "fake", "refresh_token": "", "client_id": "", "client_secret": ""}
-    with patch("guazza.fetchers._fetch_public_data", return_value=_MOCK_STATIONS):
+    with patch("guazza.fetch_netatmo._fetch_public_data", return_value=_MOCK_STATIONS):
         stations = fetch_netatmo_location("casa_campi", _LOC, env)
     outlier = next(sd for sd in stations if sd.mac == "70:ee:50:ff:00:11")
     assert outlier.qc_cross is False
@@ -322,7 +323,7 @@ def test_fetch_netatmo_location_outlier_flagged() -> None:
 
 def test_fetch_netatmo_location_valid_pass() -> None:
     env = {"access_token": "fake", "refresh_token": "", "client_id": "", "client_secret": ""}
-    with patch("guazza.fetchers._fetch_public_data", return_value=_MOCK_STATIONS):
+    with patch("guazza.fetch_netatmo._fetch_public_data", return_value=_MOCK_STATIONS):
         stations = fetch_netatmo_location("casa_campi", _LOC, env)
     valid = [sd for sd in stations if sd.mac != "70:ee:50:ff:00:11"]
     assert all(sd.qc_pass for sd in valid)
@@ -624,7 +625,7 @@ def test_parse_om_response_weather_code_null_value() -> None:
 
 def test_fetch_openmeteo_forecast_calls_api() -> None:
     """fetch_openmeteo_forecast chiama _fetch_om_json e ritorna record per ogni modello."""
-    with patch("guazza.fetchers._fetch_om_json", return_value=_OM_MOCK_RESPONSE):
+    with patch("guazza.fetch_openmeteo._fetch_om_json", return_value=_OM_MOCK_RESPONSE):
         results = fetch_openmeteo_forecast(
             location_id="lavoro_cosimo",
             lat=43.76,
@@ -638,7 +639,7 @@ def test_fetch_openmeteo_forecast_calls_api() -> None:
 
 def test_fetch_openmeteo_forecast_error_returns_empty() -> None:
     """Se il fetch fallisce → lista vuota per quel modello, nessuna eccezione."""
-    with patch("guazza.fetchers._fetch_om_json", side_effect=Exception("timeout")):
+    with patch("guazza.fetch_openmeteo._fetch_om_json", side_effect=Exception("timeout")):
         results = fetch_openmeteo_forecast(
             location_id="lavoro_cosimo",
             lat=43.76,
@@ -759,7 +760,7 @@ def test_parse_om_response_historical_values() -> None:
 
 def test_fetch_openmeteo_historical_uses_parse_om_response() -> None:
     """fetch_openmeteo_historical produce record con ts_run inferred correttamente."""
-    with patch("guazza.fetchers._fetch_om_json", return_value=_OM_HISTORICAL_MOCK):
+    with patch("guazza.fetch_openmeteo._fetch_om_json", return_value=_OM_HISTORICAL_MOCK):
         results = fetch_openmeteo_historical(
             location_id="lavoro_cosimo",
             lat=43.76,
@@ -779,7 +780,7 @@ def test_fetch_openmeteo_historical_uses_parse_om_response() -> None:
 
 def test_fetch_openmeteo_historical_error_returns_empty() -> None:
     """Se il fetch fallisce → lista vuota, nessuna eccezione."""
-    with patch("guazza.fetchers._fetch_om_json", side_effect=Exception("timeout")):
+    with patch("guazza.fetch_openmeteo._fetch_om_json", side_effect=Exception("timeout")):
         results = fetch_openmeteo_historical(
             location_id="lavoro_cosimo",
             lat=43.76,
@@ -833,7 +834,7 @@ def test_sir_historical_termo_no_precip_interval() -> None:
 
 def test_sir_realtime_precip_interval_1() -> None:
     """CUM01 in SIR realtime deve produrre precip_interval_h=1 e granularity='realtime'."""
-    from guazza.fetchers import fetch_sir_realtime
+    from guazza.fetch_sir import fetch_sir_realtime
     mock_json = {
         "pluvio": {"CUM01": "3.4", "CUM24": "5.4"},
         "termo": {"value": "18.0", "date": "15/05/2026 10:30"},
@@ -845,7 +846,7 @@ def test_sir_realtime_precip_interval_1() -> None:
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get = MagicMock(return_value=mock_resp)
-    with patch("guazza.fetchers.httpx.Client", return_value=mock_client):
+    with patch("guazza.fetch_sir.httpx.Client", return_value=mock_client):
         rec = fetch_sir_realtime("TOS99999999")
     assert rec["precip_mm"] == pytest.approx(3.4)
     assert rec["precip_interval_h"] == 1
@@ -858,7 +859,7 @@ def test_sir_realtime_precip_interval_1() -> None:
 
 def test_parse_sir_realtime_ts_from_termo() -> None:
     """SIR pubblica CET (UTC+1 fisso): 10:30 CET → 09:30 UTC naive."""
-    from guazza.fetchers import _parse_sir_realtime_ts
+    from guazza.fetch_sir import _parse_sir_realtime_ts
     data = {"termo": {"value": "18.0", "date": "15/05/2026 10:30"}}
     ts = _parse_sir_realtime_ts(data)
     assert ts == datetime(2026, 5, 15, 9, 30)
@@ -869,7 +870,7 @@ def test_parse_sir_realtime_ts_fallback_now() -> None:
     """Senza campo date deve tornare un ts UTC naive vicino a now UTC."""
     from datetime import UTC
 
-    from guazza.fetchers import _parse_sir_realtime_ts
+    from guazza.fetch_sir import _parse_sir_realtime_ts
     before = datetime.now(UTC).replace(tzinfo=None)
     ts = _parse_sir_realtime_ts({})
     after = datetime.now(UTC).replace(tzinfo=None)
@@ -881,7 +882,7 @@ def test_parse_sir_realtime_ts_unparsable_fallback() -> None:
     """Se date non è parsabile deve tornare un ts UTC naive vicino a now UTC."""
     from datetime import UTC
 
-    from guazza.fetchers import _parse_sir_realtime_ts
+    from guazza.fetch_sir import _parse_sir_realtime_ts
     data = {"termo": {"value": "18.0", "date": "invalid-date"}}
     before = datetime.now(UTC).replace(tzinfo=None)
     ts = _parse_sir_realtime_ts(data)
@@ -896,7 +897,7 @@ def test_parse_sir_realtime_ts_unparsable_fallback() -> None:
 
 def test_parse_sir_bulk_meta_ts_standard() -> None:
     """SIR bulk è CET (UTC+1 fisso): 16:15 CET → 15:15 UTC naive."""
-    from guazza.fetchers import _parse_sir_bulk_meta_ts
+    from guazza.fetch_sir import _parse_sir_bulk_meta_ts
     ts = _parse_sir_bulk_meta_ts(" del 18/05/2026 16.15 (ora solare)")
     assert ts == datetime(2026, 5, 18, 15, 15)
     assert ts is not None and ts.tzinfo is None
@@ -904,13 +905,13 @@ def test_parse_sir_bulk_meta_ts_standard() -> None:
 
 def test_parse_sir_bulk_meta_ts_invalid() -> None:
     """Stringa non parsabile deve restituire None."""
-    from guazza.fetchers import _parse_sir_bulk_meta_ts
+    from guazza.fetch_sir import _parse_sir_bulk_meta_ts
     assert _parse_sir_bulk_meta_ts("") is None
     assert _parse_sir_bulk_meta_ts("nessun dato") is None
 
 
 def test_parse_bulk_float_valid() -> None:
-    from guazza.fetchers import _parse_bulk_float
+    from guazza.fetch_sir import _parse_bulk_float
     assert _parse_bulk_float("18") == 18.0
     assert _parse_bulk_float("-5") == -5.0
     assert _parse_bulk_float("0") == 0.0
@@ -918,7 +919,7 @@ def test_parse_bulk_float_valid() -> None:
 
 
 def test_parse_bulk_float_invalid() -> None:
-    from guazza.fetchers import _parse_bulk_float
+    from guazza.fetch_sir import _parse_bulk_float
     assert _parse_bulk_float(None) is None
     assert _parse_bulk_float("") is None
     assert _parse_bulk_float("&nbsp;+&nbsp;") is None
@@ -929,7 +930,7 @@ def test_parse_bulk_float_invalid() -> None:
 
 def test_fetch_sir_bulk_realtime_filters_stations(monkeypatch: Any) -> None:
     """Deve filtrare solo le stazioni richieste e restituire record wide corretti."""
-    from guazza.fetchers import fetch_sir_bulk_realtime
+    from guazza.fetch_sir import fetch_sir_bulk_realtime
 
     # 16:15 CET (UTC+1) → 15:15 UTC naive
     fake_ts = datetime(2026, 5, 18, 15, 15)
@@ -943,7 +944,7 @@ def test_fetch_sir_bulk_realtime_filters_stations(monkeypatch: Any) -> None:
         entry_skip = {"IDStazione": "TOS99999999", "Valore": "10"}
         return {"meta": " del 18/05/2026 16.15 (ora solare)", "data": [entry_a, entry_b, entry_skip]}
 
-    monkeypatch.setattr("guazza.fetchers._fetch_sir_bulk_json", _fake_bulk)
+    monkeypatch.setattr("guazza.fetch_sir._fetch_sir_bulk_json", _fake_bulk)
 
     results = fetch_sir_bulk_realtime({"TOS01000001", "TOS01000002"})
 
@@ -964,13 +965,13 @@ def test_fetch_sir_bulk_realtime_filters_stations(monkeypatch: Any) -> None:
 
 def test_fetch_sir_bulk_realtime_handles_offline_station(monkeypatch: Any) -> None:
     """Stazione offline (&nbsp;+&nbsp;) deve dare temp_c=None, non errore."""
-    from guazza.fetchers import fetch_sir_bulk_realtime
+    from guazza.fetch_sir import fetch_sir_bulk_realtime
 
     def _fake_bulk(action: str) -> dict[str, Any]:
         entry = {"IDStazione": "TOS01000001", "Valore": "&nbsp;+&nbsp;", "Direzione": "0"}
         return {"meta": " del 18/05/2026 16.15 (ora solare)", "data": [entry]}
 
-    monkeypatch.setattr("guazza.fetchers._fetch_sir_bulk_json", _fake_bulk)
+    monkeypatch.setattr("guazza.fetch_sir._fetch_sir_bulk_json", _fake_bulk)
 
     results = fetch_sir_bulk_realtime({"TOS01000001"})
     assert "TOS01000001" in results
@@ -981,7 +982,7 @@ def test_fetch_sir_bulk_realtime_handles_offline_station(monkeypatch: Any) -> No
 # ARPAT OpenData NRT -- _parse_arpat_nrt + fetch_arpat_nrt_station + fetch_arpat_all_locations
 # ═════════════════════════════════════════════════════════════════════════════
 
-from guazza.fetchers import (  # noqa: E402
+from guazza.fetch_arpat import (  # noqa: E402
     _parse_arpat_nrt,
     fetch_arpat_all_locations,
     fetch_arpat_nrt_station,
@@ -1114,7 +1115,7 @@ def test_parse_arpat_nrt_co_factor_one() -> None:
 def test_fetch_arpat_nrt_station_ok() -> None:
     """HTTP ok -> lista record; _log_scrape emesso con 'ok'."""
     payload = [{"ORA": "14", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 30.0}]
-    with patch("guazza.fetchers._fetch_arpat_nrt_json", return_value=payload):
+    with patch("guazza.fetch_arpat._fetch_arpat_nrt_json", return_value=payload):
         records = fetch_arpat_nrt_station("FI-FIGLINE", _LOC_ID, 0.8)
     assert len(records) == 1
     assert records[0]["no2_ugm3"] == pytest.approx(30.0)
@@ -1122,7 +1123,7 @@ def test_fetch_arpat_nrt_station_ok() -> None:
 
 def test_fetch_arpat_nrt_station_http_error_returns_empty() -> None:
     """Errore HTTP -> lista vuota, nessuna eccezione propagata."""
-    with patch("guazza.fetchers._fetch_arpat_nrt_json", side_effect=Exception("404")):
+    with patch("guazza.fetch_arpat._fetch_arpat_nrt_json", side_effect=Exception("404")):
         records = fetch_arpat_nrt_station("FI-FIGLINE", _LOC_ID, 0.8)
     assert records == []
 
@@ -1136,7 +1137,7 @@ def test_fetch_arpat_all_locations_gate() -> None:
         "no_aria": {"extras": [], "arpat_stations": [{"id": "FI-FIGLINE", "weight": 1.0}]},
     }
     payload = [{"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 20.0}]
-    with patch("guazza.fetchers._fetch_arpat_nrt_json", return_value=payload):
+    with patch("guazza.fetch_arpat._fetch_arpat_nrt_json", return_value=payload):
         results = fetch_arpat_all_locations(locations)
 
     assert "casa_campi" in results
@@ -1150,14 +1151,14 @@ def test_fetch_arpat_all_locations_dedup_station() -> None:
         "loc_b": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 0.5}]},
     }
     payload = [{"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 20.0}]
-    with patch("guazza.fetchers._fetch_arpat_nrt_json", return_value=payload) as mock_fetch:
+    with patch("guazza.fetch_arpat._fetch_arpat_nrt_json", return_value=payload) as mock_fetch:
         fetch_arpat_all_locations(locations)
     assert mock_fetch.call_count == 1
 
 
 # -- _parse_arpat_bollettino + fetch_arpat_bollettino_all_locations ────────────
 
-from guazza.fetchers import (  # noqa: E402
+from guazza.fetch_arpat import (  # noqa: E402
     _parse_arpat_bollettino,
     fetch_arpat_bollettino_all_locations,
 )
@@ -1238,7 +1239,7 @@ def test_fetch_arpat_bollettino_all_locations_ok() -> None:
         "casa_campi": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]},
     }
     payload = [{"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2dot5": 9}]
-    with patch("guazza.fetchers._fetch_arpat_bollettino_json", return_value=payload):
+    with patch("guazza.fetch_arpat._fetch_arpat_bollettino_json", return_value=payload):
         records = fetch_arpat_bollettino_all_locations(locations)
     assert len(records) == 1
     assert records[0]["granularity"] == "daily"
@@ -1249,7 +1250,7 @@ def test_fetch_arpat_bollettino_all_locations_http_error() -> None:
     locations = {
         "casa_campi": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]},
     }
-    with patch("guazza.fetchers._fetch_arpat_bollettino_json", side_effect=Exception("500")):
+    with patch("guazza.fetch_arpat._fetch_arpat_bollettino_json", side_effect=Exception("500")):
         records = fetch_arpat_bollettino_all_locations(locations)
     assert records == []
 
@@ -1257,7 +1258,7 @@ def test_fetch_arpat_bollettino_all_locations_http_error() -> None:
 def test_fetch_arpat_bollettino_no_aria_qualita() -> None:
     """Location senza 'aria_qualita' in extras -> nessuna chiamata HTTP, lista vuota."""
     locations = {"no_aria": {"extras": [], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]}}
-    with patch("guazza.fetchers._fetch_arpat_bollettino_json") as mock_fetch:
+    with patch("guazza.fetch_arpat._fetch_arpat_bollettino_json") as mock_fetch:
         records = fetch_arpat_bollettino_all_locations(locations)
     assert records == []
     mock_fetch.assert_not_called()

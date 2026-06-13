@@ -13,18 +13,18 @@ from pathlib import Path
 import typer
 
 from guazza._logging import setup_logging
+from guazza.jobs._common import DB_OPTION
 from guazza.models import TrainingArtifacts, train_all, walk_forward_cv
 from guazza.storage import DuckDBClient
 
 app = typer.Typer(help="Training LightGBM + CQR per Guazza.")
 
-_DB_PATH    = Path(os.environ.get("DB_PATH",    "/var/lib/guazza/guazza.duckdb"))
-_MODEL_DIR  = Path(os.environ.get("MODEL_DIR",  "/var/lib/guazza/models"))
+_MODEL_DIR = Path(os.environ.get("MODEL_DIR", "/var/lib/guazza/models"))
 
 
 @app.command("run")
 def cmd_run(
-    db_path:   Path = typer.Option(_DB_PATH,   "--db",        help="Path DuckDB"),
+    db_path:   Path = DB_OPTION,
     model_dir: Path = typer.Option(_MODEL_DIR, "--model-dir", help="Directory artefatti"),
     cal_days:  int  = typer.Option(90,         "--cal-days",  help="Giorni calibration set CQR"),
     dry_run:   bool = typer.Option(False,      "--dry-run",   help="Carica dati ma non allena"),
@@ -44,14 +44,14 @@ def cmd_run(
     typer.echo(
         f"Training completato: {artifacts.n_train} righe train, "
         f"{artifacts.n_cal} righe cal, "
-        f"artefatti in {model_dir}/artifacts.pkl"
+        f"artefatti in {model_dir}/artifacts.json"
     )
     _print_cqr_summary(artifacts)
 
 
 @app.command("eval")
 def cmd_eval(
-    db_path:    Path = typer.Option(_DB_PATH,  "--db",       help="Path DuckDB"),
+    db_path:    Path = DB_OPTION,
     n_splits:   int  = typer.Option(4,         "--splits",   help="Numero di fold CV"),
     embargo:    int  = typer.Option(7,         "--embargo",  help="Giorni embargo tra train e test"),
 ) -> None:

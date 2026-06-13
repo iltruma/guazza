@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from guazza.storage import DuckDBClient
 
 
-def _expected_precip(q: Mapping[str, float | None]) -> float | None:
+def expected_precip(q: Mapping[str, float | None]) -> float | None:
     """Valore atteso E[X] della distribuzione predittiva via quadratura trapezoidale.
 
     Usa i 5 quantili (p05/p10/p50/p90/p95) con estremi rettangolari:
@@ -992,7 +992,7 @@ def write_location_json(
         # Clamp fisico: la precipitazione non può essere negativa.
         def _c(v: float | None) -> float | None:
             return max(0.0, v) if v is not None else None
-        ev = _expected_precip(t)
+        ev = expected_precip(t)
         return {
             "mean":    round(ev, 2) if ev is not None else None,
             "p50":     _c(t.get("p50")),
@@ -1039,5 +1039,9 @@ def write_location_json(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{location_id}.json"
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    # Scrittura atomica: nginx serve questi file mentre il cron li riscrive —
+    # un write_text diretto esporrebbe un JSON troncato ai client.
+    tmp_path = path.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    tmp_path.replace(path)
     return path

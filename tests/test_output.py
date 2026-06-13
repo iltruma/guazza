@@ -12,16 +12,16 @@ import pytest
 
 from guazza.indicators import IndicatorResult
 from guazza.output import (
+    _WMO_SEVERITY,
     _dewpoint,
-    _expected_precip,
     _modal_weather_code,
     _prob_exceeds,
-    _WMO_SEVERITY,
     apply_intraday_correction,
     build_signals,
     build_signals_today,
     compute_coverage_30d,
     compute_hourly_profile,
+    expected_precip,
     get_current_air_quality,
     get_current_conditions,
     get_daily_weather_code,
@@ -129,12 +129,12 @@ def test_prob_exceeds_interpolated() -> None:
     assert math.isclose(p, 0.90, abs_tol=0.01)
 
 
-# ── _expected_precip ─────────────────────────────────────────────────────────
+# ── expected_precip ─────────────────────────────────────────────────────────
 
 def test_expected_precip_uniform() -> None:
     # Distribuzione uniforme su [0, 4]: E[X] = 2.0
     q = {"p05": 0.2, "p10": 0.4, "p50": 2.0, "p90": 3.6, "p95": 3.8}
-    ev = _expected_precip(q)
+    ev = expected_precip(q)
     assert ev is not None
     assert math.isclose(ev, 2.0, abs_tol=0.05)
 
@@ -142,7 +142,7 @@ def test_expected_precip_uniform() -> None:
 def test_expected_precip_zero_inflated() -> None:
     # Caso tipico: mediana 0, coda pesante a destra → E[X] > p50
     q = {"p05": 0.0, "p10": 0.0, "p50": 0.0, "p90": 3.0, "p95": 5.0}
-    ev = _expected_precip(q)
+    ev = expected_precip(q)
     assert ev is not None
     assert ev > 0.0  # E[X] > mediana
     # Con estremi rettangolari: contributo principale da [0.9, 1.0] ≈ 0.1 * 4.0 = 0.4
@@ -152,7 +152,7 @@ def test_expected_precip_zero_inflated() -> None:
 def test_expected_precip_always_ge_zero() -> None:
     # Quantile regression può dare valori leggermente negativi: clamp a 0
     q = {"p05": -0.1, "p10": -0.05, "p50": 0.0, "p90": 0.0, "p95": 0.0}
-    ev = _expected_precip(q)
+    ev = expected_precip(q)
     assert ev is not None
     assert ev >= 0.0
 
@@ -160,15 +160,14 @@ def test_expected_precip_always_ge_zero() -> None:
 def test_expected_precip_missing_quantile() -> None:
     # Quantile mancante → None
     q = {"p05": 0.0, "p10": 0.0, "p50": 0.5}  # mancano p90 e p95
-    assert _expected_precip(q) is None
+    assert expected_precip(q) is None
 
 
 def test_expected_precip_in_fmt_precip(sample_pred: dict) -> None:
     # Il campo "mean" deve essere presente nel JSON output e > p50 per distribuzione skewed
-    from guazza.output import write_location_json
     # Usa il sample_pred con precip skewed: p05=0, p10=0, p50=0.5, p90=3.0, p95=5.0
     q = sample_pred["precip_mm"]
-    ev = _expected_precip(q)
+    ev = expected_precip(q)
     assert ev is not None
     assert ev > q["p50"]  # distribuzione right-skewed → E[X] > mediana
 
@@ -1204,9 +1203,10 @@ def _insert_forecasts_with_wc(db_path: Path, location_id: str, target_date: str)
     così entrambi i code sono in parità (20 vs 20) → tie-break a favore di 61.
     20 ore soddisfano la soglia _MIN_HOURS_FOR_DAILY_CODE.
     """
+    from datetime import date
+
     import duckdb
 
-    from datetime import date
     d = date.fromisoformat(target_date)
     ts_run = datetime(d.year, d.month, d.day, 0, 0, 0)
     records = []

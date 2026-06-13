@@ -21,46 +21,44 @@ Variabili d'ambiente:
 
 from __future__ import annotations
 
-import os
 import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import httpx
 import typer
-import yaml
 from dotenv import load_dotenv
 from loguru import logger
 from tqdm import tqdm
 
-# Carica .env prima di leggere variabili d'ambiente (es. DB_PATH)
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-load_dotenv(_REPO_ROOT / ".env")
+# Carica .env prima di importare i moduli guazza che leggono le env a import time
+# (es. DB_PATH in guazza._paths).
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
-from guazza._logging import setup_logging  # noqa: E402
-from guazza.fetchers import (  # noqa: E402
-    _OM_MODELS,
-    _log_scrape,
+from guazza._logging import log_scrape, setup_logging  # noqa: E402
+from guazza.fetch_arpat import (  # noqa: E402
     fetch_arpat_all_locations,
     fetch_arpat_bollettino_all_locations,
-    fetch_netatmo_all_locations,
+)
+from guazza.fetch_netatmo import fetch_netatmo_all_locations  # noqa: E402
+from guazza.fetch_openmeteo import (  # noqa: E402
+    OM_MODELS,
     fetch_openmeteo_all_locations,
     fetch_openmeteo_historical_batch,
     fetch_openmeteo_multilead_batch,
+)
+from guazza.fetch_sir import (  # noqa: E402
     fetch_sir_bulk_realtime,
     fetch_sir_historical,
     fetch_sir_stations_realtime,
 )
+from guazza.jobs._common import CONFIG_DIR_OPTION, DB_OPTION, job_run  # noqa: E402
 from guazza.netatmo_daily import aggregate_netatmo_daily  # noqa: E402
 from guazza.storage import DuckDBClient  # noqa: E402
+from guazza.weights import load_configs  # noqa: E402
 
 # ── Costanti ─────────────────────────────────────────────────────────────────
-
-_DEFAULT_DB = Path(os.environ.get("DB_PATH", "/var/lib/guazza/guazza.duckdb"))
-_DEFAULT_CFG = Path(os.environ.get("CONFIG_DIR", str(_REPO_ROOT / "config")))
 
 # Mappatura sensore fisico (stations.yaml) → IDST endpoint CSV SIR
 _SENSOR_TO_IDST: dict[str, str] = {
@@ -75,19 +73,8 @@ _SENSOR_TO_IDST: dict[str, str] = {
 _REALTIME_ONLY_SENSORS = {"barometro", "radiometro_diretta", "radiometro_UV",
                            "radiometro_solare", "evaporimetro"}
 
-# Throttle tra fetch SIR CSV (rispettare ~1.2s/req)
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _load_config(cfg_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Carica locations.yaml e stations.yaml. Restituisce (locations, stations)."""
-    with (cfg_dir / "locations.yaml").open() as f:
-        locations: dict[str, Any] = yaml.safe_load(f)["locations"]
-    with (cfg_dir / "stations.yaml").open() as f:
-        stations: dict[str, Any] = yaml.safe_load(f)
-    return locations, stations
-
 
 def _all_sir_station_ids(locations: dict[str, Any]) -> set[str]:
     """Raccoglie tutti gli ID stazione SIR usati (meteo + idro + upstream) su tutte le location."""
@@ -112,22 +99,6 @@ def _idst_for_station(station_id: str, stations: dict[str, Any]) -> list[str]:
         if idst:
             idst_list.append(idst)
     return idst_list
-
-
-def _ping_healthchecks(status: str = "") -> None:
-    """Invia ping a Healthchecks.io se HEALTHCHECKS_URL è configurato.
-
-    status: "" = ok, "/fail" = fail, "/start" = start.
-    """
-    base_url = os.environ.get("HEALTHCHECKS_URL", "").strip()
-    if not base_url:
-        return
-    url = base_url.rstrip("/") + status
-    try:
-        httpx.get(url, timeout=5)
-        logger.debug(f"Healthchecks ping: {url}")
-    except Exception as e:
-        logger.warning(f"Healthchecks ping fallito: {e}")
 
 
 def _idro_station_ids(locations: dict[str, Any], stations: dict[str, Any]) -> set[str]:
@@ -181,8 +152,8 @@ def _ingest_sir_historical_range(
 ) -> int:
     """Scarica SIR CSV per tutte le stazioni e tutti i sensori nell'intervallo.
 
-    Le stazioni+sensori vengono fetchati in parallelo con ThreadPoolExecutor(3),
-    poi i record filtrati vengono scritti in DB sequenzialmente.
+    Fetch sequenziale: www.sir.toscana.it serializza le connessioni per IP
+    (~3s/request), il parallelismo non aumenta il throughput.
 
     Per il backfill completo l'API SIR restituisce sempre tutto lo storico
     disponibile — i parametri start/end_date sono usati solo per filtrare
@@ -212,7 +183,7 @@ def _ingest_sir_historical_range(
             records = fetch_sir_historical(sid, idst, loc_id)
             filtered = [r for r in records if start_dt <= r["ts"] <= end_dt]
             if filtered:
-                _log_scrape(f"sir_historical:{sid}:{idst}", "ok", rows=len(filtered))
+                log_scrape(f"sir_historical:{sid}:{idst}", "ok", rows=len(filtered))
                 return (sid, idst, filtered)
             return None
         except httpx.HTTPStatusError as e:
@@ -220,30 +191,23 @@ def _ingest_sir_historical_range(
                 f"SIR historical [{sid}] {idst}: HTTP {e.response.status_code} "
                 f"su {e.request.url}"
             )
-            _log_scrape(f"sir_historical:{sid}:{idst}", "fail", detail=f"HTTP {e.response.status_code}")
+            log_scrape(f"sir_historical:{sid}:{idst}", "fail", detail=f"HTTP {e.response.status_code}")
             return None
         except Exception as e:
             logger.opt(exception=True).error(f"SIR historical [{sid}] {idst} fallito: {e}")
-            _log_scrape(f"sir_historical:{sid}:{idst}", "fail", detail=str(e))
+            log_scrape(f"sir_historical:{sid}:{idst}", "fail", detail=str(e))
             return None
 
     results: list[tuple[str, str, list[dict[str, Any]]]] = []
-    _tty = sys.stderr.isatty()
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        futures = {
-            executor.submit(_fetch_one, sid, idst, loc_id): (sid, idst)
-            for sid, idst, loc_id in combos
-        }
-        for future in tqdm(
-            as_completed(futures),
-            total=len(futures),
-            desc="SIR historical",
-            unit="combo",
-            disable=not _tty,
-        ):
-            result = future.result()
-            if result:
-                results.append(result)
+    for sid, idst, loc_id in tqdm(
+        combos,
+        desc="SIR historical",
+        unit="combo",
+        disable=not sys.stderr.isatty(),
+    ):
+        result = _fetch_one(sid, idst, loc_id)
+        if result:
+            results.append(result)
 
     total = 0
     for sid, idst, filtered in results:
@@ -261,18 +225,11 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-_DB_OPT = typer.Option(_DEFAULT_DB, "--db", help="Path file DuckDB")
-_CFG_OPT = typer.Option(str(_DEFAULT_CFG), "--config-dir", help="Directory YAML config")
-
-
-def _setup_logging(level: str = "INFO") -> None:
-    setup_logging(level)
-
 
 @app.command("historical")
 def cmd_historical(
-    db_path: Path = _DB_OPT,
-    config_dir: str = _CFG_OPT,
+    db_path: Path = DB_OPTION,
+    config_dir: Path = CONFIG_DIR_OPTION,
     start_date: str = typer.Option("2022-01-01", "--start-date", help="Inizio intervallo YYYY-MM-DD"),
     end_date: str = typer.Option("", "--end-date", help="Fine intervallo YYYY-MM-DD (default: oggi)"),
     only_sir: bool = typer.Option(False, "--only-sir", help="Scarica solo SIR CSV, salta Open-Meteo"),
@@ -297,22 +254,21 @@ def cmd_historical(
         # Tutte le sorgenti, tutte le location
         historical --start-date 2022-01-01
     """
-    _setup_logging()
+    setup_logging()
     exclusive = sum([only_sir, only_openmeteo])
     if exclusive > 1:
         typer.echo("Errore: --only-sir e --only-openmeteo sono mutualmente esclusivi.")
         raise typer.Exit(1)
     if om_model:
-        unknown_models = set(om_model) - set(_OM_MODELS)
+        unknown_models = set(om_model) - set(OM_MODELS)
         if unknown_models:
             typer.echo(f"Errore: modelli sconosciuti: {sorted(unknown_models)}")
-            typer.echo(f"Disponibili: {_OM_MODELS}")
+            typer.echo(f"Disponibili: {OM_MODELS}")
             raise typer.Exit(1)
     if not end_date:
         end_date = datetime.now(tz=UTC).strftime("%Y-%m-%d")
 
-    cfg = Path(config_dir)
-    locations_all, stations = _load_config(cfg)
+    locations_all, stations = load_configs(Path(config_dir))
 
     # Filtra location se specificate
     if location:
@@ -342,13 +298,9 @@ def cmd_historical(
         typer.echo("[dry-run] Nessuna scrittura effettuata.")
         return
 
-    _ping_healthchecks("/start")
-    t0 = time.monotonic()
-    ok = True
-    sir_total = 0
-    om_total = 0
-
-    try:
+    with job_run("job_historical") as stats:
+        sir_total = 0
+        om_total = 0
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
 
@@ -374,29 +326,20 @@ def cmd_historical(
                     end_date=om_end_date,
                     models=om_model or None,
                 )
-                for _loc_id, model_results in results_all.items():
-                    for _model, records in model_results.items():
+                for model_results in results_all.values():
+                    for records in model_results.values():
                         if records:
                             om_total += db.upsert_forecasts(records)
                 typer.echo(f"Open-Meteo historical: {om_total} record inseriti")
 
-    except Exception as e:
-        logger.error(f"historical fallito: {e}")
-        _ping_healthchecks("/fail")
-        ok = False
-        raise typer.Exit(1) from e
-
-    elapsed = time.monotonic() - t0
-    _log_scrape("job_historical", "ok" if ok else "fail",
-                rows=sir_total + om_total if ok else None)
-    _ping_healthchecks()
-    typer.echo(f"\nCompletato in {elapsed:.0f}s — SIR:{sir_total} OM:{om_total}")
+        stats.rows = sir_total + om_total
+        stats.summary = f"SIR:{sir_total} OM:{om_total}"
 
 
 @app.command("multilead")
 def cmd_multilead(
-    db_path: Path = _DB_OPT,
-    config_dir: str = _CFG_OPT,
+    db_path: Path = DB_OPTION,
+    config_dir: Path = CONFIG_DIR_OPTION,
     start_date: str = typer.Option("2022-01-01", "--start-date", help="Inizio intervallo YYYY-MM-DD"),
     end_date: str = typer.Option("", "--end-date", help="Fine intervallo YYYY-MM-DD (default: oggi-2gg)"),
     location: list[str] | None = typer.Option(None, "--location", help="Limita a questa location (ripetibile)"),
@@ -413,12 +356,11 @@ def cmd_multilead(
         multilead --location casa_campi --start-date 2025-01-01
         multilead --start-date 2022-01-01
     """
-    _setup_logging()
+    setup_logging()
     if not end_date:
         end_date = (datetime.now(tz=UTC) - timedelta(days=2)).strftime("%Y-%m-%d")
 
-    cfg = Path(config_dir)
-    locations_all, _stations = _load_config(cfg)
+    locations_all, _stations = load_configs(Path(config_dir))
 
     if location:
         unknown = set(location) - set(locations_all)
@@ -437,10 +379,8 @@ def cmd_multilead(
         typer.echo("[dry-run] Nessuna scrittura effettuata.")
         return
 
-    _ping_healthchecks("/start")
-    t0 = time.monotonic()
-    om_total = 0
-    try:
+    with job_run("job_multilead") as stats:
+        om_total = 0
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
             results_all = fetch_openmeteo_multilead_batch(
@@ -448,25 +388,18 @@ def cmd_multilead(
                 start_date=start_date,
                 end_date=end_date,
             )
-            for _loc_id, model_results in results_all.items():
-                for _model, records in model_results.items():
+            for model_results in results_all.values():
+                for records in model_results.values():
                     if records:
                         om_total += db.upsert_forecasts(records)
-    except Exception as e:
-        logger.error(f"multilead fallito: {e}")
-        _ping_healthchecks("/fail")
-        raise typer.Exit(1) from e
-
-    elapsed = time.monotonic() - t0
-    _log_scrape("job_multilead", "ok", rows=om_total)
-    _ping_healthchecks()
-    typer.echo(f"\nCompletato in {elapsed:.0f}s — OM multilead: {om_total} record")
+        stats.rows = om_total
+        stats.summary = f"OM multilead: {om_total} record"
 
 
 @app.command("daily")
 def cmd_daily(
-    db_path: Path = _DB_OPT,
-    config_dir: str = _CFG_OPT,
+    db_path: Path = DB_OPTION,
+    config_dir: Path = CONFIG_DIR_OPTION,
     date: str = typer.Option("", "--date", help="Giorno da caricare YYYY-MM-DD (default: ieri)"),
     only_sir: bool = typer.Option(False, "--only-sir", help="Scarica solo SIR CSV, salta Open-Meteo"),
     only_openmeteo: bool = typer.Option(False, "--only-openmeteo", help="Scarica solo Open-Meteo, salta SIR"),
@@ -479,15 +412,14 @@ def cmd_daily(
     Schedulare a ~06:00 UTC (SIR pubblica i dati validati del giorno precedente
     tipicamente entro le 03:00-05:00 UTC).
     """
-    _setup_logging()
+    setup_logging()
     if only_sir and only_openmeteo:
         typer.echo("Errore: --only-sir e --only-openmeteo sono mutualmente esclusivi.")
         raise typer.Exit(1)
     if not date:
         date = (datetime.now(tz=UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    cfg = Path(config_dir)
-    locations_all, stations = _load_config(cfg)
+    locations_all, stations = load_configs(Path(config_dir))
 
     if location:
         unknown = set(location) - set(locations_all)
@@ -507,13 +439,9 @@ def cmd_daily(
         typer.echo("[dry-run] Nessuna scrittura effettuata.")
         return
 
-    _ping_healthchecks("/start")
-    t0 = time.monotonic()
-    ok = True
-    sir_total = 0
-    om_total = 0
-
-    try:
+    with job_run("job_daily") as stats:
+        sir_total = 0
+        om_total = 0
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
 
@@ -530,8 +458,8 @@ def cmd_daily(
                     end_date=date,
                     models=om_model or None,
                 )
-                for _loc_id, model_results in results_all.items():
-                    for _model, records in model_results.items():
+                for model_results in results_all.values():
+                    for records in model_results.values():
                         if records:
                             om_total += db.upsert_forecasts(records)
                 logger.info(f"daily Open-Meteo: {om_total} record")
@@ -542,22 +470,14 @@ def cmd_daily(
             nd = aggregate_netatmo_daily(db, target_day=local_day)
             logger.info(f"daily Netatmo: {nd['rows']} record")
 
-    except Exception as e:
-        logger.error(f"daily fallito: {e}")
-        _ping_healthchecks("/fail")
-        ok = False
-        raise typer.Exit(1) from e
-
-    elapsed = time.monotonic() - t0
-    _log_scrape("job_daily", "ok" if ok else "fail", rows=sir_total + om_total)
-    _ping_healthchecks()
-    typer.echo(f"daily completato in {elapsed:.0f}s — SIR:{sir_total} OM:{om_total}")
+        stats.rows = sir_total + om_total
+        stats.summary = f"SIR:{sir_total} OM:{om_total}"
 
 
 @app.command("realtime")
 def cmd_realtime(
-    db_path: Path = _DB_OPT,
-    config_dir: str = _CFG_OPT,
+    db_path: Path = DB_OPTION,
+    config_dir: Path = CONFIG_DIR_OPTION,
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
     """Letture istantanee: SIR actions.php + Netatmo per tutte le location.
@@ -565,22 +485,17 @@ def cmd_realtime(
     Schedulare ogni 15-30 minuti.
     SIR ha granularità ~15 min; Netatmo aggiorna ogni 10 min circa.
     """
-    _setup_logging()
-    cfg = Path(config_dir)
-    locations, stations = _load_config(cfg)
+    setup_logging()
+    locations, stations = load_configs(Path(config_dir))
 
     if dry_run:
         typer.echo("[dry-run] Nessuna scrittura effettuata.")
         return
 
-    _ping_healthchecks("/start")
-    t0 = time.monotonic()
-    ok = True
-    sir_total = 0
-    netatmo_total = 0
-    aq_total = 0
-
-    try:
+    with job_run("job_realtime") as stats:
+        sir_total = 0
+        netatmo_total = 0
+        aq_total = 0
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
 
@@ -617,7 +532,7 @@ def cmd_realtime(
 
             # 3. ARPAT NRT — qualità aria oraria per tutte le location
             aq_results = fetch_arpat_all_locations(locations)
-            for _loc_id, records in aq_results.items():
+            for records in aq_results.values():
                 if records:
                     aq_total += db.upsert_sir_observations(records)
 
@@ -627,26 +542,14 @@ def cmd_realtime(
                 aq_total += db.upsert_sir_observations(boll_records)
             logger.info(f"realtime ARPAT: {aq_total} record ({len(boll_records)} bollettino PM10/PM2.5)")
 
-    except Exception as e:
-        logger.error(f"realtime fallito: {e}")
-        _ping_healthchecks("/fail")
-        ok = False
-        raise typer.Exit(1) from e
-
-    elapsed = time.monotonic() - t0
-    _log_scrape("job_realtime", "ok" if ok else "fail",
-                rows=sir_total + netatmo_total + aq_total)
-    _ping_healthchecks()
-    typer.echo(
-        f"realtime completato in {elapsed:.0f}s — "
-        f"SIR:{sir_total} Netatmo:{netatmo_total} ARPAT:{aq_total}"
-    )
+        stats.rows = sir_total + netatmo_total + aq_total
+        stats.summary = f"SIR:{sir_total} Netatmo:{netatmo_total} ARPAT:{aq_total}"
 
 
 @app.command("forecasts")
 def cmd_forecasts(
-    db_path: Path = _DB_OPT,
-    config_dir: str = _CFG_OPT,
+    db_path: Path = DB_OPTION,
+    config_dir: Path = CONFIG_DIR_OPTION,
     forecast_days: int = typer.Option(7, "--days", help="Giorni di forecast (1-16)"),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
@@ -655,20 +558,15 @@ def cmd_forecasts(
     Schedulare ogni 6 ore (allineato ai run ECMWF: 00/06/12/18 UTC + lag ~2h).
     Suggerito: 02:00, 08:00, 14:00, 20:00 UTC.
     """
-    _setup_logging()
-    cfg = Path(config_dir)
-    locations, _ = _load_config(cfg)
+    setup_logging()
+    locations, _ = load_configs(Path(config_dir))
 
     if dry_run:
         typer.echo("[dry-run] Nessuna scrittura effettuata.")
         return
 
-    _ping_healthchecks("/start")
-    t0 = time.monotonic()
-    ok = True
-    total = 0
-
-    try:
+    with job_run("job_forecasts") as stats:
+        total = 0
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
 
@@ -677,22 +575,13 @@ def cmd_forecasts(
                 forecast_days=forecast_days,
             )
 
-            for _loc_id, model_results in all_results.items():
-                for _model, records in model_results.items():
+            for model_results in all_results.values():
+                for records in model_results.values():
                     if records:
-                        n = db.upsert_forecasts(records)
-                        total += n
+                        total += db.upsert_forecasts(records)
 
-    except Exception as e:
-        logger.error(f"forecasts fallito: {e}")
-        _ping_healthchecks("/fail")
-        ok = False
-        raise typer.Exit(1) from e
-
-    elapsed = time.monotonic() - t0
-    _log_scrape("job_forecasts", "ok" if ok else "fail", rows=total)
-    _ping_healthchecks()
-    typer.echo(f"forecasts completato in {elapsed:.0f}s — {total} record inseriti")
+        stats.rows = total
+        stats.summary = f"{total} record inseriti"
 
 
 if __name__ == "__main__":

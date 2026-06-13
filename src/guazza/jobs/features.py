@@ -8,7 +8,6 @@ Uso:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import typer
@@ -16,6 +15,7 @@ from loguru import logger
 
 from guazza._logging import setup_logging
 from guazza.features import build_features_daily
+from guazza.jobs._common import DB_OPTION
 from guazza.storage import DuckDBClient
 
 app = typer.Typer(help="Feature engineering — tabella features_daily.")
@@ -25,12 +25,9 @@ app = typer.Typer(help="Feature engineering — tabella features_daily.")
 def _callback() -> None:
     setup_logging()
 
-_DEFAULT_DB = Path(os.environ.get("DB_PATH", "/var/lib/guazza/guazza.duckdb"))
-_DB_OPT = typer.Option(_DEFAULT_DB, "--db", help="Path file DuckDB")
-
 
 @app.command("build")
-def cmd_build(db_path: Path = _DB_OPT) -> None:
+def cmd_build(db_path: Path = DB_OPTION) -> None:
     """Costruisce (o ricostruisce) features_daily da forecasts + observations."""
     with DuckDBClient(db_path=db_path) as db:
         n = build_features_daily(db)
@@ -39,7 +36,7 @@ def cmd_build(db_path: Path = _DB_OPT) -> None:
 
 
 @app.command("info")
-def cmd_info(db_path: Path = _DB_OPT) -> None:
+def cmd_info(db_path: Path = DB_OPTION) -> None:
     """Mostra statistiche su features_daily."""
     with DuckDBClient(db_path=db_path, read_only=True) as db:
         try:

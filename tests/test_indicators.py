@@ -119,6 +119,31 @@ def test_eval_or_condition() -> None:
     assert _eval_condition("P(precip > 0.2mm) > 0.45 OR Tmin_p10 < 2.0", signals)
 
 
+def test_eval_signal_token_with_inner_and() -> None:
+    """Token con "AND" interno (nebbia): il lookup deve usare la chiave originale.
+
+    Regression: il vecchio eval normalizzava AND→and prima di estrarre i token,
+    corrompendo la chiave → il segnale valeva sempre 0.0.
+    """
+    signals: SignalBag = {"P(RH > 95% AND wind < 3kmh)": 0.60}
+    assert _eval_condition("P(RH > 95% AND wind < 3kmh) > 0.50", signals) is True
+    assert _eval_condition("P(RH > 95% AND wind < 3kmh) < 0.20", signals) is False
+
+
+def test_eval_chained_and_negative_threshold() -> None:
+    signals: SignalBag = {"Tmin_p10": -1.5}
+    assert _eval_condition("Tmin_p10 < -1.0", signals) is True
+    assert _eval_condition("Tmin_p10 > -1.0", signals) is False
+
+
+def test_eval_rejects_non_whitelisted_expression() -> None:
+    """Espressioni fuori grammatica (chiamate, attributi) → False con warning, mai esecuzione."""
+    signals: SignalBag = {"Tmin_p10": 1.0}
+    assert _eval_condition("__import__('os').system('true')", signals) is False
+    assert _eval_condition("Tmin_p10.__class__", signals) is False
+    assert _eval_condition("1 + 1 == 2", signals) is False  # aritmetica non in grammatica
+
+
 def test_panni_verde() -> None:
     signals: SignalBag = {"P(precip > 0.2mm)": 0.05, "P(RH > 80%)": 0.10}
     r = evaluate_indicator("panni", _CFG_PANNI, signals, "casa_campi")

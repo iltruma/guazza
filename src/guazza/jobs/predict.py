@@ -23,21 +23,20 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
-import pandas as pd
 import typer
 from loguru import logger
 
 from guazza._logging import setup_logging
 from guazza.indicators import evaluate_all, load_indicators, log_results
-from guazza.models import load_artifacts, predict
+from guazza.jobs._common import DB_OPTION, OUTPUT_DIR_OPTION, job_run
+from guazza.models import load_artifacts, predict_frame
 from guazza.output import (
-    _expected_precip,
     apply_intraday_correction,
     build_signals,
     build_signals_today,
     compute_coverage_30d,
     compute_hourly_profile,
+    expected_precip,
     get_current_conditions,
     get_daily_weather_code,
     get_intraday_observed,
@@ -48,21 +47,7 @@ from guazza.storage import DuckDBClient
 
 app = typer.Typer(help="Predizioni ML per Guazza.")
 
-_DB_PATH     = Path(os.environ.get("DB_PATH",     "/var/lib/guazza/guazza.duckdb"))
-_MODEL_DIR   = Path(os.environ.get("MODEL_DIR",   "/var/lib/guazza/models"))
-_OUTPUT_DIR  = Path(os.environ.get("OUTPUT_DIR",  "data/output"))
-
-
-def _ping_healthchecks(status: str = "") -> None:
-    base_url = os.environ.get("HEALTHCHECKS_URL", "").strip()
-    if not base_url:
-        return
-    url = base_url.rstrip("/") + status
-    try:
-        httpx.get(url, timeout=5)
-        logger.debug(f"Healthchecks ping: {url}")
-    except Exception as e:
-        logger.warning(f"Healthchecks ping fallito: {e}")
+_MODEL_DIR = Path(os.environ.get("MODEL_DIR", "/var/lib/guazza/models"))
 
 
 def _fetch_obs_summary(db: DuckDBClient, location_id: str) -> dict[str, float | None]:
@@ -91,16 +76,15 @@ def _to_date(val: Any) -> Any:
 
 @app.command("run")
 def cmd_run(
-    db_path:    Path = typer.Option(_DB_PATH,    "--db",         help="Path DuckDB"),
-    model_dir:  Path = typer.Option(_MODEL_DIR,  "--model-dir",  help="Directory artefatti modello"),
-    output_dir: Path = typer.Option(_OUTPUT_DIR, "--output-dir", help="Directory output JSON"),
-    dry_run:    bool = typer.Option(False,       "--dry-run",    help="Non scrive su disco né in DB"),
+    db_path:    Path = DB_OPTION,
+    model_dir:  Path = typer.Option(_MODEL_DIR, "--model-dir", help="Directory artefatti modello"),
+    output_dir: Path = OUTPUT_DIR_OPTION,
+    dry_run:    bool = typer.Option(False, "--dry-run", help="Non scrive su disco né in DB"),
 ) -> None:
     """Genera predizioni ML + indicatori DLE per tutte le location (D+0…D+7)."""
     setup_logging()
-    _ping_healthchecks("/start")
 
-    try:
+    with job_run("job_predict") as stats:
         artifacts = load_artifacts(model_dir=model_dir)
         model_version = artifacts.trained_at.strftime("%Y%m%d")
         logger.info(f"Artefatti caricati: {model_version}, {len(artifacts.targets)} target")
@@ -109,6 +93,9 @@ def cmd_run(
 
         with DuckDBClient(db_path=db_path) as db:
             if not dry_run:
+                # Idempotente: garantisce tabelle + vista obs_weighted_daily (usata
+                # dai backfill *_obs) anche su un DB che non ha rieseguito lo schema.
+                db.init_schema()
                 db.ensure_predictions_schema()
                 db.ensure_benchmark_schema()
                 n_backfilled = db.backfill_prediction_obs()
@@ -135,7 +122,6 @@ def cmd_run(
                     "Nessuna data futura in features_daily "
                     "— esegui prima il job forecasts + features build"
                 )
-                _ping_healthchecks()
                 return
 
             json_paths: list[Path] = []
@@ -145,13 +131,18 @@ def cmd_run(
                 obs_summary = _fetch_obs_summary(db, location_id)
                 day_entries: list[dict[str, Any]] = []
 
-                for _, row in loc_df.iterrows():
-                    target_date_obj = _to_date(row["target_date"])
-                    lead_time_h = int(row["lead_time_h"])
+                # Predizione in batch per tutta la location: una chiamata-modello per
+                # (target, quantile) invece di una per giorno (output identico).
+                loc_df = loc_df.reset_index(drop=True)
+                lead_times = [int(v) for v in loc_df["lead_time_h"]]
+                preds = predict_frame(
+                    artifacts, loc_df[artifacts.feature_cols], lead_times
+                )
 
-                    X = pd.DataFrame([row[artifacts.feature_cols]])
-                    X["location_id"] = X["location_id"].astype("category")
-                    pred = predict(artifacts, X, lead_h=lead_time_h)
+                for i, row in loc_df.iterrows():
+                    target_date_obj = _to_date(row["target_date"])
+                    lead_time_h = lead_times[i]
+                    pred = preds[i]
 
                     if target_date_obj == date.today():
                         current_obs = get_current_conditions(db, location_id)
@@ -176,7 +167,7 @@ def cmd_run(
                         db, location_id, str(target_date_obj),
                         tmin_p50=pred["tmin_c"].get("p50"),
                         tmax_p50=pred["tmax_c"].get("p50"),
-                        precip_anchor=_expected_precip(pred["precip_mm"]),
+                        precip_anchor=expected_precip(pred["precip_mm"]),
                     )
 
                     nwp_comparison = get_nwp_model_comparison(
@@ -245,12 +236,8 @@ def cmd_run(
 
         if not dry_run:
             logger.info(f"JSON scritti: {[str(p) for p in json_paths]}")
-        _ping_healthchecks()
-
-    except Exception:
-        logger.exception("predict run fallito")
-        _ping_healthchecks("/fail")
-        raise typer.Exit(1) from None
+        stats.rows = len(json_paths)
+        stats.summary = f"{len(json_paths)} JSON scritti"
 
 
 if __name__ == "__main__":

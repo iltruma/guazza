@@ -23,7 +23,8 @@ import pandas as pd
 import typer
 from loguru import logger
 
-_DEFAULT_DB_PATH = Path(os.environ.get("DB_PATH", "/var/lib/guazza/guazza.duckdb"))
+from guazza._paths import DEFAULT_DB_PATH
+
 _SCHEMA_SQL = Path(__file__).parent / "schema.sql"
 
 
@@ -35,7 +36,7 @@ class DuckDBClient:
         db_path: Path | str | None = None,
         read_only: bool = False,
     ) -> None:
-        self.db_path = Path(db_path) if db_path else _DEFAULT_DB_PATH
+        self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self.read_only = read_only
         self._conn: duckdb.DuckDBPyConnection | None = None
         self._lock_fd: int | None = None
@@ -114,7 +115,7 @@ class DuckDBClient:
             self._conn.execute(sql)
             logger.info("predictions: schema migrato alla versione corrente (v0.5)")
 
-    def upsert_predictions(self, records: list[dict]) -> int:
+    def upsert_predictions(self, records: list[dict[str, Any]]) -> int:
         """UPSERT batch per predictions ML.
 
         Ogni record deve avere: model_version, location_id, ts_valid, lead_time_h,
@@ -174,7 +175,7 @@ class DuckDBClient:
         logger.info(f"upsert_predictions: {len(records)} record salvati")
         return len(records)
 
-    def upsert_benchmark_forecasts(self, records: list[dict]) -> int:
+    def upsert_benchmark_forecasts(self, records: list[dict[str, Any]]) -> int:
         """UPSERT batch per benchmark NWP giornalieri nella tabella benchmark_forecasts.
 
         Ogni record deve avere: source, location_id, target_date (date o str),
@@ -233,25 +234,7 @@ class DuckDBClient:
                 tmin_obs   = ow.tmin_c,
                 tmax_obs   = ow.tmax_c,
                 precip_obs = ow.precip_mm
-            FROM (
-                SELECT
-                    sw.location_id,
-                    o.ts::DATE AS obs_date,
-                    SUM(o.tmin_c * sw.weight)
-                        / NULLIF(SUM(CASE WHEN o.tmin_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
-                        AS tmin_c,
-                    SUM(o.tmax_c * sw.weight)
-                        / NULLIF(SUM(CASE WHEN o.tmax_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
-                        AS tmax_c,
-                    SUM(o.precip_mm * sw.weight)
-                        / NULLIF(SUM(CASE WHEN o.precip_mm IS NOT NULL THEN sw.weight ELSE 0 END), 0)
-                        AS precip_mm
-                FROM observations o
-                JOIN station_weights sw
-                    ON o.station_id = sw.station_id
-                WHERE o.source = 'sir_toscana' AND o.granularity = 'daily'
-                GROUP BY sw.location_id, o.ts::DATE
-            ) ow
+            FROM obs_weighted_daily ow
             WHERE benchmark_forecasts.location_id = ow.location_id
               AND benchmark_forecasts.target_date = ow.obs_date
               AND benchmark_forecasts.tmin_obs IS NULL
@@ -278,25 +261,7 @@ class DuckDBClient:
                 tmin_obs   = ow.tmin_c,
                 tmax_obs   = ow.tmax_c,
                 precip_obs = ow.precip_mm
-            FROM (
-                SELECT
-                    sw.location_id,
-                    o.ts::DATE AS obs_date,
-                    SUM(o.tmin_c * sw.weight)
-                        / NULLIF(SUM(CASE WHEN o.tmin_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
-                        AS tmin_c,
-                    SUM(o.tmax_c * sw.weight)
-                        / NULLIF(SUM(CASE WHEN o.tmax_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
-                        AS tmax_c,
-                    SUM(o.precip_mm * sw.weight)
-                        / NULLIF(SUM(CASE WHEN o.precip_mm IS NOT NULL THEN sw.weight ELSE 0 END), 0)
-                        AS precip_mm
-                FROM observations o
-                JOIN station_weights sw
-                    ON o.station_id = sw.station_id
-                WHERE o.source = 'sir_toscana' AND o.granularity = 'daily'
-                GROUP BY sw.location_id, o.ts::DATE
-            ) ow
+            FROM obs_weighted_daily ow
             WHERE predictions.location_id = ow.location_id
               AND predictions.ts_valid::DATE = ow.obs_date
               AND predictions.tmin_obs IS NULL
@@ -368,7 +333,7 @@ class DuckDBClient:
         logger.info(f"Schema OK: {len(existing)} tabelle presenti")
         return True
 
-    def upsert_forecasts(self, records: list[dict]) -> int:
+    def upsert_forecasts(self, records: list[dict[str, Any]]) -> int:
         """UPSERT batch wide per forecast Open-Meteo nella tabella forecasts.
 
         PK: (source, location_id, ts_run, ts_valid).
@@ -447,7 +412,7 @@ class DuckDBClient:
         logger.info(f"upsert_forecasts: {len(records)} record processati")
         return len(records)
 
-    def upsert_sir_observations(self, records: list[dict]) -> int:
+    def upsert_sir_observations(self, records: list[dict[str, Any]]) -> int:
         """UPSERT wide per osservazioni SIR/ARPAT/Netatmo storiche.
 
         Ogni record è parziale (solo le colonne del sensore scaricato).
@@ -615,7 +580,7 @@ def open_db(
 
 app = typer.Typer(help="Utility DuckDB per Guazza.")
 
-_DB_OPTION = typer.Option(_DEFAULT_DB_PATH, "--db", help="Path del file DuckDB")
+_DB_OPTION = typer.Option(DEFAULT_DB_PATH, "--db", help="Path del file DuckDB")
 
 
 @app.command("init-schema")

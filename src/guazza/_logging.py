@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime
+from typing import Any
 
 from loguru import logger
 
@@ -25,3 +27,21 @@ def setup_logging(level: str = "INFO") -> None:
         )
     else:
         logger.add(sys.stdout, serialize=True, level=level)
+
+
+def log_scrape(scraper: str, status: str, rows: int | None = None, detail: str = "") -> None:
+    """Emette un log JSON strutturato per ogni run scraper/job.
+
+    Formato: {"scraper": ..., "status": "ok|fail", "ts": ..., "rows": N}
+    Compatibile con CLAUDE.md §Logging (scraper fragili).
+    """
+    payload: dict[str, Any] = {
+        "scraper": scraper,
+        "status": status,
+        "ts": datetime.now(tz=UTC).isoformat(),
+    }
+    if rows is not None:
+        payload["rows"] = rows
+    if detail:
+        payload["detail"] = detail
+    logger.info(payload)
