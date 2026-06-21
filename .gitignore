@@ -58,6 +58,7 @@ htmlcov/
 
 # opencode
 .opencode/
+opencode.json
 
 # claude code
 .claude/
