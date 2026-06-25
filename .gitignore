@@ -10,7 +10,6 @@ build/
 uv.lock
 
 # uv
-.python-version
 
 # Ambiente
 .env
