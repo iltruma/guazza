@@ -1,0 +1,66 @@
+# Git
+.git/
+.gitignore
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.python-version
+uv.lock
+
+# Ambiente
+.env
+.env.*
+
+# Test
+tests/
+
+# Dati runtime (DuckDB, Parquet, log, output)
+data/
+*.duckdb
+*.duckdb.*
+*.parquet
+nwp_raw/
+models/
+logs/
+*.log
+analysis/out/
+
+# Frontend data (symlink locale a ../data/output)
+frontend/data
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Config locale / opencode / claude / impeccable
+.opencode/
+opencode.json
+.claude/
+.claudeignore
+.agents/
+.impeccable/
+
+# Docs e materiale di design (non servono in produzione)
+docs/
+DESIGN.md
+PRODUCT.md
+
+# Script di deploy host-path (non usati nel container)
+deploy/Caddyfile
+deploy/crontab.template
+deploy/nginx.conf

@@ -8,6 +8,12 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Added
+- `Dockerfile` multi-stage (Python 3.13 + nginx) per deploy su k8s/ArgoCD
+- `.dockerignore` per ridurre il build context (esclude `.venv/`, `data/`, `tests/`, ecc.)
+- `deploy/nginx-k8s.conf`: variante k8s di nginx (porta 8080, log su stdout/stderr, JSON path sul PVC)
+- `.github/workflows/ci.yml`: CI su push tag `v*.*.*` — ruff/mypy/pytest + build & push immagine `ghcr.io/iltruma/guazza` (con e senza prefisso `v`)
+
 ## [0.9.0] - 2026-06-13
 
 Rifattorizzazione trasversale su manutenibilità, sicurezza e performance. Nessun
