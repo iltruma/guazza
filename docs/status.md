@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-06-13 (rifattorizzazione manutenibilità/sicurezza/performance, v0.9.0)
+> Aggiornato: 2026-06-25 (Sprint 7 chiuso · Sprint 8 S-A: Dockerfile + CI build, immagine `ghcr.io/iltruma/guazza`)
 
 ## Cosa è stato fatto
 
@@ -149,7 +149,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **241 test**, tutti verdi
+- **315 test**, tutti verdi
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -231,7 +231,7 @@ a NULL nel GROUP BY — coerente con le osservazioni SIR daily.
 - `src/guazza/models.py`: `train_all`, `walk_forward_cv`, `predict` con CQR stratificato 6 bucket lead time
 - `src/guazza/jobs/train.py`: CLI `train run` e `train eval`
 - 11 test pytest, fixture `fast_lgbm` (n_estimators=50) per contenere il tempo sotto 60s
-- Artefatti persistiti in `data/models/artifacts.pkl`
+- Artefatti persistiti in `data/models/artifacts.json` + model-string LightGBM `.txt` (post-v0.9.0: rimosso `pickle` per sicurezza RCE; vedi CHANGELOG Security)
 
 #### Risultati walk-forward CV (4 fold, 2023-01 → 2026-06, 6 modelli — target corretto KI-022, 2026-06-05)
 
@@ -432,7 +432,7 @@ Il server `www.sir.toscana.it` serializza le connessioni lato server (~3s per re
 - **Crosshair su Edge**: `chart.tooltip._active` → optional chaining; `chart.tooltip`
   è `undefined` durante i primi `afterDraw` su Edge.
 
-### Sprint 7 — Raffinamenti in locale
+### Sprint 7 — Raffinamenti in locale (completato — 2026-06-25)
 **Dipendenza**: nessuna — lavoro continuo prima del deploy
 
 Iterazioni di affinamento su logiche e frontend per portare il sistema a uno
@@ -456,19 +456,17 @@ Fatto in Sprint 7:
 - ✅ Riconciliazione baseline skill + robustness check vs gauge primario (D-016) — 2026-06-05
 - ✅ Fix target KI-022 (`obs_weighted` su stazioni condivise) + rebuild/retrain — 2026-06-05
 - ✅ Verdetto DLE `grigio` per segnale mancante (`requires`) — 2026-06-05
+- ✅ Stabilità 1 settimana pulita in locale (gate verso Sprint 8) — 2026-06-25
 
-Resta in Sprint 7:
+Lasciato fuori (rimandato, non bloccante per il deploy):
 - 🟡 **Separare il confronto modelli/affidabilità in una pagina dedicata**, fuori dalla
   pagina delle location. Oggi la sezione "Quanto è affidabile" (curva skill) è embedded
-  nello SPA per-location; va spostata in una pagina statica a sé (es. `affidabilita.html`
-  + link nell'header). Da decidere: per-location con selettore vs vista d'insieme su tutte
-  e 6 le location (taglio case-study). `skill.json` è già un file globale, quindi la pagina
-  separata non richiede nuovi artefatti backend.
-- 🟡 Far scorrere la finestra di stabilità (≥1 settimana pulito in locale) — gate verso Sprint 8
-- 🟢 Eventuali micro-raffinamenti UX/logica a discrezione, turno per turno
+  nello SPA per-location; candidato: pagina statica a sé (`affidabilita.html` + link
+  nell'header) o Sprint 11 (case study). `skill.json` è già un file globale.
 
-Prossimi sprint (bloccati dal deploy, rimandato finché l'homelab non è pronto):
-- Sprint 8 — Deploy homelab (Proxmox + Cloudflare Tunnel + cron + backup R2)
+
+Prossimi sprint:
+- **Sprint 8** — Deploy homelab (k3s/ArgoCD, manifest in `k8s/apps/guazza/` su Houston, PVC 10Gi, immagine `ghcr.io/iltruma/guazza`) — **in corso** (S-A fatto)
 - Sprint 9 — Model monitoring (coverage rolling) + nowcasting orario
 - Sprint 10 — Calibrazione soglie DLE su 30-60 giorni di `indicator_log` in produzione
 - Sprint 11 — Case study / pubblicazione (numeri di skill già fissati in D-016)
@@ -651,16 +649,24 @@ vs gauge +13…+33% (crescente col lead), tmax +5…+13%. Il NWP degrada 1.0→2
 Guazza 0.8→2.0°C: il valore della correzione cresce in assoluto col lead. Dettaglio e caveat
 in D-016. 🟡 La versione multi-anno resta gated sull'accumulo forward (deploy).
 
-### Sprint 8 — Deploy nel homelab (Dell Optiplex 3050 / Proxmox + Cloudflare Tunnel)
-**Dipendenza**: Sprint 7 chiuso, sistema stabile in locale
+### Sprint 8 — Deploy nel homelab (Dell Optiplex 3050 / Proxmox + Cloudflare Tunnel + k3s/ArgoCD)
+**Dipendenza**: Sprint 7 chiuso ✓. Stato: **in corso** (S-A completato 2026-06-25).
 
-- Host Proxmox sul 3050; Guazza come tenant (LXC con cron **oppure** namespace k8s)
-- **Cloudflare Tunnel** (`cloudflared`): espone nginx su guazza.it senza IP pubblico né port forwarding; SSL terminato da Cloudflare
-- Backfill storico (`historical`) per caricare SIR + Open-Meteo 2022→oggi
-- Scheduling dei 4 job ingestion + `qc run` + `predict` (crontab o `CronJob` k8s con `concurrencyPolicy: Forbid`)
-- Configurazione `.env` produzione (Netatmo, Healthchecks.io), `load_dotenv` per lettura DB_PATH e HEALTHCHECKS_URL
-- **Backup Cloudflare R2**: job periodico per backup `.duckdb` + Parquet su Cloudflare R2 (10GB free tier, egress gratis) via `rclone` o `boto3`
-- **CI**: GitHub Actions pubblica (test/lint/mypy, clean-room + badge). **CD**: pull-based nel homelab (DB DuckDB single-writer → PVC `ReadWriteOnce` su storage local-path se k8s)
+- **Target di deploy**: cluster k3s homelab (`houston`, VM `iss` 192.168.178.3) come namespace k8s dedicato (`guazza`); manifest in `k8s/apps/guazza/` nel repo Houston; ApplicationSet ArgoCD già presente genera l'`Application` automaticamente.
+- **Immagine container**: `ghcr.io/iltruma/guazza:vX.Y.Z` (e `:X.Y.Z`), allineata a `pyproject.toml`. Multi-stage `python:3.13-slim` + nginx; gira come utente non-root (UID 1000). Buildata su push tag `v*.*.*` (CI: test/lint/mypy + buildx). Dettaglio in CHANGELOG Unreleased.
+- **Storage**: PVC 10Gi, `storageClassName: local-path` (k3s su NVMe), `ReadWriteOnce` (DuckDB single-writer). Path `/var/lib/guazza/` con `db/`, `models/`, `parquet/`, `output/`, `logs/`.
+- **Scheduling**: `CronJob` k8s (non crontab sul 3050), `concurrencyPolicy: Forbid` su tutti i writer DuckDB. Schedule sfalsate: realtime `*/15`, daily `0 6 * * *`, forecasts `0 0,6,12,18 * * *`, features `15 1,7,13,19 * * *`, predict `30 1,7,13,19 * * *`, qc `0 4 * * 1`, skill `0 9 * * 0`, historical `0 0 31 2 *` (31 febbraio, lanciabile on-demand via `kubectl create job --from=cronjob/...`).
+- **Accesso esterno**: Cloudflare Tunnel `homelab` (già operativo, 2 repliche in `cloudflared`) — aggiungere riga in `k8s/apps/cloudflared/configmap.yaml` + CNAME in dashboard per `guazza.paroparo.it` → `http://guazza-web.guazza.svc.cluster.local:80`.
+- **Interno**: `guazza.lab.paroparo.it` (record in Pi-hole) → ingress Traefik su wildcard `*.lab.paroparo.it` (già emesso da cert-manager DNS-01 Cloudflare).
+- **Secret**: 2 SealedSecret nel repo Houston — `netatmo-credentials` (client_id+client_secret) e `healthchecks-url`. Iniettati come env nei pod tramite `envFrom`. Backup R2 rimandato a sprint successivo (oltre lo scope S-A).
+
+#### S-A — Dockerfile + CI build (completato — 2026-06-25, v0.9.0)
+
+- `Dockerfile` multi-stage: builder (hatchling via `python -m build`) → runtime `python:3.13-slim` + nginx + frontend statico embedded. UID 1000, ENTRYPOINT non pinnato, CMD `nginx -g 'daemon off;'` (override nei CronJob).
+- `.dockerignore` riduce il build context (esclude `.venv/`, `data/`, `tests/`, `analysis/`, `.claude*`, `.impeccable/`, `docs/`, `frontend/data/`, `deploy/Caddyfile|crontab.template|nginx.conf`).
+- `deploy/nginx-k8s.conf`: variante k8s di nginx (porta 8080, pid `/tmp/nginx.pid`, log su `/dev/stdout|stderr`, location `/data/` alias al PVC `/var/lib/guazza/output/`, endpoint `/health`).
+- `.github/workflows/ci.yml`: trigger `push tags: ['v*.*.*']` → `test` (ruff/mypy/pytest su Python 3.13) → `build` (buildx + push su `ghcr.io/iltruma/guazza` con tag `vX.Y.Z` e `X.Y.Z`). Cache GHA. `permissions: contents:read, packages:write`.
+- Primo tag di test: **v0.9.0** (build & push verificati). Prossimo step: S-B (manifest Houston + primo pod web).
 
 ### Sprint 9 — Model monitoring + nowcasting
 **Dipendenza**: Deploy nel homelab completato (Sprint 8)
