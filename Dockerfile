@@ -12,7 +12,7 @@ RUN apt-get update \
 
 # Codice (pyproject prima di src per cache)
 WORKDIR /app
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 COPY src ./src
 
 # Install (uv gestisce build isolation automaticamente)
