@@ -653,7 +653,7 @@ in D-016. 🟡 La versione multi-anno resta gated sull'accumulo forward (deploy)
 **Dipendenza**: Sprint 7 chiuso ✓. Stato: **in corso** (S-A completato 2026-06-25).
 
 - **Target di deploy**: cluster k3s homelab (`houston`, VM `iss` 192.168.178.3) come namespace k8s dedicato (`guazza`); manifest in `k8s/apps/guazza/` nel repo Houston; ApplicationSet ArgoCD già presente genera l'`Application` automaticamente.
-- **Immagine container**: `ghcr.io/iltruma/guazza:vX.Y.Z` (e `:X.Y.Z`), allineata a `pyproject.toml`. Multi-stage `python:3.13-slim` + nginx; gira come utente non-root (UID 1000). Buildata su push tag `v*.*.*` (CI: test/lint/mypy + buildx). Dettaglio in CHANGELOG Unreleased.
+- **Immagine container**: `ghcr.io/iltruma/guazza:vX.Y.Z` (e `:X.Y.Z`), allineata a `pyproject.toml`. Single-stage `python:3.13-slim` + nginx, install via `uv` (niente builder/wheel); gira come utente non-root (UID 1000). Buildata su push tag `v*.*.*` (CI: test/lint/mypy + buildx). Dettaglio in CHANGELOG Unreleased.
 - **Storage**: PVC 10Gi, `storageClassName: local-path` (k3s su NVMe), `ReadWriteOnce` (DuckDB single-writer). Path `/var/lib/guazza/` con `db/`, `models/`, `parquet/`, `output/`, `logs/`.
 - **Scheduling**: `CronJob` k8s (non crontab sul 3050), `concurrencyPolicy: Forbid` su tutti i writer DuckDB. Schedule sfalsate: realtime `*/15`, daily `0 6 * * *`, forecasts `0 0,6,12,18 * * *`, features `15 1,7,13,19 * * *`, predict `30 1,7,13,19 * * *`, qc `0 4 * * 1`, skill `0 9 * * 0`, historical `0 0 31 2 *` (31 febbraio, lanciabile on-demand via `kubectl create job --from=cronjob/...`).
 - **Accesso esterno**: Cloudflare Tunnel `homelab` (già operativo, 2 repliche in `cloudflared`) — aggiungere riga in `k8s/apps/cloudflared/configmap.yaml` + CNAME in dashboard per `guazza.paroparo.it` → `http://guazza-web.guazza.svc.cluster.local:80`.
@@ -662,7 +662,7 @@ in D-016. 🟡 La versione multi-anno resta gated sull'accumulo forward (deploy)
 
 #### S-A — Dockerfile + CI build (completato — 2026-06-25, v0.9.0)
 
-- `Dockerfile` multi-stage: builder (hatchling via `python -m build`) → runtime `python:3.13-slim` + nginx + frontend statico embedded. UID 1000, ENTRYPOINT non pinnato, CMD `nginx -g 'daemon off;'` (override nei CronJob).
+- `Dockerfile` single-stage: `python:3.13-slim` + nginx + frontend statico embedded. Install via `uv` (binario ufficiale, build isolation automatica). UID 1000, ENTRYPOINT non pinnato, CMD `nginx -g 'daemon off;'` (override nei CronJob).
 - `.dockerignore` riduce il build context (esclude `.venv/`, `data/`, `tests/`, `analysis/`, `.claude*`, `.impeccable/`, `docs/`, `frontend/data/`, `deploy/Caddyfile|crontab.template|nginx.conf`).
 - `deploy/nginx-k8s.conf`: variante k8s di nginx (porta 8080, pid `/tmp/nginx.pid`, log su `/dev/stdout|stderr`, location `/data/` alias al PVC `/var/lib/guazza/output/`, endpoint `/health`).
 - `.github/workflows/ci.yml`: trigger `push tags: ['v*.*.*']` → `test` (ruff/mypy/pytest su Python 3.13) → `build` (buildx + push su `ghcr.io/iltruma/guazza` con tag `vX.Y.Z` e `X.Y.Z`). Cache GHA. `permissions: contents:read, packages:write`.

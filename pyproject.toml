@@ -7,7 +7,7 @@ name = "guazza"
 version = "0.9.0"
 description = "Previsioni meteo iper-locali per microclimi toscani"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "duckdb>=1.1",
     "lightgbm>=4.3",
@@ -60,7 +60,7 @@ select = ["E", "F", "I", "UP", "B", "C4"]
 ignore = ["E501", "B008"]  # B008: typer.Option() in defaults è il pattern corretto per typer
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 strict = false
 warn_unused_ignores = true
 warn_return_any = true

@@ -14,7 +14,7 @@ Previsioni meteo iper-locali per 6 microclimi toscani. Sistema operativo persona
 
 ### Prerequisiti
 
-- Python 3.11+
+- Python 3.13+
 - [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 
 ### Installazione

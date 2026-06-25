@@ -14,6 +14,9 @@ Versioning: major per sprint, minor per milestone interne.
 - `deploy/nginx-k8s.conf`: variante k8s di nginx (porta 8080, log su stdout/stderr, JSON path sul PVC)
 - `.github/workflows/ci.yml`: CI su push tag `v*.*.*` — ruff/mypy/pytest + build & push immagine `ghcr.io/iltruma/guazza` (con e senza prefisso `v`)
 
+### Changed
+- **Bump Python minimo a 3.13** (`requires-python` e `mypy.python_version` in `pyproject.toml`). Risolve l'errore mypy su `numpy>=1.26` i cui stub `.pyi` usano `type X = ...` (PEP 695, richiede 3.12+). Tutte le deps e il Dockerfile erano già su 3.13.
+
 ## [0.9.0] - 2026-06-13
 
 Rifattorizzazione trasversale su manutenibilità, sicurezza e performance. Nessun
