@@ -53,7 +53,7 @@ class JobStats:
 
 
 @contextmanager
-def job_run(job_name: str) -> Generator[JobStats, None, None]:
+def job_run(job_name: str) -> Generator[JobStats]:
     """Ciclo di vita standard di un job cron.
 
     Ingresso: ping /start. Uscita ok: log_scrape(job_name, "ok", rows), ping ok,

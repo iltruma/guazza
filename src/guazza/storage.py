@@ -569,7 +569,7 @@ class DuckDBClient:
 def open_db(
     db_path: Path | str | None = None,
     read_only: bool = False,
-) -> Generator[DuckDBClient, None, None]:
+) -> Generator[DuckDBClient]:
     """Shortcut: `with open_db() as db:` invece di instanziare direttamente."""
     client = DuckDBClient(db_path=db_path, read_only=read_only)
     with client:
