@@ -1247,6 +1247,52 @@ function _makeTooltipHandler(elId) {
   };
 }
 
+// Sul weekly: griglia a mezzanotte di ogni giorno + label "dd/MM" centrata a
+// mezzogiorno. Sostituisce tick/gridlines auto dell'asse X (disattivati in
+// _baseChartOptions quando unit='day'). Si abilita con `chart.$dayBoundaries`.
+const dayBoundariesPlugin = {
+  id: 'dayBoundaries',
+  afterDatasetsDraw(chart) {
+    if (!chart.$dayBoundaries) return;
+    const x = chart.scales.x;
+    const { top, bottom, left, right } = chart.chartArea;
+    if (!x || !chart.chartArea) return;
+    const xMin = x.min, xMax = x.max;
+    if (xMin == null || xMax == null) return;
+    const start = new Date(xMin);
+    start.setHours(0, 0, 0, 0);
+    if (start.getTime() < xMin) start.setDate(start.getDate() + 1);
+
+    const css = getComputedStyle(document.documentElement);
+    const stroke = css.getPropertyValue('--chart-grid').trim();
+    const fill   = css.getPropertyValue('--chart-axis').trim();
+    const fontFamily = css.getPropertyValue('--ff-mono').trim() || 'monospace';
+
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.strokeStyle = stroke;
+    ctx.fillStyle = fill;
+    ctx.font = `11px ${fontFamily}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const dayMs = 86400000;
+    for (let t = start.getTime(); t <= xMax; t += dayMs) {
+      const px = x.getPixelForValue(t);
+      if (px < left - 1 || px > right + 1) continue;
+      ctx.beginPath();
+      ctx.moveTo(px, top);
+      ctx.lineTo(px, bottom);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      const nextPx = x.getPixelForValue(t + dayMs);
+      const labelDate = new Date(t);
+      const label = labelDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+      ctx.fillText(label, (px + nextPx) / 2, bottom + 8);
+    }
+    ctx.restore();
+  },
+};
+
 const externalTooltipHandler       = _makeTooltipHandler('chart-tooltip');
 const externalTooltipHandlerWeekly = _makeTooltipHandler('chart-weekly-tooltip');
 
@@ -1352,6 +1398,10 @@ function _baseChartOptions(p, xMin, xMax, unit) {
     responsive: true, maintainAspectRatio: false,
     hover: { mode: 'index', intersect: false },
     interaction: { mode: 'index', intersect: false },
+    // Sul weekly le label "dd/MM" del dayBoundariesPlugin vanno disegnate sotto il
+    // chartArea (altrimenti vengono clippate dal canvas). 22px bastano per un font 11px
+    // con textBaseline='top' + margine; le icone meteo vivono a +32px quindi non si toccano.
+    ...(unit === 'day' ? { layout: { padding: { bottom: 22 } } } : {}),
     plugins: {
       legend: { display: false },
       tooltip: { enabled: false, external: externalTooltipHandler },
@@ -1364,8 +1414,10 @@ function _baseChartOptions(p, xMin, xMax, unit) {
         // così le serie combaciano con xMin/xMax e riempiono tutta la larghezza.
         offset: false,
         time: { unit, displayFormats: { hour: 'HH', day: 'dd/MM' } },
-        grid: { color: p.grid, borderColor: 'transparent' },
-        ticks: { color: p.label, maxTicksLimit: 13, font: { size: 11 } },
+        // Sul weekly il plugin `dayBoundariesPlugin` disegna griglia+label a mezzanotte
+        // e mezzogiorno; sul daily (unit=hour) restano tick+gridlines auto.
+        grid: { color: p.grid, borderColor: 'transparent', ...(unit === 'day' ? { display: false } : {}) },
+        ticks: { color: p.label, maxTicksLimit: 13, font: { size: 11 }, ...(unit === 'day' ? { display: false } : {}) },
       },
       yTemp: {
         position: 'left',
@@ -1446,7 +1498,7 @@ function initWeeklyChart(data, model) {
   applyAxisRanges(opts.scales, sharedAxisRanges(data, null));
   opts.plugins.tooltip = { enabled: false, external: externalTooltipHandlerWeekly };
   multiDayChart = new Chart(canvas.getContext('2d'), {
-    plugins: [crosshairPlugin, weatherIconsPlugin],
+    plugins: [crosshairPlugin, weatherIconsPlugin, dayBoundariesPlugin],
     data: { datasets: _buildChartDatasets(canvas, points, p) },
     options: opts,
   });
@@ -1454,6 +1506,7 @@ function initWeeklyChart(data, model) {
   multiDayChart.$iconStepHours = 6;
   multiDayChart.$weatherPoints = points;
   multiDayChart.$locMeta = LOCATIONS.find(l => l.id === data.location_id);
+  multiDayChart.$dayBoundaries = true;
   multiDayChart.$iconsDirty = true;
 }
 
