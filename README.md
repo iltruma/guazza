@@ -2,7 +2,7 @@
 
 > *Guazza* (dal latino *aquatia*): rugiada pesante che si forma nelle conche toscane durante notti serene e umide. Il nome rimanda al fenomeno microclimatico che i modelli standard non catturano.
 
-Previsioni meteo iper-locali per 5 microclimi toscani. Sistema operativo personale + case study tecnico pubblicabile.
+Previsioni meteo iper-locali per 6 microclimi toscani. Sistema operativo personale + case study tecnico pubblicabile.
 
 **Tesi**: i modelli numerici pubblici (ECMWF, ICON-EU, app commerciali) sbagliano sistematicamente sui microclimi specifici generati da orografia, fondi valle e isole di calore. Questo progetto lo dimostra empiricamente e produce un sistema che fa misurabilmente meglio.
 
@@ -79,7 +79,10 @@ guazza/
 │   ├── models/             # Artefatti LightGBM pickle (non committati)
 │   └── output/             # JSON per il frontend (non committati)
 ├── frontend/               # index.html, app.js, style.css (statico, CSS custom, CDN via jsDelivr)
-├── deploy/                 # nginx.conf, Caddyfile, crontab template
+├── Dockerfile              # Single-stage python:3.13-slim + uv + nginx (k8s)
+├── .dockerignore           # Esclude .venv/, data/, tests/, ...
+├── .github/workflows/ci.yml # CI su push tag v*.*.* → ghcr.io/iltruma/guazza
+├── deploy/                 # nginx.conf (host-path), nginx-k8s.conf (k8s), Caddyfile, crontab template
 ├── tests/
 ├── DESIGN.md               # Design system frontend (palette Carbone+Iris, tipografia, componenti)
 ├── PRODUCT.md              # Product brief (utenti, scopo, principi di design)
@@ -103,7 +106,7 @@ guazza/
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
 | Sprint 6 | Frontend HTML+JS+Chart.js, layout a 3 sezioni | ✅ Completato |
 | Sprint 7 | Raffinamenti logiche, radar RainViewer, redesign frontend v2 (CSS custom) | 🟡 In corso |
-| Sprint 8 | Deploy su Optiplex locale + Cloudflare Tunnel, backup R2, crontab | — |
+| Sprint 8 | Deploy su Optiplex locale + Cloudflare Tunnel, k3s/ArgoCD, immagine container | 🟡 In corso (S-A: Dockerfile + CI) |
 | Sprint 9 | Model monitoring, coverage alert | — |
 | Sprint 10 | Calibrazione soglie DLE post-deploy | — |
 | Sprint 11 | Case study / pubblicazione | — |
@@ -113,6 +116,7 @@ guazza/
 ## Architettura
 
 - **Server**: Dell Optiplex Micro 3050 — host Proxmox (homelab multi-servizio, Guazza è un tenant)
+- **Container**: immagine `ghcr.io/iltruma/guazza` (Python 3.13 + nginx, single-stage con `uv`), buildata su push tag `v*.*.*`
 - **Scheduling**: cron Linux o k8s CronJob — job = CLI idempotenti orchestrator-agnostic
 - **Storage**: DuckDB (colonnare, file singolo) + R2 backup
 - **ML**: LightGBM quantile regression + CQR calibration
@@ -194,6 +198,56 @@ modelli con data ultimo run.
 ```
 
 Variabile d'ambiente `HEALTHCHECKS_URL` per il ping dead-man switch.
+
+---
+
+## Container image & rilascio
+
+Ad ogni push di un tag `v*.*.*` (es. `v0.9.0`) il workflow CI in
+`.github/workflows/ci.yml` builda e pubblica automaticamente l'immagine
+container su GitHub Container Registry, allineata a `pyproject.toml`:
+
+- `ghcr.io/iltruma/guazza:v0.9.0`
+- `ghcr.io/iltruma/guazza:0.9.0`
+
+L'immagine è single-stage: `python:3.13-slim` + `uv` (binario ufficiale) + nginx + frontend statico. Il
+container gira come utente non-root (UID 1000), include nginx sulla porta 8080
+per il servizio web e gli entry point CLI (`guazza-ingest`, `guazza-predict`,
+`guazza-train`, ...) per i job schedulati.
+
+### Procedura di rilascio
+
+```bash
+# 1. Bump versione in pyproject.toml (es. 0.9.0 → 0.10.0)
+# 2. Aggiorna CHANGELOG.md (sposta [Unreleased] → nuova sezione versionata)
+# 3. Commit
+git add pyproject.toml CHANGELOG.md
+git commit -m "chore(release): vX.Y.Z"
+
+# 4. Crea e pusha il tag — triggera il workflow CI
+git tag vX.Y.Z
+git push origin main vX.Y.Z
+```
+
+### Uso locale dell'immagine
+
+```bash
+docker pull ghcr.io/iltruma/guazza:v0.9.0
+
+# Web (monta la directory dati locale su /var/lib/guazza)
+docker run --rm -p 8080:8080 \
+    -v $(pwd)/data:/var/lib/guazza \
+    ghcr.io/iltruma/guazza:v0.9.0
+
+# Job CLI (es. backfill iniziale)
+docker run --rm \
+    -v $(pwd)/data:/var/lib/guazza \
+    -v $(pwd)/config:/app/config:ro \
+    -e HEALTHCHECKS_URL=https://hc-ping.com/<uuid> \
+    -e NETATMO_CLIENT_ID=... -e NETATMO_CLIENT_SECRET=... \
+    ghcr.io/iltruma/guazza:v0.9.0 \
+    guazza-ingest historical
+```
 
 ---
 
