@@ -149,7 +149,7 @@ uv run python -m guazza.jobs.ingest realtime
 
 # Accumulo Netatmo realtime → daily (storico forward-looking, non-training).
 # Già incluso in `ingest daily`; standalone per backfill dell'accumulato:
-uv run python -m guazza.jobs.netatmo_daily run --all
+uv run python -m guazza.jobs.netatmo_daily --all
 
 # Forecast NWP — schedulare ogni 6h (02/08/14/20 UTC)
 uv run python -m guazza.jobs.ingest forecasts

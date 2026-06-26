@@ -1,10 +1,10 @@
 """Job CLI: aggregazione Netatmo realtime → daily (accumulo storico, Sprint 9+).
 
 Uso:
-    uv run python -m guazza.jobs.netatmo_daily run            # ieri (Europe/Rome)
-    uv run python -m guazza.jobs.netatmo_daily run --day 2026-06-01
-    uv run python -m guazza.jobs.netatmo_daily run --all      # backfill accumulato
-    uv run python -m guazza.jobs.netatmo_daily run --dry-run
+    uv run python -m guazza.jobs.netatmo_daily              # ieri (Europe/Rome)
+    uv run python -m guazza.jobs.netatmo_daily --day 2026-06-01
+    uv run python -m guazza.jobs.netatmo_daily --all        # backfill accumulato
+    uv run python -m guazza.jobs.netatmo_daily --dry-run
 
 Schedulare a ~06:00 (dopo che il realtime del giorno precedente è completo).
 Variabili d'ambiente: ``DB_PATH``, ``HEALTHCHECKS_URL`` (ping opzionale).
@@ -26,11 +26,6 @@ from guazza.storage import DuckDBClient
 app = typer.Typer(help="Aggregazione Netatmo realtime → daily.")
 
 
-@app.callback()
-def _callback() -> None:
-    setup_logging()
-
-
 @app.command("run")
 def cmd_run(
     db_path: Path = DB_OPTION,
@@ -40,6 +35,8 @@ def cmd_run(
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
     """Aggrega il realtime Netatmo in righe daily nella tabella observations."""
+    setup_logging()
+
     if all_days and day:
         typer.echo("Errore: --all e --day sono mutualmente esclusivi.")
         raise typer.Exit(1)
