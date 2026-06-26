@@ -1,10 +1,10 @@
 """Job CLI: aggregazione Netatmo realtime → daily (accumulo storico, Sprint 9+).
 
 Uso:
-    uv run python -m guazza.jobs.netatmo_daily            # ieri (Europe/Rome)
-    uv run python -m guazza.jobs.netatmo_daily --day 2026-06-01
-    uv run python -m guazza.jobs.netatmo_daily --all      # backfill accumulato
-    uv run python -m guazza.jobs.netatmo_daily --dry-run
+    uv run python -m guazza.jobs.netatmo_daily run            # ieri (Europe/Rome)
+    uv run python -m guazza.jobs.netatmo_daily run --day 2026-06-01
+    uv run python -m guazza.jobs.netatmo_daily run --all      # backfill accumulato
+    uv run python -m guazza.jobs.netatmo_daily run --dry-run
 
 Schedulare a ~06:00 (dopo che il realtime del giorno precedente è completo).
 Variabili d'ambiente: ``DB_PATH``, ``HEALTHCHECKS_URL`` (ping opzionale).
