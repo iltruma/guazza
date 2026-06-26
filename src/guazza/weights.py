@@ -24,6 +24,7 @@ import typer
 import yaml
 from loguru import logger
 
+from guazza._logging import setup_logging
 from guazza._paths import DEFAULT_CONFIG_DIR, DEFAULT_DB_PATH
 from guazza.storage import DuckDBClient
 
@@ -266,6 +267,11 @@ _CFG_OPTION = typer.Option(
     "--config-dir",
     help="Directory dei file YAML di configurazione",
 )
+
+
+@app.callback()
+def _callback() -> None:
+    setup_logging()
 
 
 @app.command("refresh")

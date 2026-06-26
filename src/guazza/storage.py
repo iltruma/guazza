@@ -21,6 +21,7 @@ import pandas as pd
 import typer
 from loguru import logger
 
+from guazza._logging import setup_logging
 from guazza._paths import DEFAULT_DB_PATH
 
 _SCHEMA_SQL = Path(__file__).parent / "schema.sql"
@@ -568,6 +569,11 @@ class DuckDBClient:
 app = typer.Typer(help="Utility DuckDB per Guazza.")
 
 _DB_OPTION = typer.Option(DEFAULT_DB_PATH, "--db", help="Path del file DuckDB")
+
+
+@app.callback()
+def _callback() -> None:
+    setup_logging()
 
 
 @app.command("init-schema")

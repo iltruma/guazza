@@ -24,6 +24,7 @@ import typer
 import yaml
 from loguru import logger
 
+from guazza._logging import setup_logging
 from guazza._paths import DEFAULT_CONFIG_DIR
 
 if TYPE_CHECKING:
@@ -274,6 +275,7 @@ def cmd_evaluate(
     config_dir: str = typer.Option(str(_DEFAULT_INDICATORS_YAML.parent), "--config-dir"),
 ) -> None:
     """Valuta tutti gli indicatori per una location con i segnali forniti."""
+    setup_logging()
     signals: SignalBag = json.loads(signals_json)
     indicators = load_indicators(Path(config_dir) / "indicators.yaml")
     results = evaluate_all(indicators, signals, location)
