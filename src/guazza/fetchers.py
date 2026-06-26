@@ -18,12 +18,19 @@ from pathlib import Path
 
 import typer
 
+from guazza._logging import setup_logging
 from guazza._paths import DEFAULT_DB_PATH
 from guazza.fetch_netatmo import fetch_netatmo_all_locations
 from guazza.fetch_sir import fetch_sir_historical, fetch_sir_realtime
 from guazza.storage import DuckDBClient
 
 app = typer.Typer(help="Fetcher meteo per Guazza.")
+
+
+@app.callback()
+def _callback() -> None:
+    setup_logging()
+
 
 _DB_OPTION = typer.Option(str(DEFAULT_DB_PATH), "--db", help="Path del file DuckDB")
 
