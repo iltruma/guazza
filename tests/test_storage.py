@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from guazza.storage import DuckDBClient, open_db
+from guazza.storage import DuckDBClient
 
 
 @pytest.fixture
@@ -34,14 +34,6 @@ def test_verify_schema_empty_db(tmp_db: Path) -> None:
     with DuckDBClient(db_path=tmp_db) as db:
         ok = db.verify_schema()
     assert not ok
-
-
-def test_open_db_context_manager(tmp_db: Path) -> None:
-    with open_db(db_path=tmp_db) as db:
-        db.init_schema()
-        result = db.execute("SELECT COUNT(*) FROM locations").fetchone()
-    assert result is not None
-    assert result[0] == 0
 
 
 def test_execute_insert_select(tmp_db: Path) -> None:

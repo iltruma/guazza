@@ -22,8 +22,6 @@ from guazza.fetch_openmeteo import (
     _multilead_hourly_params,
     _parse_om_multilead,
     _parse_om_response,
-    fetch_openmeteo_forecast,
-    fetch_openmeteo_historical,
 )
 from guazza.fetch_sir import fetch_sir_historical, fetch_sir_realtime
 from guazza.storage import DuckDBClient
@@ -623,33 +621,6 @@ def test_parse_om_response_weather_code_null_value() -> None:
     assert records[0]["weather_code"] is None
 
 
-def test_fetch_openmeteo_forecast_calls_api() -> None:
-    """fetch_openmeteo_forecast chiama _fetch_om_json e ritorna record per ogni modello."""
-    with patch("guazza.fetch_openmeteo._fetch_om_json", return_value=_OM_MOCK_RESPONSE):
-        results = fetch_openmeteo_forecast(
-            location_id="lavoro_cosimo",
-            lat=43.76,
-            lon=11.19,
-            models=["ecmwf_ifs"],
-            now_utc=_OM_NOW,
-        )
-    assert "ecmwf_ifs" in results
-    assert len(results["ecmwf_ifs"]) == 2
-
-
-def test_fetch_openmeteo_forecast_error_returns_empty() -> None:
-    """Se il fetch fallisce → lista vuota per quel modello, nessuna eccezione."""
-    with patch("guazza.fetch_openmeteo._fetch_om_json", side_effect=Exception("timeout")):
-        results = fetch_openmeteo_forecast(
-            location_id="lavoro_cosimo",
-            lat=43.76,
-            lon=11.19,
-            models=["ecmwf_ifs"],
-            now_utc=_OM_NOW,
-        )
-    assert results["ecmwf_ifs"] == []
-
-
 @pytest.fixture
 def seeded_db_forecasts(tmp_path: Path) -> Path:
     db_path = tmp_path / "test_forecasts.duckdb"
@@ -756,40 +727,6 @@ def test_parse_om_response_historical_values() -> None:
     assert r["humidity_pct"] == pytest.approx(50.0)
     assert r["wind_speed_ms"] == pytest.approx(3.0)
     assert r["pressure_hpa"] == pytest.approx(1012.0)
-
-
-def test_fetch_openmeteo_historical_uses_parse_om_response() -> None:
-    """fetch_openmeteo_historical produce record con ts_run inferred correttamente."""
-    with patch("guazza.fetch_openmeteo._fetch_om_json", return_value=_OM_HISTORICAL_MOCK):
-        results = fetch_openmeteo_historical(
-            location_id="lavoro_cosimo",
-            lat=43.76,
-            lon=11.19,
-            start_date="2026-05-14",
-            end_date="2026-05-14",
-            models=["ecmwf_ifs"],
-        )
-    assert "ecmwf_ifs" in results
-    records = results["ecmwf_ifs"]
-    assert len(records) == 3
-    # ts_run varia per riga (non fissa)
-    assert records[0]["ts_run"] != records[1]["ts_run"]
-    # lead_time_h corretto
-    assert records[1]["lead_time_h"] == 0  # ts_valid=12:00, ts_run=12:00
-
-
-def test_fetch_openmeteo_historical_error_returns_empty() -> None:
-    """Se il fetch fallisce → lista vuota, nessuna eccezione."""
-    with patch("guazza.fetch_openmeteo._fetch_om_json", side_effect=Exception("timeout")):
-        results = fetch_openmeteo_historical(
-            location_id="lavoro_cosimo",
-            lat=43.76,
-            lon=11.19,
-            start_date="2026-05-14",
-            end_date="2026-05-14",
-            models=["ecmwf_ifs"],
-        )
-    assert results["ecmwf_ifs"] == []
 
 
 def test_upsert_forecasts_batch_historical(seeded_db_forecasts: Path) -> None:

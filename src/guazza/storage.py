@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import fcntl
 import os
-from collections.abc import Generator
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -563,17 +561,6 @@ class DuckDBClient:
 
         logger.info(f"upsert_sir_observations: {len(records)} record processati")
         return len(records)
-
-
-@contextmanager
-def open_db(
-    db_path: Path | str | None = None,
-    read_only: bool = False,
-) -> Generator[DuckDBClient]:
-    """Shortcut: `with open_db() as db:` invece di instanziare direttamente."""
-    client = DuckDBClient(db_path=db_path, read_only=read_only)
-    with client:
-        yield client
 
 
 # ── CLI entry point ───────────────────────────────────────────────────────────
