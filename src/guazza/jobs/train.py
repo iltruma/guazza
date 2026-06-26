@@ -22,6 +22,11 @@ app = typer.Typer(help="Training LightGBM + CQR per Guazza.")
 _MODEL_DIR = Path(os.environ.get("MODEL_DIR", "/var/lib/guazza/models"))
 
 
+@app.callback()
+def _callback() -> None:
+    setup_logging()
+
+
 @app.command("run")
 def cmd_run(
     db_path:   Path = DB_OPTION,
@@ -30,7 +35,6 @@ def cmd_run(
     dry_run:   bool = typer.Option(False,      "--dry-run",   help="Carica dati ma non allena"),
 ) -> None:
     """Allena modelli su tutti i dati disponibili e salva artefatti."""
-    setup_logging()
 
     with DuckDBClient(db_path=db_path, read_only=True) as db:
         if dry_run:
@@ -56,7 +60,6 @@ def cmd_eval(
     embargo:    int  = typer.Option(7,         "--embargo",  help="Giorni embargo tra train e test"),
 ) -> None:
     """Walk-forward CV: stampa MAE, CRPS, coverage e skill score."""
-    setup_logging()
 
     with DuckDBClient(db_path=db_path, read_only=True) as db:
         results = walk_forward_cv(db, n_splits=n_splits, embargo_days=embargo)

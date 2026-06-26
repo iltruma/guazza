@@ -226,6 +226,11 @@ app = typer.Typer(
 )
 
 
+@app.callback()
+def _callback() -> None:
+    setup_logging()
+
+
 @app.command("historical")
 def cmd_historical(
     db_path: Path = DB_OPTION,
@@ -254,7 +259,6 @@ def cmd_historical(
         # Tutte le sorgenti, tutte le location
         historical --start-date 2022-01-01
     """
-    setup_logging()
     exclusive = sum([only_sir, only_openmeteo])
     if exclusive > 1:
         typer.echo("Errore: --only-sir e --only-openmeteo sono mutualmente esclusivi.")
@@ -356,7 +360,6 @@ def cmd_multilead(
         multilead --location casa_campi --start-date 2025-01-01
         multilead --start-date 2022-01-01
     """
-    setup_logging()
     if not end_date:
         end_date = (datetime.now(tz=UTC) - timedelta(days=2)).strftime("%Y-%m-%d")
 
@@ -412,7 +415,6 @@ def cmd_daily(
     Schedulare a ~06:00 UTC (SIR pubblica i dati validati del giorno precedente
     tipicamente entro le 03:00-05:00 UTC).
     """
-    setup_logging()
     if only_sir and only_openmeteo:
         typer.echo("Errore: --only-sir e --only-openmeteo sono mutualmente esclusivi.")
         raise typer.Exit(1)
@@ -485,7 +487,6 @@ def cmd_realtime(
     Schedulare ogni 15-30 minuti.
     SIR ha granularità ~15 min; Netatmo aggiorna ogni 10 min circa.
     """
-    setup_logging()
     locations, stations = load_configs(Path(config_dir))
 
     if dry_run:
@@ -558,7 +559,6 @@ def cmd_forecasts(
     Schedulare ogni 6 ore (allineato ai run ECMWF: 00/06/12/18 UTC + lag ~2h).
     Suggerito: 02:00, 08:00, 14:00, 20:00 UTC.
     """
-    setup_logging()
     locations, _ = load_configs(Path(config_dir))
 
     if dry_run:
