@@ -14,18 +14,16 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import typer
 
 from guazza._logging import setup_logging
+from guazza.fetch_common import ITALY_TZ as _LOCAL_TZ
 from guazza.jobs._common import DB_OPTION, job_run
 from guazza.netatmo_daily import aggregate_netatmo_daily
 from guazza.storage import DuckDBClient
 
 app = typer.Typer(help="Aggregazione Netatmo realtime → daily.")
-
-_LOCAL_TZ = ZoneInfo("Europe/Rome")
 
 
 @app.callback()

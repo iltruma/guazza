@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import math
-import zoneinfo
 from collections import Counter
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -27,6 +26,8 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from loguru import logger
+
+from guazza.fetch_common import ITALY_TZ as _ITALY_TZ
 
 if TYPE_CHECKING:
     from guazza.indicators import IndicatorResult
@@ -721,7 +722,6 @@ def get_nwp_models_hourly(
     ]
 
 
-_ITALY_TZ = zoneinfo.ZoneInfo("Europe/Rome")
 _N_MIN_INTRADAY = 3  # osservazioni minime per attivare correzione tmin/tmax
 
 
