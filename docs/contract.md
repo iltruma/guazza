@@ -1,7 +1,7 @@
 # Output JSON — contract obbligatorio
 
 Riferimento on-demand. La regola sempre-attiva ("ogni previsione è una distribuzione,
-mai valori puntuali nudi") è in `CLAUDE.md`.
+mai valori puntuali nudi") è in `AGENTS.md`.
 
 File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni run di
 `predict`). Struttura multi-giorno: ogni file contiene la striscia `days` da D+0 a D+7.
@@ -37,11 +37,11 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
       "forecasts": {
         "tmin_c":    {"p50": float, "ci80_lo": float, "ci80_hi": float, "ci90_lo": float, "ci90_hi": float},
         "tmax_c":    {"p50": float, ...},
-        "precip_mm": {"p50": float, ...}
+        "precip_mm": {"mean": float, "p50": float, "ci80_lo": float, "ci80_hi": float, "ci90_lo": float, "ci90_hi": float}
       },
       "indicators": {
-        "panni":    {"verdict": "verde|giallo|rosso|grigio", "rule_matched": "green|yellow|red|fallback|unknown"},
-        "motorino": {"verdict": "...", "rule_matched": "..."}
+        "panni":    {"verdict": "verde|giallo|rosso|grigio", "rule_matched": "green|yellow|red|fallback|unknown", "rule_text": str},
+        "motorino": {"verdict": "...", "rule_matched": "...", "rule_text": str}
       },
       "hourly": [{...}],
       "nwp_comparison": [{"source": str, "label": str, "tmin_c": float,
@@ -58,6 +58,9 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 - `current.weather_code` è il codice WMO modale (moda tra modelli NWP nell'ora più vicina a now) — può essere `null` se non ci sono dati NWP recenti.
 - `days[].weather_code` è il codice WMO modale giornaliero (moda su 24h × N modelli, ultimo run per fonte) — `null` se assente.
 - `nwp_models_hourly[].data[].weather_code` è il codice WMO per quell'ora e modello — `int | null`.
+- `precip_mm.mean` è il valore atteso E[precip] della distribuzione (utile per valutazione economica/rischio). Solo per `precip_mm` — `tmin_c`/`tmax_c` non espongono `mean`.
+- `days[].indicators.*.rule_text` è il testo della regola YAML che ha prodotto il verdetto, per debugging e trasparenza.
+- `days[0].intraday` è il blocco di correzione aritmetica D+0 (presente solo se `target_date == today` e ci sono osservazioni realtime SIR): `{precip_observed_mm, precip_remaining_mm, precip_corrected: {...}, tmin_corrected_c, tmax_corrected_c, obs_count, hours_remaining}`.
 
 ## `skill.json` — curva di skill (file globale)
 
@@ -98,5 +101,6 @@ Ogni invocazione DLE deve produrre log in DuckDB (`indicator_log`):
 
 ```python
 {"ts": datetime, "location_id": str, "indicator_id": str,
- "input_summary": dict, "rule_matched": str, "verdict": str, "probability": float}
+ "input_summary": dict, "rule_matched": str, "verdict": str, "probability": float,
+ "alpha": float, "cost_fn": float, "cost_fp": float, "last_modified": datetime}
 ```

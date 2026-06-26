@@ -16,7 +16,7 @@ uv sync
 **Nessuna azione prima di aver letto questi file:**
 
 1. `docs/status.md` — stato corrente, cosa è fatto, prossimi passi (`🟡` = punto aperto)
-2. `CLAUDE.md` — regole di progetto, stack, guardrail (fonte unica)
+2. `AGENTS.md` — regole di progetto, stack, guardrail (fonte unica; `CLAUDE.md` è symlink per retrocompatibilità)
 3. `docs/decisions.md` — perché le cose sono come sono
 4. `docs/known_issues.md` — workaround attivi
 

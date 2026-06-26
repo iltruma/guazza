@@ -4,7 +4,7 @@
 > Non scrivere codice, non fare ricerche, non proporre nulla finché non hai letto lo stato corrente.
 > Vale per ogni sessione, anche breve.
 
-Questo file è la **fonte unica** delle istruzioni di progetto (repo Claude-only). Materiale
+Questo file è la **fonte unica** delle istruzioni di progetto. Il repo è gestito con agenti AI (Claude, Gemini, DeepSeek). Materiale
 di riferimento pesante scaricato on-demand:
 - `docs/contract.md` — contract JSON di output + logging DLE
 - `docs/frontend.md` — librerie client-side CDN (design completo in `DESIGN.md`)
@@ -135,7 +135,8 @@ L'albero completo delle directory è in `README.md`. Mappa dei moduli (responsab
 - `output.py` — build_signals(), compute_coverage_30d(), write_location_json()
 - `qc.py` — quality control osservazioni SIR + ARPAT
 - `_logging.py` — setup_logging() (TTY pretty / cron JSON)
-- `jobs/` — entrypoint CLI cron: ingest, features, train, predict, qc, backup
+- `netatmo_daily.py` — accumulo Netatmo realtime → daily (forward-looking storico)
+- `jobs/` — entrypoint CLI cron: ingest, features, train, predict, qc, backup, netatmo_daily, skill
 
 ## Guardrail operativi
 

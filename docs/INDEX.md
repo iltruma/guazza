@@ -1,10 +1,10 @@
 # Documentation Index
 
-Repo Claude-only. `CLAUDE.md` (root) è la fonte unica delle istruzioni di progetto.
+`AGENTS.md` (root) è la fonte unica delle istruzioni di progetto. Il repo è gestito con agenti AI (Claude, Gemini, DeepSeek).
 
 ## Sempre a inizio sessione
 
-- `CLAUDE.md` — istruzioni di progetto (fonte unica)
+- `AGENTS.md` — istruzioni di progetto (fonte unica; `CLAUDE.md` è symlink)
 - `docs/status.md` — stato corrente, unica fonte di verità (punti aperti `🟡`)
 
 ## Riferimento on-demand (caricare quando serve)

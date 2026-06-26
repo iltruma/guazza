@@ -64,6 +64,7 @@ guazza/
 │   ├── output.py           # build_signals(), build_signals_today(), dewpoint/apparent_temp, write_location_json()
 │   ├── qc.py               # Quality control osservazioni SIR + ARPAT
 │   ├── _logging.py         # setup_logging() + log_scrape() — TTY pretty / cron JSON
+│   ├── netatmo_daily.py    # Accumulo Netatmo realtime → daily (forward-looking storico)
 │   └── jobs/
 │       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
 │       ├── ingest.py       # Cron: historical / daily / realtime / forecasts / multilead
@@ -76,7 +77,7 @@ guazza/
 │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 8)
 ├── data/
 │   ├── guazza.duckdb       # Database analitico (non committato)
-│   ├── models/             # Artefatti LightGBM pickle (non committati)
+│   ├── models/             # Artefatti LightGBM artifacts.json + model-string .txt (non committati)
 │   └── output/             # JSON per il frontend (non committati)
 ├── frontend/               # index.html, app.js, style.css (statico, CSS custom, CDN via jsDelivr)
 ├── Dockerfile              # Single-stage python:3.13-slim + uv + nginx (k8s)
@@ -105,7 +106,7 @@ guazza/
 | Sprint 4 | LightGBM quantile + CQR, skill +25% vs NWP su temperatura | ✅ Completato |
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
 | Sprint 6 | Frontend HTML+JS+Chart.js, layout a 3 sezioni | ✅ Completato |
-| Sprint 7 | Raffinamenti logiche, radar RainViewer, redesign frontend v2 (CSS custom) | 🟡 In corso |
+| Sprint 7 | Raffinamenti logiche, radar RainViewer, redesign frontend v2 (CSS custom) | ✅ Completato |
 | Sprint 8 | Deploy su Optiplex locale + Cloudflare Tunnel, k3s/ArgoCD, immagine container | 🟡 In corso (S-A: Dockerfile + CI) |
 | Sprint 9 | Model monitoring, coverage alert | — |
 | Sprint 10 | Calibrazione soglie DLE post-deploy | — |
