@@ -834,19 +834,32 @@ def compute_hourly_profile(
     tmin_p50: float | None,
     tmax_p50: float | None,
     precip_anchor: float | None,
+    tmin_ci80_lo: float | None = None,
+    tmin_ci80_hi: float | None = None,
+    tmax_ci80_lo: float | None = None,
+    tmax_ci80_hi: float | None = None,
+    precip_ci80_lo: float | None = None,
+    precip_ci80_hi: float | None = None,
 ) -> list[dict[str, float | None]] | None:
     """Profilo orario disaggregato da NWP ensemble, ancorato alle previsioni ML.
 
     Temperatura: rescaling lineare del profilo ensemble-mean da [raw_min, raw_max]
     a [tmin_p50, tmax_p50]. Se tmin_p50/tmax_p50 sono None usa i valori raw.
 
+    Bande CI 80% orarie (opzionali): due ulteriori rescaling con gli stessi bound
+    NWP ma ancorati a (tmin_ci80_lo, tmax_ci80_lo) e (tmin_ci80_hi, tmax_ci80_hi).
+    Servono al frontend per disegnare la fascia di incertezza giornaliera.
+
     Precipitazione: distribuzione oraria NWP scalata proporzionalmente così che la
     somma giornaliera corrisponda a precip_anchor (E[precip] ML). precip_prob =
-    frazione modelli con precip > 0.1mm/h per quell'ora.
+    frazione modelli con precip > 0.1mm/h per quell'ora. Le bande precip_orarie
+    seguono la stessa shape ma con scale diverse (precip_ci80_lo/hi come
+    anchor al posto di precip_anchor).
 
     Returns:
-        Lista di 24 dict {hour, temp_c, humidity_pct, precip_mm, precip_prob} oppure
-        None se non ci sono dati NWP per il giorno richiesto.
+        Lista di 24 dict {hour, temp_c, temp_ci80_lo, temp_ci80_hi, humidity_pct,
+        precip_mm, precip_ci80_lo, precip_ci80_hi, precip_prob, wind_speed_ms,
+        weather_code} oppure None se non ci sono dati NWP per il giorno richiesto.
     """
     df = db.execute("""
         SELECT
@@ -919,13 +932,16 @@ def compute_hourly_profile(
     raw_min = min(raw_temps)
     raw_max = max(raw_temps)
 
-    def _rescale_temp(v: float) -> float:
-        if tmin_p50 is None or tmax_p50 is None:
+    def _rescale_temp(v: float, lo: float | None, hi: float | None) -> float:
+        if lo is None or hi is None:
             return round(v, 1)
         span_raw = raw_max - raw_min
         if span_raw <= 0:
-            return round((tmin_p50 + tmax_p50) / 2.0, 1)
-        return round(tmin_p50 + (v - raw_min) / span_raw * (tmax_p50 - tmin_p50), 1)
+            return round((lo + hi) / 2.0, 1)
+        return round(lo + (v - raw_min) / span_raw * (hi - lo), 1)
+
+    def _rescale_temp_p50(v: float) -> float:
+        return _rescale_temp(v, tmin_p50, tmax_p50)
 
     total_precip_raw = sum(v for _, (_, _, v, _, _) in hour_data.items())
     if total_precip_raw > 0 and precip_anchor is not None and precip_anchor > 0:
@@ -933,23 +949,43 @@ def compute_hourly_profile(
     else:
         precip_scale = 0.0
 
+    # Bande CI 80% precip: stesse proporzioni del rescale, ma ancorate ai bound CI.
+    # Se uno dei bound manca o total_precip_raw = 0, la banda corrispondente è 0.
+    precip_scale_lo = (
+        (precip_ci80_lo / total_precip_raw)
+        if total_precip_raw > 0 and precip_ci80_lo is not None and precip_ci80_lo > 0
+        else 0.0
+    )
+    precip_scale_hi = (
+        (precip_ci80_hi / total_precip_raw)
+        if total_precip_raw > 0 and precip_ci80_hi is not None
+        else 0.0
+    )
+
     result: list[dict[str, float | int | None]] = []
+    has_temp_band = tmin_ci80_lo is not None and tmax_ci80_lo is not None and tmin_ci80_hi is not None and tmax_ci80_hi is not None
     for h in range(24):
         if h in hour_data:
             t_raw, hum, p_raw, prob, wind = hour_data[h]
             result.append({
                 "hour":          h,
-                "temp_c":        _rescale_temp(t_raw),
+                "temp_c":        _rescale_temp_p50(t_raw),
+                "temp_ci80_lo":  _rescale_temp(t_raw, tmin_ci80_lo, tmax_ci80_lo) if has_temp_band else None,
+                "temp_ci80_hi":  _rescale_temp(t_raw, tmin_ci80_hi, tmax_ci80_hi) if has_temp_band else None,
                 "humidity_pct":  round(hum, 0) if hum is not None else None,
                 "precip_mm":     round(p_raw * precip_scale, 2),
+                "precip_ci80_lo": round(p_raw * precip_scale_lo, 2) if precip_scale_lo > 0 else None,
+                "precip_ci80_hi": round(p_raw * precip_scale_hi, 2) if precip_scale_hi > 0 else None,
                 "precip_prob":   round(prob, 2) if prob is not None else None,
                 "wind_speed_ms": round(wind, 1) if wind is not None else None,
                 "weather_code":  hour_wc_modal.get(h),
             })
         else:
             result.append({
-                "hour": h, "temp_c": None, "humidity_pct": None,
-                "precip_mm": None, "precip_prob": None, "wind_speed_ms": None,
+                "hour": h, "temp_c": None, "temp_ci80_lo": None, "temp_ci80_hi": None,
+                "humidity_pct": None,
+                "precip_mm": None, "precip_ci80_lo": None, "precip_ci80_hi": None,
+                "precip_prob": None, "wind_speed_ms": None,
                 "weather_code": None,
             })
 

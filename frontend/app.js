@@ -1077,7 +1077,9 @@ function buildChartPoints(data, model, targetDate) {
       // h.hour è ora locale (Europe/Rome): costruttore locale per allinearlo all'asse.
       points.push({ ts: new Date(y, m - 1, d, h.hour, 0, 0),
                     temp_c: h.temp_c, humidity_pct: h.humidity_pct,
+                    temp_ci80_lo: h.temp_ci80_lo, temp_ci80_hi: h.temp_ci80_hi,
                     precip_mm: h.precip_mm, precip_prob: h.precip_prob,
+                    precip_ci80_lo: h.precip_ci80_lo, precip_ci80_hi: h.precip_ci80_hi,
                     wind_speed_ms: h.wind_speed_ms, weather_code: h.weather_code });
     });
   } else {
@@ -1102,8 +1104,10 @@ function buildWeeklyPoints(data, model) {
         // h.hour è ora locale (Europe/Rome): costruttore locale, no UTC.
         ts: new Date(y, m - 1, d, h.hour, 0, 0),
         temp_c: h.temp_c, humidity_pct: h.humidity_pct,
-        precip_mm: h.precip_mm, precip_prob: h.precip_prob, wind_speed_ms: h.wind_speed_ms,
-        weather_code: h.weather_code,
+        temp_ci80_lo: h.temp_ci80_lo, temp_ci80_hi: h.temp_ci80_hi,
+        precip_mm: h.precip_mm, precip_prob: h.precip_prob,
+        precip_ci80_lo: h.precip_ci80_lo, precip_ci80_hi: h.precip_ci80_hi,
+        wind_speed_ms: h.wind_speed_ms, weather_code: h.weather_code,
       }));
     });
     return points.sort((a, b) => a.ts - b.ts);
@@ -1367,30 +1371,83 @@ function applyAxisRanges(scales, r) {
 
 function _buildChartDatasets(canvas, points, p) {
   const { data: precipData, bg: precipBg } = precipDatasets(points);
-  return [
-    {
-      type: 'line', label: 'Temperatura (°C)',
-      data: points.filter(pt => pt.temp_c != null).map(pt => ({ x: pt.ts, y: pt.temp_c })),
-      borderColor: p.temp, backgroundColor: 'transparent', fill: false,
-      borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 6,
-      pointHoverBackgroundColor: '#fff', pointHoverBorderColor: p.temp, pointHoverBorderWidth: 3,
-      yAxisID: 'yTemp', tension: 0.4, order: 1,
-    },
-    {
-      type: 'bar', label: 'Precipitazioni (mm)',
-      data: precipData, backgroundColor: precipBg,
+  const datasets = [];
+
+  // Bande CI 80% temperatura: due linee (lo/hi) con fill tra loro. Disegnate
+  // per prime (order alto) così le linee centrali restano in primo piano.
+  const tempLo = points.filter(pt => pt.temp_ci80_lo != null).map(pt => ({ x: pt.ts, y: pt.temp_ci80_lo }));
+  const tempHi = points.filter(pt => pt.temp_ci80_hi != null).map(pt => ({ x: pt.ts, y: pt.temp_ci80_hi }));
+  if (showBands && tempLo.length && tempHi.length) {
+    datasets.push({
+      type: 'line', label: 'Temp CI 80% (low)',
+      data: tempLo,
+      borderColor: 'transparent',
+      backgroundColor: hexToRgba(p.temp, 0.10),
+      fill: '+1', pointRadius: 0, yAxisID: 'yTemp', tension: 0.4, order: 0,
+    });
+    datasets.push({
+      type: 'line', label: 'Temp CI 80% (high)',
+      data: tempHi,
+      borderColor: 'transparent',
+      backgroundColor: 'transparent',
+      fill: false, pointRadius: 0, yAxisID: 'yTemp', tension: 0.4, order: 0,
+    });
+  }
+
+  // Bande CI 80% precipitazione: barre impilate sull'asse yPrecip.
+  // fill: '+1' colora l'area tra ci80_lo (dataset N) e ci80_hi (dataset N+1).
+  const precipLo = points.filter(pt => pt.precip_ci80_lo != null).map(pt => ({ x: pt.ts, y: pt.precip_ci80_lo }));
+  const precipHi = points.filter(pt => pt.precip_ci80_hi != null).map(pt => ({ x: pt.ts, y: pt.precip_ci80_hi }));
+  if (showBands && precipLo.length && precipHi.length) {
+    datasets.push({
+      type: 'bar', label: 'Precip CI 80% (low)',
+      data: precipLo, backgroundColor: 'rgba(96,165,250,0.08)',
       yAxisID: 'yPrecip', barPercentage: 0.9, categoryPercentage: 1.0,
-      borderRadius: 2, order: 3,
-    },
-    {
-      type: 'line', label: 'Vento (km/h)',
-      data: points.filter(pt => pt.wind_speed_ms != null).map(pt => ({ x: pt.ts, y: pt.wind_speed_ms * 3.6 })),
-      borderColor: p.wind, backgroundColor: 'transparent',
-      borderWidth: 1.5, borderDash: [3, 3], pointRadius: 0, pointHoverRadius: 6,
-      pointHoverBackgroundColor: '#fff', pointHoverBorderColor: p.wind, pointHoverBorderWidth: 3,
-      yAxisID: 'yWind', tension: 0.4, order: 4,
-    },
-  ];
+      borderRadius: 2, order: 2,
+    });
+    datasets.push({
+      type: 'bar', label: 'Precip CI 80% (high)',
+      data: precipHi, backgroundColor: 'rgba(96,165,250,0.18)',
+      yAxisID: 'yPrecip', barPercentage: 0.9, categoryPercentage: 1.0,
+      borderRadius: 2, order: 2,
+    });
+  }
+
+  datasets.push({
+    type: 'line', label: 'Temperatura (°C)',
+    data: points.filter(pt => pt.temp_c != null).map(pt => ({ x: pt.ts, y: pt.temp_c })),
+    borderColor: p.temp, backgroundColor: 'transparent', fill: false,
+    borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 6,
+    pointHoverBackgroundColor: '#fff', pointHoverBorderColor: p.temp, pointHoverBorderWidth: 3,
+    yAxisID: 'yTemp', tension: 0.4, order: 1,
+  });
+  datasets.push({
+    type: 'bar', label: 'Precipitazioni (mm)',
+    data: precipData, backgroundColor: precipBg,
+    yAxisID: 'yPrecip', barPercentage: 0.9, categoryPercentage: 1.0,
+    borderRadius: 2, order: 3,
+  });
+  datasets.push({
+    type: 'line', label: 'Vento (km/h)',
+    data: points.filter(pt => pt.wind_speed_ms != null).map(pt => ({ x: pt.ts, y: pt.wind_speed_ms * 3.6 })),
+    borderColor: p.wind, backgroundColor: 'transparent',
+    borderWidth: 1.5, borderDash: [3, 3], pointRadius: 0, pointHoverRadius: 6,
+    pointHoverBackgroundColor: '#fff', pointHoverBorderColor: p.wind, pointHoverBorderWidth: 3,
+    yAxisID: 'yWind', tension: 0.4, order: 4,
+  });
+  return datasets;
+}
+
+// Toggle globale per mostrare/nascondere le bande CI 80% nei grafici.
+// Default ON: l'utente vede subito la fascia d'incertezza; può spegnerla se
+// preferisce un grafico più pulito.
+let showBands = true;
+
+// Helper: convert hex color (#rrggbb) a rgba(r,g,b,a) per fill semi-trasparente.
+function hexToRgba(hex, alpha) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!m) return `rgba(249,115,22,${alpha})`;
+  return `rgba(${parseInt(m[1],16)},${parseInt(m[2],16)},${parseInt(m[3],16)},${alpha})`;
 }
 
 function _baseChartOptions(p, xMin, xMax, unit) {
@@ -1758,6 +1815,19 @@ document.getElementById('skill-seg')?.addEventListener('click', e => {
   const btn = e.target.closest('.g-skill__seg-btn');
   if (btn) setSkillVar(btn.dataset.var);
 });
+
+// Toggle "Banda CI 80%" (sincronizzato su daily + weekly). Quando cambia,
+// ricostruisco i dataset: `showBands` è letto in `_buildChartDatasets`.
+function _onBandsToggle(e) {
+  showBands = e.target.checked;
+  if (meteoChart) {
+    const td = currentData?.days?.[selectedDayIdx]?.target_date;
+    if (td) updateChartModel(currentData, selectedModel, td);
+  }
+  if (multiDayChart) updateWeeklyChart(currentData, selectedModel);
+}
+document.getElementById('bands-toggle')?.addEventListener('change', _onBandsToggle);
+document.getElementById('bands-toggle-weekly')?.addEventListener('change', _onBandsToggle);
 
 window.addEventListener('popstate', () => loadLocation(getActiveLoc()));
 

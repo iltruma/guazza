@@ -43,7 +43,21 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
         "panni":    {"verdict": "verde|giallo|rosso|grigio", "rule_matched": "green|yellow|red|fallback|unknown", "rule_text": str},
         "motorino": {"verdict": "...", "rule_matched": "...", "rule_text": str}
       },
-      "hourly": [{...}],
+      "hourly": [
+        {
+          "hour": int (0-23),
+          "temp_c": float | null,
+          "temp_ci80_lo": float | null,
+          "temp_ci80_hi": float | null,
+          "humidity_pct": float | null,
+          "precip_mm": float | null,
+          "precip_ci80_lo": float | null,
+          "precip_ci80_hi": float | null,
+          "precip_prob": float | null,
+          "wind_speed_ms": float | null,
+          "weather_code": int | null
+        }
+      ],
       "nwp_comparison": [{"source": str, "label": str, "tmin_c": float,
                           "tmax_c": float, "precip_mm": float, "last_run": str}]
     }
@@ -61,6 +75,7 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 - `precip_mm.mean` è il valore atteso E[precip] della distribuzione (utile per valutazione economica/rischio). Solo per `precip_mm` — `tmin_c`/`tmax_c` non espongono `mean`.
 - `days[].indicators.*.rule_text` è il testo della regola YAML che ha prodotto il verdetto, per debugging e trasparenza.
 - `days[0].intraday` è il blocco di correzione aritmetica D+0 (presente solo se `target_date == today` e ci sono osservazioni realtime SIR): `{precip_observed_mm, precip_remaining_mm, precip_corrected: {...}, tmin_corrected_c, tmax_corrected_c, obs_count, hours_remaining}`.
+- `days[].hourly[].temp_ci80_lo/hi` e `precip_ci80_lo/hi` sono le **bande di confidenza orarie CI 80%** derivate per interpolazione dal forecast daily (rescaling dello stesso profilo NWP grezzo con bound `tmin_c.ci80_lo/hi`, `tmax_c.ci80_lo/hi`, `precip_mm.ci80_lo/hi`). Sono `null` se i bound daily sono assenti (es. cold-start CI o modello NWP). Le bande orarie non esistono per il vento (solo `wind_speed_ms` puntuale). Il frontend le usa per disegnare la fascia d'incertezza nei grafici daily/weekly (toggle "Banda CI 80%").
 
 ## `skill.json` — curva di skill (file globale)
 

@@ -292,6 +292,12 @@ def cmd_run(
                         tmin_p50=pred["tmin_c"].get("p50"),
                         tmax_p50=pred["tmax_c"].get("p50"),
                         precip_anchor=expected_precip(pred["precip_mm"]),
+                        tmin_ci80_lo=pred["tmin_c"].get("ci80_lo"),
+                        tmin_ci80_hi=pred["tmin_c"].get("ci80_hi"),
+                        tmax_ci80_lo=pred["tmax_c"].get("ci80_lo"),
+                        tmax_ci80_hi=pred["tmax_c"].get("ci80_hi"),
+                        precip_ci80_lo=pred["precip_mm"].get("ci80_lo"),
+                        precip_ci80_hi=pred["precip_mm"].get("ci80_hi"),
                     )
 
                     nwp_comparison = get_nwp_model_comparison(

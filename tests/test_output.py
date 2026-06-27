@@ -681,6 +681,73 @@ def test_hourly_profile_has_wind(seeded_db: Path) -> None:
     assert all("wind_speed_ms" in r for r in result)
 
 
+def test_hourly_profile_ci80_bands_temp(seeded_db: Path) -> None:
+    """Bande CI 80% temperatura: temp_ci80_lo < temp_c < temp_ci80_hi ad ogni ora."""
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        # p50 = 5..20, CI 80% bounds più larghi (3..22 per tmin, 4..23 per tmax)
+        result = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19",
+            tmin_p50=5.0, tmax_p50=20.0, precip_anchor=0.0,
+            tmin_ci80_lo=3.0, tmin_ci80_hi=7.0,
+            tmax_ci80_lo=18.0, tmax_ci80_hi=22.0,
+        )
+    assert result is not None
+    for r in result:
+        if r["temp_c"] is None:
+            assert r["temp_ci80_lo"] is None
+            assert r["temp_ci80_hi"] is None
+        else:
+            # p50 cade dentro la banda CI 80%
+            assert r["temp_ci80_lo"] <= r["temp_c"] <= r["temp_ci80_hi"], (
+                f"hour={r['hour']} p50={r['temp_c']} band=[{r['temp_ci80_lo']}, {r['temp_ci80_hi']}]"
+            )
+            # La banda ha larghezza > 0 (i bound sono distinti)
+            assert r["temp_ci80_hi"] >= r["temp_ci80_lo"]
+
+
+def test_hourly_profile_ci80_bands_precip(seeded_db: Path) -> None:
+    """Bande CI 80% precipitazione: precip_ci80_lo ≤ precip_mm ≤ precip_ci80_hi."""
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19",
+            tmin_p50=5.0, tmax_p50=20.0, precip_anchor=3.0,
+            precip_ci80_lo=1.0, precip_ci80_hi=6.0,
+        )
+    assert result is not None
+    for r in result:
+        if r["precip_mm"] is None:
+            assert r["precip_ci80_lo"] is None
+            assert r["precip_ci80_hi"] is None
+        else:
+            # p50 cade dentro la banda (per ogni ora)
+            assert r["precip_ci80_lo"] <= r["precip_mm"] <= r["precip_ci80_hi"], (
+                f"hour={r['hour']} p50={r['precip_mm']} band=[{r['precip_ci80_lo']}, {r['precip_ci80_hi']}]"
+            )
+            # Le bande non sono negative
+            assert r["precip_ci80_lo"] >= 0
+            assert r["precip_ci80_hi"] >= 0
+
+
+def test_hourly_profile_ci80_none_is_noop(seeded_db: Path) -> None:
+    """Se i bound CI 80% sono None, le bande orarie sono None (no crash)."""
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19", 5.0, 20.0, 3.0,
+            # tmin_ci80_lo/hi, tmax_ci80_lo/hi, precip_ci80_lo/hi tutti None
+        )
+    assert result is not None
+    for r in result:
+        if r["temp_c"] is not None:
+            assert r["temp_ci80_lo"] is None
+            assert r["temp_ci80_hi"] is None
+        if r["precip_mm"] is not None:
+            assert r["precip_ci80_lo"] is None
+            assert r["precip_ci80_hi"] is None
+
+
 # ── get_current_conditions ────────────────────────────────────────────────────
 
 def test_current_conditions_no_data(seeded_db: Path) -> None:
