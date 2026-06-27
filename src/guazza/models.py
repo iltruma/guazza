@@ -380,8 +380,18 @@ def load_artifacts(model_dir: Path | None = None) -> TrainingArtifacts:
                 "è stato sostituito da artifacts.json + modelli .txt. "
                 "Riesegui: train run"
             )
+        # Suggerimenti per l'utente quando gli artefatti mancano al path di default.
+        # In produzione k8s il path è /var/lib/guazza/models; in locale è data/models.
+        hint = ""
+        if str(model_dir) == "/var/lib/guazza/models":
+            alt = Path("data/models") / "artifacts.json"
+            if alt.exists():
+                hint = (
+                    f" Trovati in {alt}: passa --model-dir data/models "
+                    f"o esporta MODEL_DIR=data/models."
+                )
         raise FileNotFoundError(
-            f"Artefatti non trovati: {manifest_path}. Esegui prima: train run"
+            f"Artefatti non trovati: {manifest_path}.{hint} Esegui prima: train run"
         )
 
     manifest = json.loads(manifest_path.read_text())
@@ -533,6 +543,14 @@ class AdaptiveConformalizer:
 # l'alpha_t corrente è già stabile.
 ACI_COLD_START_N: int = 30
 
+# Fattore di correzione ACI clampato a [MIN, MAX] per evitare bande patologiche
+# quando alpha_t si avvicina al clamp eps=0.01 (drift prolungato). Senza clamp,
+# f = alpha_target/alpha_t può arrivare a 10+ → banda ±30°C inutili.
+# 0.5..2.0 = la correzione può stringere al massimo del 50% o allargare al massimo
+# del 100% rispetto al CQR baseline. Oltre è rumore.
+ACI_CORRECTION_FACTOR_MIN: float = 0.5
+ACI_CORRECTION_FACTOR_MAX: float = 2.0
+
 
 def get_aci_pair(
     db: DuckDBClient,
@@ -584,29 +602,28 @@ def apply_aci_correction(
     source ∈ {"aci", "cqr_static"} — "cqr_static" se uno dei due ACI è in cold start
     (n_updates < ACI_COLD_START_N), segnalato al logger upstream per diagnostica.
 
-    Logica: se ACI è warm, riscala i bound CQR in base al delta alpha. Se ACI è
-    freddo, restituisce i bound originali. Il mapping è lineare (vedi
-    AdaptiveConformalizer.correct): cambio di α di 0.10 → offset scalato di ~50%.
-    Sufficiente per uno spike: in produzione si raffina con quantile function
-    esplicita.
+    Logica: se ACI è warm, riscala i bound CQR con fattore alpha_target/alpha_t.
+    Il fattore è clampato a [MIN_FACTOR, MAX_FACTOR] per evitare correzioni
+    patologiche quando alpha_t si avvicina a 0 (drift prolungato). Senza clamp,
+    f può arrivare a 10+ e produrre bande inutilmente larghe (es. ±30°C).
     """
     if aci_80.n_updates < ACI_COLD_START_N or aci_90.n_updates < ACI_COLD_START_N:
         return ci80_lo, ci80_hi, ci90_lo, ci90_hi, "cqr_static"
 
-    # Ricostruiamo l'offset ACI moltiplicando i bound width per il fattore correct.
-    # L'offset CQR originale è (hi - p90) o (p10 - lo); ACI applica un fattore
-    # di scala simmetrico.
+    # Fattore di scala ACI: alpha_target / alpha_t. Clampato a [MIN, MAX] per
+    # evitare bande patologiche quando alpha_t si avvicina al clamp eps=0.01.
+    f80 = max(ACI_CORRECTION_FACTOR_MIN, min(ACI_CORRECTION_FACTOR_MAX,
+                                            aci_80.alpha_target / aci_80.alpha_t))
+    f90 = max(ACI_CORRECTION_FACTOR_MIN, min(ACI_CORRECTION_FACTOR_MAX,
+                                            aci_90.alpha_target / aci_90.alpha_t))
+
     w80 = (ci80_hi - ci80_lo) / 2
     w90 = (ci90_hi - ci90_lo) / 2
     c80 = (ci80_hi + ci80_lo) / 2
     c90 = (ci90_hi + ci90_lo) / 2
-    f80 = aci_80.alpha_target / aci_80.alpha_t
-    f90 = aci_90.alpha_target / aci_90.alpha_t
-    new_w80 = w80 * f80
-    new_w90 = w90 * f90
     return (
-        c80 - new_w80, c80 + new_w80,
-        c90 - new_w90, c90 + new_w90,
+        c80 - w80 * f80, c80 + w80 * f80,
+        c90 - w90 * f90, c90 + w90 * f90,
         "aci",
     )
 

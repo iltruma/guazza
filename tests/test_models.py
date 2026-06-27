@@ -610,6 +610,56 @@ def test_apply_aci_correction_overcoverage_shrinks() -> None:
     assert (hi80 - lo80) < 8.0  # CI stretto
 
 
+def test_apply_aci_correction_clamps_patological_alpha() -> None:
+    """Con alpha_t patologicamente basso (drift prolungato), il fattore di
+    correzione è clampato a MAX (2.0) per evitare bande inutilmente larghe.
+
+    Caso reale: alpha_t_80 = 0.018 (vicino al clamp eps=0.01) → senza clamp
+    il fattore sarebbe 0.20/0.018 = 11.1, banda 80% 11× la baseline (inutile).
+    Con clamp a 2.0, la banda è 2× la baseline (ragionevole).
+    """
+    aci_80 = AdaptiveConformalizer(alpha_target=0.20, learning_rate=0.05)
+    aci_90 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.05)
+    # Forza alpha_t molto basso (simula drift prolungato)
+    for _ in range(200):
+        aci_80.update(covered=False)  # miscoverage → alpha_t scende
+        aci_90.update(covered=False)
+    # alpha_t dovrebbe essere vicino a eps=0.01
+    assert aci_80.alpha_t < 0.05
+    assert aci_90.alpha_t < 0.03
+
+    # CI 80% baseline = (1, 7), width = 6. Con clamp f80=2.0, width raddoppia a 12.
+    lo80, hi80, lo90, hi90, source = apply_aci_correction(
+        1.0, 7.0, 0.0, 8.0, aci_80, aci_90,
+    )
+    assert source == "aci"
+    # Width clampata a 2× baseline (6 → 12), non 11× (66)
+    assert (hi80 - lo80) <= 12.0, f"CI 80% patologica: width={hi80 - lo80}"
+    assert (hi90 - lo90) <= 16.0, f"CI 90% patologica: width={hi90 - lo90}"
+    # Width comunque >= 1× baseline (ACI non annulla mai la correzione)
+    assert (hi80 - lo80) >= 6.0
+
+
+def test_apply_aci_correction_clamps_min_factor() -> None:
+    """Anche con alpha_t molto alto (over-coverage forte), il fattore è
+    clampato a MIN (0.5) → la banda non diventa mai meno della metà."""
+    aci_80 = AdaptiveConformalizer(alpha_target=0.20, learning_rate=0.05)
+    aci_90 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.05)
+    # Forza alpha_t verso il massimo (1 - eps)
+    for _ in range(200):
+        aci_80.update(covered=True)
+        aci_90.update(covered=True)
+    assert aci_80.alpha_t > 0.5
+    assert aci_90.alpha_t > 0.5
+
+    lo80, hi80, _, _, _ = apply_aci_correction(
+        1.0, 9.0, 0.0, 10.0, aci_80, aci_90,
+    )
+    # Width baseline 80% = 8, clampata a 0.5×8 = 4 minimo
+    assert (hi80 - lo80) >= 4.0
+    assert (hi80 - lo80) <= 4.0  # clamp esatto a MIN
+
+
 def test_get_aci_pair_cold_start(tmp_path: Path) -> None:
     """get_aci_pair senza state in DB deve restituire ACI freschi con alpha_t == alpha_target."""
     from guazza.models import get_aci_pair
@@ -691,3 +741,32 @@ def test_aci_state_persists_via_duckdb(tmp_path: Path) -> None:
     assert state_other is None
 
     db.__exit__(None, None, None)
+
+
+def test_load_artifacts_suggests_local_data_models(monkeypatch, tmp_path: Path) -> None:
+    """Quando gli artefatti mancano al path di default e data/models esiste,
+    l'errore suggerisce --model-dir data/models (UX fix dev locale)."""
+    from guazza import models
+
+    # Simula default di produzione + artefatti presenti in data/models.
+    fake_prod = tmp_path / "prod"
+    fake_local = tmp_path / "data" / "models"
+    fake_local.mkdir(parents=True)
+    (fake_local / "artifacts.json").write_text("{}")
+
+    monkeypatch.setattr(models, "_DEFAULT_MODEL_DIR", fake_prod)
+    with pytest.raises(FileNotFoundError, match="--model-dir data/models"):
+        models.load_artifacts(fake_prod)
+
+
+def test_load_artifacts_no_hint_outside_default(monkeypatch, tmp_path: Path) -> None:
+    """Il suggerimento '--model-dir data/models' appare solo se il path è il default."""
+    from guazza import models
+
+    other = tmp_path / "custom"
+    other.mkdir()
+    monkeypatch.setattr(models, "_DEFAULT_MODEL_DIR", other)
+    with pytest.raises(FileNotFoundError) as excinfo:
+        models.load_artifacts(other)
+    # Nessun suggerimento quando il path non è il default di produzione.
+    assert "--model-dir" not in str(excinfo.value)
