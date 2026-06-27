@@ -191,7 +191,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **315 test**, tutti verdi
+- **334 test**, tutti verdi
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -710,14 +710,11 @@ in D-016. 🟡 La versione multi-anno resta gated sull'accumulo forward (deploy)
 - `.github/workflows/ci.yml`: trigger `push tags: ['v*.*.*']` → `test` (ruff/mypy/pytest su Python 3.13) → `build` (buildx + push su `ghcr.io/iltruma/guazza` con tag `vX.Y.Z` e `X.Y.Z`). Cache GHA. `permissions: contents:read, packages:write`.
 - Primo tag di test: **v0.9.0** (build & push verificati). Prossimo step: S-B (manifest Houston + primo pod web).
 
-### Sprint 9 — Model monitoring + nowcasting
-**Dipendenza**: Deploy nel homelab completato (Sprint 8)
+### Sprint 9 — Adaptive Conformal Inference + monitor (completato — 2026-06-27, v0.10.0)
 
-- Job cron che calcola `coverage_empirical_30d` rolling e la confronta con target (80% per CI80, 90% per CI90)
-- Alert se coverage scende sotto soglia: log `ERROR` + ping `Healthchecks.io` fail
-- Requisito obbligatorio D-004
+Vedi sezione dedicata in "Cosa è stato fatto".
 
-#### Nowcasting orario — da pianificare (opzione C)
+#### Nowcasting orario — rimandato a Sprint 11+
 
 Predizione oraria 0-6h con aggiornamento ogni 15-30 min. Architetturalmente separato dal modello day-ahead:
 

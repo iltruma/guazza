@@ -425,3 +425,59 @@ SIR realtime (CET naive, UTC+1 fisso), ARPAT NRT (locale CEST naive), Netatmo (U
 **Conseguenze**:
 - Netatmo migliora comunque il blocco `current` ("adesso") dell'hero, gratis, via selezione bbox dinamica — nessuna config per Cercina.
 - Lo storico Netatmo parte dal deploy: l'analisi offset (D-018 punto 3) non è eseguibile prima di 12-18 mesi di realtime.
+
+## D-019 — Adaptive Conformal Inference vs online LightGBM per il drift di calibrazione
+
+**Data**: 2026-06-27
+
+**Contesto**: KI-023 — walk-forward CV 2025-2026 mostra drift di calibrazione CQR:
+`coverage_80` = 0.688/0.699 vs target 0.80 su tmin/tmax, scarto di 5-11pp.
+Il calibration set statico (364 righe, feb-mag 2026) non è rappresentativo
+dei dati di produzione futuri. Due vie correttive possibili.
+
+**Opzioni**:
+1. **Online LightGBM**: riaddestrare periodicamente il modello su dati freschi
+2. **Adaptive Conformal Inference (ACI)**: Gibbs & Candès 2021 — correggere
+   solo la confidenza (α_t adattivo), modello congelato
+
+**Scelta**: opzione 2 (ACI).
+
+**Motivazione**:
+- Il drift osservato è di **calibrazione** (la predizione puntuale è decente,
+  ma i bound CI sono troppo stretti), non di accuratezza (MAE non degradato
+  significativamente). Correggere la confidenza è sufficiente e molto più
+  economico di riaddestrare un LightGBM con 6 modelli NWP.
+- ACI richiede solo le coppie (prediction, actual) già presenti in
+  `predictions.*_obs` — nessun accesso alle feature originali, nessun
+  accumulo di training set, nessun costo computazionale.
+- Online LightGBM su DuckDB single-writer in un CronJob k8s è fragile:
+  richiede lock, accumulo features, retrain periodico. Da valutare solo se
+  dopo 30-60gg di ACI la copertura è in target ma il MAE cresce.
+
+**Algoritmo**: `alpha_{t+1} = clip(alpha_t + γ·(α_target − err_t), ε, 1−ε)`
+con γ = 0.005, ε = 0.01. Mapping α → larghezza CI: `width_corrected =
+width_CQR · (α_target / α_t)`. Dopo il cold start, la copertura long-run
+marginale converge a 1−α_target indipendentemente dal distribution shift.
+
+**Cold start N=30**: le prime 30 osservazioni usano CQR statico invariato
+(`n_updates < 30` → ACI in bypass). Motivazione: sotto 30 aggiornamenti
+la stima di α_t è dominata dal rumore (un singolo errore sposta α del
+3-5%); 30 è il punto in cui la varianza campionaria è ≤ 10% di γ.
+Equivalente a ~30 giorni di produzione (una observation al giorno per
+target, dopo che D+0…D+7 sono backfillati).
+
+**Monitor separato** (`jobs/monitor.py`): calcola `coverage_30d` per
+(target, lead_bucket) aggregato, indipendente dal predict job. Due motivi:
+1. Il predict job aggiorna ACI e genera previsioni — confondere feedback
+   (coverage reale) e azione (correzione α_t) in un unico job rende il
+   loop non debuggabile.
+2. Separazione = il monitor può fallire (`/fail` su Healthchecks) senza
+   bloccare la generazione delle previsioni, e viceversa.
+
+**Conseguenze**:
+- `aci_state` in DuckDB persiste α_t per (target, lead_bucket) — sopravvive
+  ai restart.
+- Nessuna modifica al contract JSON: il consumatore vede i bound CI di
+  sempre, semplicemente corretti da ACI quando warm.
+- Se dopo 30-60gg di operatività la copertura è in target ma il MAE cresce
+  → riaprire l'opzione online LightGBM (Sprint 10+).

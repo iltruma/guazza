@@ -448,7 +448,28 @@ riportano la pressione; il valore viene solo da Open-Meteo quando il job `realti
 inserisce le sue osservazioni sintetiche. Se il job non è stato eseguito di recente
 il campo è `null` e la 4a cella della stats grid mostra `—`.
 
-## KI-023 — Spike anomaly target: degradato in walk-forward CV (+28/+44% MAE)
+## KI-023 — Drift di calibrazione CQR rilevato in walk-forward CV
+
+**Severità**: media (risolto con ACI in Sprint 9)
+**Stato**: risolto (`AdaptiveConformalizer` in `models.py`, v0.10.0)
+
+Walk-forward CV 4 fold, 2023-01 → 2026-06, mostra drift di calibrazione CQR nei fold
+recenti (2025-2026):
+
+| Target | Coverage 80% target | Coverage 80% effettivo | Drift |
+|---|---|---|---|
+| tmin_c | 0.80 | 0.688 | −11pp |
+| tmax_c | 0.80 | 0.699 | −10pp |
+
+Il calibration set statico (364 righe, feb-mag 2026) non è rappresentativo dei dati di
+produzione futuri. Il drift è di calibrazione, non di accuratezza (MAE stabile).
+
+**Risoluzione**: Adaptive Conformal Inference (Gibbs & Candès 2021) in `models.py`.
+`AdaptiveConformalizer` aggiusta α_t online sulle coppie (prediction, actual), garantendo
+copertura long-run marginal anche sotto distribution shift. Cold start N=30 (CQR statico
+fino a 30 osservazioni). Persistenza in DuckDB (`aci_state`). Dettaglio in D-019.
+
+## KI-024 — Spike anomaly target: degradato in walk-forward CV (+28/+44% MAE)
 
 **Severità**: bassa (spike documentato, non in produzione)
 **Stato**: disattivato, candidato per retry con climatologia raffinata
@@ -465,7 +486,7 @@ Soglia di accettazione +3% MAE tmin/tmax: non centrata, rollback eseguito.
 
 **Causa probabile**: la climatologia usata (`clim_tmin_mean`, mensile, aggregata su 4 anni) è troppo "grezza" per essere un buon anchor di anomalia. La media mensile smussa la variabilità settimanale, e sui 4 anni del training è dominata da 2-3 stagionalità recenti climaticamente non rappresentative. Il modello impara l'anomalia ma non ha feature `anom_*_c` in `FEATURE_COLS` per collegarla al NWP, quindi deve re-imparare il livello assoluto dalle stesse feature che usava prima, con perdita netta.
 
-**Side-finding emerso dal test**: `coverage_80` nei fold recenti (2025-2026) è 0.688/0.699 su tmin/tmax (target 0.80) — **drift di calibrazione CQR già in atto** sui dati di produzione. È esattamente il caso d'uso ACI (vedi Sprint 9).
+**Side-finding emerso dal test**: `coverage_80` nei fold recenti (2025-2026) è 0.688/0.699 su tmin/tmax (target 0.80) — **drift di calibrazione CQR già in atto** sui dati di produzione. Vedi KI-023; risolto con ACI in Sprint 9 (v0.10.0).
 
 **Cosa fare se si vuole ritentare**:
 1. Sostituire `clim_tmin_mean` mensile con climatologia settimanale percentile (10/50/90) calcolata su tutti gli anni SIR (2004+) invece dei soli 4 anni del training
