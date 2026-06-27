@@ -107,21 +107,16 @@ mancanti: AR-ENELSB-SANGIOVANNI (BENZENE, CO per casa_cesto) e FI-LAVAGNINI
 ## KI-018 — Cutover OpenAQ → ARPAT NRT OpenData: righe storiche source='openaq' nel DB
 
 **Severità**: informativa
-**Stato**: da eseguire sul DB locale e sul server homelab
+**Stato**: risolto (2026-06-27, v0.11.2)
 
 Il fetcher OpenAQ è stato rimosso (2026-05-22). Le righe `source='openaq'` in
 `observations` sono ormai orfane. Lo storico AQ non serve (`get_current_air_quality()`
 usa finestra 3h, AQ non è feature di training).
 
-Prima di avviare il prossimo `realtime`, eseguire la pulizia:
-
-```sql
-SELECT COUNT(*) AS openaq_rows FROM observations WHERE source = 'openaq';
-DELETE FROM observations WHERE source = 'openaq';
-```
-
-Dopodiché il cron `realtime` (ogni 30 min) popola automaticamente i dati ARPAT NRT.
-Nessun backfill storico necessario.
+**Pulizia eseguita** (verificata 2026-06-27): `SELECT COUNT(*) FROM observations
+WHERE source='openaq'` → 0 righe. Niente da cancellare localmente. Stessa
+situazione attesa sul server homelab (k3s+ArgoCD ricrea il DB pulito al primo
+deploy).
 
 **Note sul design ARPAT NRT OpenData** (apprese durante l'implementazione 2026-05-22):
 - Endpoint: `https://opendata.arpat.toscana.it/.../json_orari_nrt/{STATION_ID}/{DD-MM-YYYY}`
@@ -367,7 +362,7 @@ temporale diversa (09:00 del 13/05 → 09:00 del 14/05).
 ## KI-013 — Timestamp SIR realtime: naive CEST salvato senza timezone
 
 **Severità**: bassa (impatto solo display frontend, non training)
-**Stato**: workaround stabile (2026-05-18)
+**Stato**: risolto (D-017, 2026-05-30)
 
 **Problema**: il fetcher SIR realtime salva i timestamp delle osservazioni come
 `datetime` naive in Python, che DuckDB tratta come ora locale CEST. Il backend
@@ -375,9 +370,17 @@ in `get_current_conditions` aggiungeva il suffisso `+00:00` al timestamp
 formattato, facendo credere al browser JS che fosse UTC → conversione a CEST
 → display con +2h di scarto.
 
-**Workaround**: rimosso `|| '+00:00'` dal `strftime` in `get_current_conditions`.
-Il timestamp viene restituito come stringa ISO naked; `new Date("...T17:15:00")`
-senza suffisso viene interpretato come ora locale dal browser (corretto).
+**Workaround iniziale** (2026-05-18): rimosso `|| '+00:00'` dal `strftime` in
+`get_current_conditions`. Il timestamp viene restituito come stringa ISO naked;
+`new Date("...T17:15:00")` senza suffisso viene interpretato come ora locale
+dal browser (corretto).
+
+**Risoluzione definitiva** (D-017, 2026-05-30): standardizzazione in **UTC naive**
+per tutte le osservazioni nel DB. SIR realtime/bulk convertono CEST→UTC
+(`-1h`), ARPAT NRT (hourly) converte locale→UTC, Netatmo invariato.
+`get_current_conditions` ora formatta con suffisso `Z` (`%Y-%m-%dT%H:%M:%SZ`)
+e il frontend lo interpreta come UTC esplicito. Niente più workaround,
+tutto coerente con la convenzione UTC.
 
 **Conseguenza residua**: c'è una discrepanza di ~0-60 minuti tra il timestamp
 mostrato e l'ora locale attesa, causata dal fatto che SIR aggiorna i dati con
@@ -451,7 +454,7 @@ il campo è `null` e la 4a cella della stats grid mostra `—`.
 ## KI-023 — Drift di calibrazione CQR rilevato in walk-forward CV
 
 **Severità**: media (risolto con ACI in Sprint 9)
-**Stato**: risolto (`AdaptiveConformalizer` in `models.py`, v0.10.0)
+**Stato**: risolto (`AdaptiveConformalizer` in `models.py`, v0.10.0 — 2026-06-27)
 
 Walk-forward CV 4 fold, 2023-01 → 2026-06, mostra drift di calibrazione CQR nei fold
 recenti (2025-2026):
@@ -472,7 +475,7 @@ fino a 30 osservazioni). Persistenza in DuckDB (`aci_state`). Dettaglio in D-019
 ## KI-024 — Spike anomaly target: degradato in walk-forward CV (+28/+44% MAE)
 
 **Severità**: bassa (spike documentato, non in produzione)
-**Stato**: disattivato, candidato per retry con climatologia raffinata
+**Stato**: disattivato (2026-06-27), candidato per retry con climatologia raffinata
 
 **Prova**: walk-forward CV 4 fold, 2023-01 → 2026-06, 6 modelli NWP.
 
