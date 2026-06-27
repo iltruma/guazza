@@ -370,7 +370,7 @@ def test_upsert_forecasts_weather_code_null(tmp_db: Path) -> None:
     ts_run   = datetime(2026, 5, 18, 6, 0, 0)
     ts_valid = datetime(2026, 5, 18, 18, 0, 0)
     rec = {
-        "source": "open_meteo_gfs025", "location_id": "casa_campi",
+        "source": "open_meteo_icon_eu", "location_id": "casa_campi",
         "ts_run": ts_run, "ts_valid": ts_valid, "lead_time_h": 12,
         "temp_c": 15.0,
         # weather_code assente → None
@@ -380,7 +380,7 @@ def test_upsert_forecasts_weather_code_null(tmp_db: Path) -> None:
         db.upsert_forecasts([rec])
         row = db.execute(
             "SELECT weather_code FROM forecasts WHERE source = ?",
-            ["open_meteo_gfs025"],
+            ["open_meteo_icon_eu"],
         ).fetchone()
 
     assert row is not None

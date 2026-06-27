@@ -24,7 +24,6 @@ const NWP_SOURCES = [
   'open_meteo_ecmwf_ifs',
   'open_meteo_icon_eu',
   'open_meteo_icon_d2',
-  'open_meteo_gfs025',
   'open_meteo_arome_france',
   'open_meteo_italia_meteo_arpae_icon_2i',
 ];
@@ -32,7 +31,6 @@ const NWP_LABELS = {
   'open_meteo_ecmwf_ifs':                    'ECMWF IFS',
   'open_meteo_icon_eu':                      'ICON-EU',
   'open_meteo_icon_d2':                      'ICON-D2',
-  'open_meteo_gfs025':                       'GFS 0.25°',
   'open_meteo_arome_france':                 'AROME France',
   'open_meteo_italia_meteo_arpae_icon_2i':   'ARPAE ICON-2I',
 };

@@ -59,19 +59,18 @@ def test_collect_rows_creates_one_per_source_per_var() -> None:
             if "FROM predictions" in sql:
                 return FakeResult([("casa_campi", 10.5, 19.5, 0.8)])
             if "FROM forecasts" in sql:
-                # 6 NWP, tutti per casa_campi
+                # 5 NWP, tutti per casa_campi
                 return FakeResult([
                     ("open_meteo_ecmwf_ifs", "casa_campi", 11.0, 21.0, 0.0),
                     ("open_meteo_icon_eu", "casa_campi", 11.5, 20.5, 0.5),
                     ("open_meteo_icon_d2", "casa_campi", 12.0, 21.5, 0.2),
-                    ("open_meteo_gfs025", "casa_campi", 11.2, 20.8, 0.3),
                     ("open_meteo_arome_france", "casa_campi", 10.8, 20.2, 0.1),
                     ("open_meteo_italia_meteo_arpae_icon_2i", "casa_campi", 10.9, 20.3, 0.4),
                 ])
             return FakeResult([])
 
     rows = _collect_rows(FakeCon(), date(2026, 6, 27))
-    # 1 loc × 3 var × (1 Guazza + 6 NWP) = 21
+    # 1 loc × 3 var × (1 Guazza + 5 NWP) = 18
     assert len(rows) == 3 * (1 + len(NWP_SOURCES))
     # Tupla = (loc, date, source, variable, forecast, actual, abs_err).
     # lead_h NON è nella tupla: è cablato nello SQL (LEAD_H = 24).

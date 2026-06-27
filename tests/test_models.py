@@ -35,8 +35,6 @@ CREATE TABLE IF NOT EXISTS features_daily (
     icon_humidity_pct DOUBLE, icon_wind_ms DOUBLE,
     icond2_tmin_c DOUBLE, icond2_tmax_c DOUBLE, icond2_precip_mm DOUBLE,
     icond2_humidity_pct DOUBLE, icond2_wind_ms DOUBLE,
-    gfs_tmin_c DOUBLE, gfs_tmax_c DOUBLE, gfs_precip_mm DOUBLE,
-    gfs_humidity_pct DOUBLE, gfs_wind_ms DOUBLE,
     arome_tmin_c DOUBLE, arome_tmax_c DOUBLE, arome_precip_mm DOUBLE,
     arome_humidity_pct DOUBLE, arome_wind_ms DOUBLE,
     icon2i_tmin_c DOUBLE, icon2i_tmax_c DOUBLE, icon2i_precip_mm DOUBLE,
@@ -116,8 +114,6 @@ def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) 
                 70.0, 3.0,
                 tmin + rng.normal(0, 0.4), tmax + rng.normal(0, 0.4), precip,
                 70.0, 3.0,
-                tmin + rng.normal(0, 0.6), tmax + rng.normal(0, 0.6), precip,
-                70.0, 3.0,
                 tmin + rng.normal(0, 0.7), tmax + rng.normal(0, 0.7), precip,
                 70.0, 3.0,
                 tmin + rng.normal(0, 0.4), tmax + rng.normal(0, 0.4), precip,
@@ -140,7 +136,7 @@ def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) 
             ))
 
     db._conn.executemany(
-        "INSERT INTO features_daily VALUES (" + ",".join(["?"] * 62) + ")",
+        "INSERT INTO features_daily VALUES (" + ",".join(["?"] * 57) + ")",
         rows,
     )
 

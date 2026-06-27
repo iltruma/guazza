@@ -64,10 +64,10 @@ def sample_row() -> pd.Series:
     """Row da features_daily con dati NWP plausibili (alta umidità, vento basso)."""
     return pd.Series({
         "ecmwf_humidity_pct": 70.0, "icon_humidity_pct":   75.0,
-        "icond2_humidity_pct": 72.0, "gfs_humidity_pct":   68.0,
+        "icond2_humidity_pct": 72.0,
         "arome_humidity_pct": 74.0, "icon2i_humidity_pct": 71.0,
         "ecmwf_wind_ms": 2.0,  "icon_wind_ms":   3.0,
-        "icond2_wind_ms": 2.5, "gfs_wind_ms":    1.5,
+        "icond2_wind_ms": 2.5,
         "arome_wind_ms": 2.8,  "icon2i_wind_ms": 2.2,
     })
 

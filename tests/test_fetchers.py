@@ -523,10 +523,10 @@ _OM_MULTILEAD_RESPONSE: dict[str, Any] = {
 
 
 def test_multilead_hourly_params_per_model() -> None:
-    """Numero variabili = 4 × orizzonte del modello; gfs025 (orizzonte 0) → vuoto."""
+    """Numero variabili = 4 × orizzonte del modello."""
     assert len(_multilead_hourly_params("ecmwf_ifs")) == 4 * 7
     assert len(_multilead_hourly_params("italia_meteo_arpae_icon_2i")) == 4 * 2
-    assert _multilead_hourly_params("gfs025") == []
+    assert len(_multilead_hourly_params("icon_d2")) == 4 * 1
 
 
 def test_parse_om_multilead_lead_and_ts_run() -> None:

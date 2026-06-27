@@ -188,7 +188,6 @@ def test_spread_with_partial_models(db: DuckDBClient) -> None:
         WHERE nwp_tmin_spread IS NOT NULL
           AND ecmwf_tmin_c IS NOT NULL
           AND icon_tmin_c IS NOT NULL
-          AND gfs_tmin_c IS NULL
           AND icond2_tmin_c IS NULL
           AND icon2i_tmin_c IS NULL
     """).fetchone()
