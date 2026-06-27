@@ -16,7 +16,6 @@ from guazza.output import (
     _dewpoint,
     _modal_weather_code,
     _prob_exceeds,
-    apply_intraday_correction,
     build_signals,
     build_signals_today,
     compute_coverage_30d,
@@ -25,7 +24,6 @@ from guazza.output import (
     get_current_air_quality,
     get_current_conditions,
     get_daily_weather_code,
-    get_intraday_observed,
     get_nwp_model_comparison,
     get_nwp_models_hourly,
     write_location_json,
@@ -1492,137 +1490,3 @@ def test_write_location_json_weather_code_null(
     )
     data = json.loads(path.read_text())
     assert data["days"][0]["weather_code"] is None
-
-
-# ── apply_intraday_correction ────────────────────────────────────────────────
-
-@pytest.fixture
-def intraday_pred() -> dict:
-    return {
-        "tmin_c": {
-            "p05": 5.0, "p10": 6.0, "p50": 8.0, "p90": 12.0, "p95": 13.0,
-            "ci80_lo": 6.0, "ci80_hi": 12.0, "ci90_lo": 5.0, "ci90_hi": 13.0,
-        },
-        "tmax_c": {
-            "p05": 18.0, "p10": 19.0, "p50": 22.0, "p90": 25.0, "p95": 26.0,
-            "ci80_lo": 19.0, "ci80_hi": 25.0, "ci90_lo": 18.0, "ci90_hi": 26.0,
-        },
-        "precip_mm": {
-            "p05": 0.0, "p10": 0.0, "p50": 4.0, "p90": 8.0, "p95": 10.0,
-            "ci80_lo": 0.0, "ci80_hi": 8.0, "ci90_lo": 0.0, "ci90_hi": 10.0,
-        },
-    }
-
-
-def test_apply_intraday_no_obs(intraday_pred: dict) -> None:
-    obs = {"precip_cumday_mm": None, "tmin_observed_c": None, "tmax_observed_c": None, "obs_count": 0}
-    now = datetime(2026, 5, 30, 10, 0, tzinfo=UTC)  # 12:00 CET
-    result = apply_intraday_correction(intraday_pred, obs, now)
-    assert result["precip_observed_mm"] is None
-    assert result["precip_remaining_mm"] is None
-    assert result["tmin_corrected_c"] is None
-    assert result["tmax_corrected_c"] is None
-    assert result["obs_count"] == 0
-
-
-def test_apply_intraday_precip_remaining(intraday_pred: dict) -> None:
-    obs = {"precip_cumday_mm": 1.5, "tmin_observed_c": 7.0, "tmax_observed_c": 20.0, "obs_count": 5}
-    now = datetime(2026, 5, 30, 11, 0, tzinfo=UTC)  # 13:00 CET, 13h remaining
-    result = apply_intraday_correction(intraday_pred, obs, now)
-    assert result["precip_observed_mm"] == 1.5
-    # p50=4.0, observed=1.5 → remaining=2.5
-    assert result["precip_remaining_mm"] == 2.5
-    assert result["precip_corrected"] is not None
-
-
-def test_apply_intraday_precip_exceeded(intraday_pred: dict) -> None:
-    obs = {"precip_cumday_mm": 6.0, "tmin_observed_c": None, "tmax_observed_c": None, "obs_count": 5}
-    now = datetime(2026, 5, 30, 11, 0, tzinfo=UTC)
-    result = apply_intraday_correction(intraday_pred, obs, now)
-    # 6.0 > p50=4.0 → remaining clamped to 0
-    assert result["precip_remaining_mm"] == 0.0
-
-
-def test_apply_intraday_ci_linear_scaling(intraday_pred: dict) -> None:
-    obs = {"precip_cumday_mm": 0.0, "tmin_observed_c": None, "tmax_observed_c": None, "obs_count": 5}
-    # 08:00 UTC = 10:00 CET → 14h remaining → ratio = 14/24
-    now = datetime(2026, 5, 30, 8, 0, tzinfo=UTC)
-    result = apply_intraday_correction(intraday_pred, obs, now)
-    corr = result["precip_corrected"]
-    assert corr is not None
-    ratio = 14 / 24
-    assert corr["ci90_hi"] == pytest.approx(10.0 * ratio, abs=0.01)
-    assert corr["ci80_hi"] == pytest.approx(8.0 * ratio, abs=0.01)
-
-
-def test_apply_intraday_tmin_before_9h(intraday_pred: dict) -> None:
-    obs = {"precip_cumday_mm": None, "tmin_observed_c": 6.5, "tmax_observed_c": None, "obs_count": 5}
-    # 06:00 UTC = 08:00 CET → ora locale < 9 → tmin non corretto
-    now = datetime(2026, 5, 30, 6, 0, tzinfo=UTC)
-    result = apply_intraday_correction(intraday_pred, obs, now)
-    assert result["tmin_corrected_c"] is None
-
-
-def test_apply_intraday_tmin_after_9h(intraday_pred: dict) -> None:
-    obs = {"precip_cumday_mm": None, "tmin_observed_c": 6.5, "tmax_observed_c": None, "obs_count": 5}
-    # 08:00 UTC = 10:00 CET → ora locale >= 9 → tmin corretto
-    now = datetime(2026, 5, 30, 8, 0, tzinfo=UTC)
-    result = apply_intraday_correction(intraday_pred, obs, now)
-    assert result["tmin_corrected_c"] == 6.5
-
-
-def test_apply_intraday_tmax_before_14h(intraday_pred: dict) -> None:
-    obs = {"precip_cumday_mm": None, "tmin_observed_c": None, "tmax_observed_c": 21.0, "obs_count": 5}
-    # 11:00 UTC = 13:00 CET → ora locale < 14 → tmax non corretto
-    now = datetime(2026, 5, 30, 11, 0, tzinfo=UTC)
-    result = apply_intraday_correction(intraday_pred, obs, now)
-    assert result["tmax_corrected_c"] is None
-
-
-def test_apply_intraday_tmax_after_14h(intraday_pred: dict) -> None:
-    obs = {"precip_cumday_mm": None, "tmin_observed_c": None, "tmax_observed_c": 21.0, "obs_count": 5}
-    # 13:00 UTC = 15:00 CET → ora locale >= 14 → tmax corretto
-    now = datetime(2026, 5, 30, 13, 0, tzinfo=UTC)
-    result = apply_intraday_correction(intraday_pred, obs, now)
-    assert result["tmax_corrected_c"] == 21.0
-
-
-def test_apply_intraday_tmin_insufficient_obs(intraday_pred: dict) -> None:
-    obs = {"precip_cumday_mm": None, "tmin_observed_c": 6.5, "tmax_observed_c": None, "obs_count": 2}
-    now = datetime(2026, 5, 30, 10, 0, tzinfo=UTC)  # 12:00 CET
-    result = apply_intraday_correction(intraday_pred, obs, now)
-    # obs_count < N_MIN=3 → nessuna correzione tmin
-    assert result["tmin_corrected_c"] is None
-
-
-def test_apply_intraday_hours_remaining(intraday_pred: dict) -> None:
-    obs = {"precip_cumday_mm": None, "tmin_observed_c": None, "tmax_observed_c": None, "obs_count": 0}
-    # 20:00 UTC = 22:00 CET → 2h remaining
-    now = datetime(2026, 5, 30, 20, 0, tzinfo=UTC)
-    result = apply_intraday_correction(intraday_pred, obs, now)
-    assert result["hours_remaining"] == 2
-
-
-# ── get_intraday_observed ────────────────────────────────────────────────────
-
-def test_get_intraday_observed_no_data(seeded_db: Path) -> None:
-    with DuckDBClient(db_path=seeded_db) as db:
-        result = get_intraday_observed(db, "casa_campi", "2026-05-30")
-    assert result["obs_count"] == 0
-    assert result["precip_cumday_mm"] is None
-
-
-def test_get_intraday_observed_with_data(seeded_db: Path) -> None:
-    with DuckDBClient(db_path=seeded_db) as db:
-        db.execute("""
-            INSERT INTO observations (source, station_id, location_id, ts, granularity, temp_c, precip_cumday_mm)
-            VALUES
-              ('sir_toscana', 'TEST01', 'casa_campi', '2026-05-30 07:00:00', 'realtime', 12.5, 0.0),
-              ('sir_toscana', 'TEST01', 'casa_campi', '2026-05-30 08:00:00', 'realtime', 13.0, 1.2),
-              ('sir_toscana', 'TEST01', 'casa_campi', '2026-05-30 09:00:00', 'realtime', 14.2, 1.2)
-        """)
-        result = get_intraday_observed(db, "casa_campi", "2026-05-30")
-    assert result["obs_count"] == 3
-    assert result["precip_cumday_mm"] == pytest.approx(1.2)
-    assert result["tmin_observed_c"] == pytest.approx(12.5)
-    assert result["tmax_observed_c"] == pytest.approx(14.2)

@@ -263,7 +263,7 @@ separati — sono due colonne dello stesso oggetto previsione.
 
 ## D-015 — `build_signals_today`: indicatori DLE per D+0 da osservazioni realtime
 
-**Data**: 2026-05-18
+**Data**: 2026-05-18 (rivisto 2026-06-27)
 
 **Contesto**: per il giorno corrente (D+0), il DLE può usare sia le previsioni
 ML (lead ~0-6h) sia le osservazioni realtime della stazione SIR/Netatmo degli
@@ -280,10 +280,17 @@ e sovrascrive i segnali osservabili con valori deterministici 0/1:
 - `T2m_p50` → temperatura corrente osservata
 - `P(Tmin < X)` e `Tmin_p10` → restano da ML (la notte non è ancora terminata)
 
-**Conseguenza**: gli indicatori di oggi sul frontend riflettono la situazione
-*attuale* (realtime), non la previsione. Questo è il comportamento atteso per
-uno strumento operativo. Se il realtime non è disponibile (`current_obs=None`),
-si usa il fallback ML puro senza degradazione.
+**Rettifica 2026-06-27**: la correzione intraday Tmin/Tmax sulla **card** del
+forecast (blocco `days[0].intraday.tmin_corrected_c` / `tmax_corrected_c`) è
+stata rimossa. Causa: la correzione sostituiva la previsione ML con la
+lettura realtime più bassa del giorno, che in assenza di letture notturne
+portava a valori assurdi (es. Tmin = 36°C di pomeriggio). La correzione
+intraday per **Tmin** era attiva solo con copertura notturna delle
+osservazioni realtime, condizione non garantita dal job cron attuale.
+
+Conseguenza: card `tmin_c` e `tmax_c` di D+0 = previsione ML pura, identica
+al grafico. Realtime continua a essere usato per `current` (hero) e per gli
+**indicatori DLE** (`build_signals_today`), dove la logica reattiva è utile.
 
 **Limitazione**: il vento realtime è spesso `null` (KI-014), quindi `P(wind > 40kmh)`
 resta da NWP ensemble anche con `build_signals_today`.

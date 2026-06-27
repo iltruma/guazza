@@ -27,8 +27,6 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 from loguru import logger
 
-from guazza.fetch_common import ITALY_TZ as _ITALY_TZ
-
 if TYPE_CHECKING:
     from guazza.indicators import IndicatorResult
     from guazza.storage import DuckDBClient
@@ -722,111 +720,6 @@ def get_nwp_models_hourly(
     ]
 
 
-_N_MIN_INTRADAY = 3  # osservazioni minime per attivare correzione tmin/tmax
-
-
-def get_intraday_observed(
-    db: DuckDBClient,
-    location_id: str,
-    date_utc: str,
-) -> dict[str, Any]:
-    """Legge osservazioni realtime SIR del giorno corrente per la correzione intraday D+0.
-
-    Args:
-        date_utc: data in formato "YYYY-MM-DD" (UTC — coincide con data locale per T<22:00 CET)
-
-    Returns:
-        Dict con precip_cumday_mm, tmin_observed_c, tmax_observed_c, obs_count.
-    """
-    row = db.execute("""
-        SELECT
-            MAX(precip_cumday_mm)           AS precip_cumday,
-            MIN(temp_c)                     AS tmin_obs,
-            MAX(temp_c)                     AS tmax_obs,
-            COUNT(*) FILTER (WHERE temp_c IS NOT NULL) AS obs_count
-        FROM observations
-        WHERE location_id = ?
-          AND granularity  = 'realtime'
-          -- Solo SIR: i moduli Netatmo outdoor al sole hanno bias da irraggiamento
-          -- (fino a +8°C) che falserebbe il MAX usato per ancorare tmax.
-          AND source       = 'sir_toscana'
-          AND CAST(ts AS DATE) = ?
-    """, [location_id, date_utc]).fetchone()
-
-    if row is None:
-        return {"precip_cumday_mm": None, "tmin_observed_c": None,
-                "tmax_observed_c": None, "obs_count": 0}
-
-    return {
-        "precip_cumday_mm": float(row[0]) if row[0] is not None else None,
-        "tmin_observed_c":  float(row[1]) if row[1] is not None else None,
-        "tmax_observed_c":  float(row[2]) if row[2] is not None else None,
-        "obs_count":        int(row[3]),
-    }
-
-
-def apply_intraday_correction(
-    pred: dict[str, dict[str, float]],
-    obs: dict[str, Any],
-    now_utc: datetime,
-) -> dict[str, Any]:
-    """Correzione aritmetica D+0 ancorata alle osservazioni intraday SIR.
-
-    Precip: remaining = max(0, p50 - observed); CI scalato linearmente per hours_remaining/24.
-    Tmin:   se obs_count >= N_MIN e ora locale >= 9 → usa tmin osservato.
-    Tmax:   se obs_count >= N_MIN e ora locale >= 14 → usa tmax osservato.
-
-    Returns:
-        Blocco "intraday" da inserire in days[0].
-    """
-    now_local = now_utc.replace(tzinfo=UTC).astimezone(_ITALY_TZ)
-    hours_remaining = max(0, 24 - now_local.hour)
-    ratio = hours_remaining / 24.0
-
-    precip_obs = obs.get("precip_cumday_mm")
-    obs_count = obs.get("obs_count", 0)
-
-    precip_p50 = pred.get("precip_mm", {}).get("p50")
-    precip_remaining: float | None = None
-    precip_corrected: dict[str, float | None] | None = None
-
-    if precip_obs is not None and precip_p50 is not None:
-        precip_remaining = round(max(0.0, precip_p50 - precip_obs), 2)
-        pm = pred["precip_mm"]
-
-        def _scale(v: float | None) -> float | None:
-            return round(max(0.0, v) * ratio, 2) if v is not None else None
-
-        precip_corrected = {
-            "p50":     round(precip_remaining, 2),
-            "ci80_lo": _scale(pm.get("ci80_lo")),
-            "ci80_hi": _scale(pm.get("ci80_hi")),
-            "ci90_lo": _scale(pm.get("ci90_lo")),
-            "ci90_hi": _scale(pm.get("ci90_hi")),
-        }
-
-    tmin_corrected: float | None = None
-    tmax_corrected: float | None = None
-
-    if obs_count >= _N_MIN_INTRADAY:
-        tmin_obs = obs.get("tmin_observed_c")
-        tmax_obs = obs.get("tmax_observed_c")
-        if now_local.hour >= 9 and tmin_obs is not None:
-            tmin_corrected = round(tmin_obs, 1)
-        if now_local.hour >= 14 and tmax_obs is not None:
-            tmax_corrected = round(tmax_obs, 1)
-
-    return {
-        "precip_observed_mm":  round(precip_obs, 2) if precip_obs is not None else None,
-        "precip_remaining_mm": precip_remaining,
-        "precip_corrected":    precip_corrected,
-        "tmin_corrected_c":    tmin_corrected,
-        "tmax_corrected_c":    tmax_corrected,
-        "obs_count":           obs_count,
-        "hours_remaining":     hours_remaining,
-    }
-
-
 def compute_hourly_profile(
     db: DuckDBClient,
     location_id: str,
@@ -1059,7 +952,6 @@ def write_location_json(
             },
             "hourly":          day.get("hourly"),
             "nwp_comparison":  day.get("nwp_comparison"),
-            "intraday":        day.get("intraday"),
         })
 
     payload: dict[str, Any] = {

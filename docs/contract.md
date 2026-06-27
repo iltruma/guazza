@@ -74,7 +74,7 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 - `nwp_models_hourly[].data[].weather_code` è il codice WMO per quell'ora e modello — `int | null`.
 - `precip_mm.mean` è il valore atteso E[precip] della distribuzione (utile per valutazione economica/rischio). Solo per `precip_mm` — `tmin_c`/`tmax_c` non espongono `mean`.
 - `days[].indicators.*.rule_text` è il testo della regola YAML che ha prodotto il verdetto, per debugging e trasparenza.
-- `days[0].intraday` è il blocco di correzione aritmetica D+0 (presente solo se `target_date == today` e ci sono osservazioni realtime SIR): `{precip_observed_mm, precip_remaining_mm, precip_corrected: {...}, tmin_corrected_c, tmax_corrected_c, obs_count, hours_remaining}`.
+- ~~`days[0].intraday`~~ rimosso 2026-06-27: la correzione aritmetica D+0 di Tmin/Tmax con le osservazioni SIR realtime generava valori assurdi in assenza di letture notturne (Tmin = 36°C di pomeriggio). Le card `tmin_c`/`tmax_c` per D+0 sono ora la previsione ML pura, identica al grafico orario. Gli **indicatori DLE** (panni, motorino, gelata) continuano a usare `build_signals_today()` con realtime (decisione D-015).
 - `days[].hourly[].temp_ci80_lo/hi` e `precip_ci80_lo/hi` sono le **bande di confidenza orarie CI 80%** derivate per interpolazione dal forecast daily (rescaling dello stesso profilo NWP grezzo con bound `tmin_c.ci80_lo/hi`, `tmax_c.ci80_lo/hi`, `precip_mm.ci80_lo/hi`). Sono `null` se i bound daily sono assenti (es. cold-start CI o modello NWP). Le bande orarie non esistono per il vento (solo `wind_speed_ms` puntuale). Il frontend le usa per disegnare la fascia d'incertezza nei grafici daily/weekly (toggle "Banda CI 80%").
 
 ## `skill.json` — curva di skill (file globale)
