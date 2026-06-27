@@ -481,11 +481,12 @@ class AdaptiveConformalizer:
         `offset` è l'offset CQR calcolato al baseline (alpha_target). ACI lo
         aggiusta: alpha_t più alto → CI più stretto (offset più piccolo),
         alpha_t più basso → CI più largo. Approssimazione lineare attorno
-        al baseline: sufficiente per uno spike, da raffinare in produzione
-        con la quantile function esplicita (normale, t, o quantile empirico).
+        al baseline.
+
+        ponytail: correct() è usato solo nei test sintetici (test_aci_*.py).
+        In produzione il mapping alpha_t→CI passa da apply_aci_correction
+        (scaling moltiplicativo del half-width CQR, più robusto).
         """
-        # k = 5 è una scelta conservativa per forecast reali: cambio di α di
-        # 0.10 (es. da 0.10 a 0.20) modifica l'offset di ~0.5°C su tmin.
         delta_alpha = self.alpha_target - self.alpha_t
         return offset * (1.0 + 5.0 * delta_alpha)
 
@@ -515,12 +516,16 @@ class AdaptiveConformalizer:
         aci = cls(alpha_target=alpha_target, learning_rate=learning_rate, eps=eps)
         aci.alpha_t = max(eps, min(1.0 - eps, alpha_t))
         aci.n_updates = n_updates
-        aci._err_sum = err_sum
+        aci._err_sum = int(err_sum)
         return aci
 
     @property
     def err_rate(self) -> float:
         return self._err_sum / self.n_updates if self.n_updates else 0.0
+
+    @property
+    def err_sum(self) -> int:
+        return self._err_sum
 
 
 # Cold start: prime N osservazioni prima che ACI sia affidabile. CQR statico

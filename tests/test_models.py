@@ -324,7 +324,8 @@ def test_train_all_persists_anomaly_targets(db: DuckDBClient, tmp_path: Path) ->
 
     artifacts = train_all(db, model_dir=model_dir, cal_days=60)
 
-    # ANOMALY_TARGETS include tmin_c e tmax_c
+    # ANOMALY_TARGETS è vuoto dopo rollback spike (KI-024).
+    # Il test verifica che il campo anomaly_targets venga comunque persistito.
     from guazza.features import ANOMALY_TARGETS
     assert set(artifacts.anomaly_targets) == set(ANOMALY_TARGETS)
     assert "precip_mm" not in artifacts.anomaly_targets  # precip resta valore assoluto
@@ -609,11 +610,11 @@ def test_apply_aci_correction_overcoverage_shrinks() -> None:
     assert (hi80 - lo80) < 8.0  # CI stretto
 
 
-def test_get_aci_pair_cold_start() -> None:
+def test_get_aci_pair_cold_start(tmp_path: Path) -> None:
     """get_aci_pair senza state in DB deve restituire ACI freschi con alpha_t == alpha_target."""
     from guazza.models import get_aci_pair
 
-    db = _make_clean_db(__import__("pathlib").Path("/tmp/test_aci_pair"))
+    db = _make_clean_db(tmp_path)
     aci_80, aci_90 = get_aci_pair(db, "tmin_c", "0-6h")
     assert aci_80.alpha_t == 0.20
     assert aci_90.alpha_t == 0.10

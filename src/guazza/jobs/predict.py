@@ -36,6 +36,7 @@ from guazza.jobs._common import DB_OPTION, OUTPUT_DIR_OPTION, job_run
 from guazza.models import (
     LEAD_BUCKETS,
     TARGETS,
+    AdaptiveConformalizer,
     _lead_time_bucket,
     apply_aci_correction,
     get_aci_pair,
@@ -89,24 +90,17 @@ def _to_date(val: Any) -> Any:
 def _aci_update_from_history(db: DuckDBClient) -> int:
     """Aggiorna ACI su TUTTE le predictions passate con actual valorizzato.
 
-    Per ogni (target, lead_bucket) caricato da aci_state (o fresh se cold start),
-    itera sulle predictions con *_obs valorizzato in ordine cronologico e chiama
-    aci.update(covered). Salva lo state finale.
-
-    Idempotenza: n_updates è persistito in aci_state, ogni run ricalcola da lì.
-    Il costo è O(N_predictions) per run, ~1s su 20k righe.
+    Per ogni (target, lead_bucket) crea istanze ACI fresche (`alpha_t = alpha_target`)
+    e itera sull'intera storia in ordine cronologico. Salva lo state finale.
+    Non carica lo state precedente: è deterministico e idempotente (gli stessi
+    dati → stessa evoluzione di `alpha_t`). Il costo è O(N_predictions) per run,
+    ~1s su 20k righe.
 
     Returns:
         Numero di coppie (target, bucket) aggiornate.
     """
-    if not db.execute("""
-        SELECT COUNT(*) FROM information_schema.tables
-        WHERE table_name = 'predictions'
-    """).fetchone()[0]:
-        return 0
-
     rows = db.execute("""
-        SELECT lead_time_h,
+        SELECT ts_valid, lead_time_h,
                tmin_p10, tmin_p90, tmin_p05, tmin_p95, tmin_obs,
                tmax_p10, tmax_p90, tmax_p05, tmax_p95, tmax_obs,
                precip_p10, precip_p90, precip_p05, precip_p95, precip_obs
@@ -124,26 +118,41 @@ def _aci_update_from_history(db: DuckDBClient) -> int:
         "precip_mm": ("precip_obs",  "precip_p10",  "precip_p90",  "precip_p05",  "precip_p95"),
     }
 
+    # Assegna bucket label una volta sola (usato da tutti i loop interni).
+    from guazza.models import _lead_time_bucket as _bucket_fn
+    rows = rows.assign(
+        _bucket=rows["lead_time_h"].apply(_bucket_fn),
+    )
+
     n_updated = 0
     for target, (obs_col, p10_col, p90_col, p05_col, p95_col) in target_obs.items():
         for bucket in LEAD_BUCKETS:
-            aci_80, aci_90 = get_aci_pair(db, target, bucket)
+            # Fresh ACI: parte da alpha_target e itera su tutta la storia.
+            # Idempotente: lo stesso set di dati → stessa evoluzione di alpha_t.
+            aci_80 = AdaptiveConformalizer(alpha_target=0.20, learning_rate=0.02)
+            aci_90 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.02)
+
             for _, row in rows.iterrows():
+                # Filtro per bucket: ogni ACI riceve solo i feedback del suo lead time.
+                if row["_bucket"] != bucket:
+                    continue
                 actual = row[obs_col]
                 if pd.isna(actual):
                     continue
-                # Coverage vs quantili predetti (p10/p90 per 80%, p05/p95 per 90%).
-                # Non usiamo i bound CI: ACI calibra la *frequenza* del quantile,
-                # non l'offset CQR.
+                # Guardia contro NaN nei quantili (dati corrotti o inserimenti parziali).
+                if pd.isna(row[p10_col]) or pd.isna(row[p90_col]) or pd.isna(row[p05_col]) or pd.isna(row[p95_col]):
+                    continue
+
                 cov_80 = (row[p10_col] <= actual <= row[p90_col])
                 cov_90 = (row[p05_col] <= actual <= row[p95_col])
                 aci_80.update(bool(cov_80))
                 aci_90.update(bool(cov_90))
+
             db.upsert_aci_state(
                 target, bucket,
                 aci_80.alpha_t, aci_90.alpha_t,
                 aci_80.n_updates,
-                aci_80._err_sum, aci_90._err_sum,
+                aci_80.err_sum, aci_90.err_sum,
             )
             n_updated += 1
     return n_updated

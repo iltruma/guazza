@@ -18,6 +18,7 @@ from loguru import logger
 
 from guazza._logging import setup_logging
 from guazza.jobs._common import DB_OPTION, job_run, ping_healthchecks
+from guazza.models import _lead_time_bucket
 from guazza.storage import DuckDBClient
 
 app = typer.Typer(help="Monitor copertura ACI + alert drift.")
@@ -71,8 +72,6 @@ def _compute_coverage(db: DuckDBClient) -> list[CoverageResult]:
     if rows.empty:
         return []
 
-    from guazza.models import _lead_time_bucket
-
     rows = rows.assign(
         bucket=rows["lead_time_h"].apply(_lead_time_bucket),
     )
@@ -109,7 +108,6 @@ def cmd_run(
     """Calcola coverage_30d per (target, bucket), logga alert se drift."""
     with job_run("job_monitor") as stats:
         with DuckDBClient(db_path=db_path, read_only=True) as db:
-            db.init_schema()
             results = _compute_coverage(db)
 
         if not results:
