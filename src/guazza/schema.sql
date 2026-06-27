@@ -128,6 +128,27 @@ CREATE TABLE IF NOT EXISTS benchmark_forecasts (
     PRIMARY KEY (source, location_id, target_date)
 );
 
+-- ── Skill history: append giornaliero forecast vs actual per modello ─────────
+-- Una riga = (location, target_date, source, variable, lead_h). Popolata dal job
+-- `guazza.skill_history append` (cron giornaliero, idempotente grazie alla PK).
+-- La vista `skill_history_daily_aggregated` espone serie allineate per il
+-- frontend (`affidabilita.html`): per ogni (location, source, variable) tutte le
+-- date con actual, in modo da poter filtrare per finestra (7gg / 30gg / totale).
+CREATE TABLE IF NOT EXISTS skill_history_daily (
+    location_id    VARCHAR  NOT NULL,
+    target_date    DATE     NOT NULL,
+    source         VARCHAR  NOT NULL,    -- 'guazza' o uno dei 5 NWP
+    variable       VARCHAR  NOT NULL,    -- 'tmin_c', 'tmax_c', 'precip_mm'
+    lead_h         SMALLINT NOT NULL,    -- 24 per ora (D-1 → D)
+    forecast_value DOUBLE,
+    actual_value   DOUBLE,
+    abs_error      DOUBLE,
+    generated_at   TIMESTAMP DEFAULT current_timestamp,
+    PRIMARY KEY (location_id, target_date, source, variable, lead_h)
+);
+CREATE INDEX IF NOT EXISTS skill_history_loc_var_date
+    ON skill_history_daily (location_id, variable, target_date);
+
 -- ── Allerte ufficiali ─────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS alerts (
     source     VARCHAR   NOT NULL,

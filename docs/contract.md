@@ -110,6 +110,71 @@ Misura retrospettiva MAE Guazza vs consensus NWP per orizzonte D+0…D+7, contro
 - Finestra limitata dall'archivio `previous_dayN` di Open-Meteo (~ott 2025→oggi): è una
   finestra di mesi, non lifetime — il frontend lo dichiara esplicitamente.
 
+## `skill_history.json` — time series forecast vs actual (file globale)
+
+File separato `frontend/data/skill_history.json`, **uno solo**: generato dal job
+`guazza.jobs.skill_history` (`jobs/skill_history.py`). Misura **per ogni giorno
+passato** come hanno performato i vari modelli sul forecast emesso a D-1 (lead
+24h) per D, rispetto al valore osservato. Popolamento incrementale (append
+giornaliero, idempotente).
+
+```json
+{
+  "generated_at": "2026-06-27T...Z",
+  "lead_h": 24,
+  "sources": [
+    "guazza",
+    "open_meteo_ecmwf_ifs",
+    "open_meteo_icon_eu",
+    "open_meteo_icon_d2",
+    "open_meteo_gfs025",
+    "open_meteo_arome_france",
+    "open_meteo_italia_meteo_arpae_icon_2i"
+  ],
+  "variables": ["tmin_c", "tmax_c", "precip_mm"],
+  "min_date": "2026-05-28",
+  "max_date": "2026-06-03",
+  "locations": {
+    "casa_campi": {
+      "tmin_c": {
+        "dates": ["2026-05-28", "2026-05-29", ...],
+        "actual": [18.6, 17.7, ...],
+        "guazza": [null, 17.5, 15.4, ...],
+        "open_meteo_ecmwf_ifs": [19.1, 18.0, 15.9, ...],
+        "open_meteo_icon_eu": [...],
+        ...
+      },
+      "tmax_c": {...},
+      "precip_mm": {...}
+    },
+    ...
+  }
+}
+```
+
+- **Lead fisso a 24h** (forecast emesso a D-1 per D). La colonna `lead_h` esiste
+  nella tabella `skill_history_daily` per future estensioni multi-lead.
+- **Allineamento date**: per ogni location, le date sono l'unione delle date
+  con `actual` valorizzato in `obs_weighted_daily`. Le entry senza forecast da
+  un dato source sono `null` in quel campo (es. NWP down, Guazza non ancora
+  trainato per quella location).
+- **Actual**: `obs_weighted_daily` (stessa vista usata da training e indicatori).
+- **Forecast Guazza**: `predictions` con `lead_time_h BETWEEN 23 AND 25`,
+  mediane (p50).
+- **Forecast NWP**: aggregazione daily di `forecasts` orari con lead 23-25h
+  (`MIN(temp_c) AS tmin_c, MAX(temp_c) AS tmax_c, SUM(precip_mm) AS precip_mm`).
+  Stessa logica del CTE `daily_nwp` in `features.py` ma per singolo source.
+- **NWP senza dati**: GFS ha ~6.7% di record orari con `temp_c` NULL nel DB
+  (KI-025), quindi GFS è praticamente assente dal backtest. Il frontend nasconde
+  i NWP che hanno tutti valori null nella finestra corrente.
+- **Job**:
+  - `append [--day YYYY-MM-DD | --days N]` (default: ieri): ~21 righe × N
+    location × N giorni. Idempotente (PK composta + ON CONFLICT DO UPDATE).
+  - `dump [--output PATH]` (default `frontend/data/skill_history.json`):
+    scrittura atomica, aggrega la tabella in JSON.
+- **Schedule k8s proposta**: `15 6 * * *` UTC per `append` (15 min dopo
+  `daily` ingest), `30 6 * * *` per `dump`.
+
 ## Decision Logic Engine — logging obbligatorio
 
 Ogni invocazione DLE deve produrre log in DuckDB (`indicator_log`):

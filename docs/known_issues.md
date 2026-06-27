@@ -496,3 +496,35 @@ Soglia di accettazione +3% MAE tmin/tmax: non centrata, rollback eseguito.
 **Stato corrente**: `ANOMALY_TARGETS = ()` in `features.py` (disattivato). Codice in `models.py` (`_target_col`, `_invert_anomaly`, campo `anomaly_targets` in `TrainingArtifacts`) tenuto come regression test + punto di partenza per retry futuro. Colonne `anom_*` rimosse da `features_daily` (ALTER TABLE 2026-06-27).
 
 **Nessun fix pianificato**: dipende dalla disponibilità del dato a monte.
+
+## KI-025 — GFS ha record orari senza `temp_c` valorizzato (~6.7% del totale)
+
+**Scoperto** durante il debug di `skill_history_daily` (Sprint 11, 2026-06-27):
+il backtest grafico GFS è completamente vuoto. Indagando:
+- `forecasts` ha 246786 record per `source='open_meteo_gfs025'`
+- Solo 16440 (6.7%) hanno `temp_c` NON NULL
+- Anche `precip_mm` è NULL sul ~90% dei record (24072/246786)
+
+**Causa probabile**: l'API Open-Meteo per GFS potrebbe aver cambiato i parametri
+della risposta oraria, oppure il fetcher `fetch_openmeteo_forecast_batch` non
+sta estraendo correttamente i campi per GFS. Da investigare confrontando la
+risposta API live con i record attuali nel DB.
+
+**Effetto pratico**:
+- Il backtest grafico (`affidabilita.html` sezione "Come ha performato") non
+  mostra GFS perché tutti i valori sono NULL. Il frontend nasconde
+  automaticamente le source con tutti null nella finestra corrente.
+- Le 5 NWP restanti (ECMWF IFS, ICON-EU, ICON-D2, AROME France, ARPAE ICON-2I)
+  funzionano regolarmente e coprono il backtest.
+
+**Mitigazione provvisoria** (nel frontend): `affidabilita.js` filtra i NWP
+che hanno almeno un valore non-null nella finestra corrente prima di
+disegnarli. GFS semplicemente non appare finché il problema non è risolto.
+
+**Fix pianificato**:
+1. Verificare la risposta API Open-Meteo per GFS oggi (endpoint + parametri)
+2. Verificare la query in `fetch_openmeteo.py` per l'estrazione di temp_c/precip_mm
+3. Se l'API è cambiata, aggiornare la query; altrimenti ri-ingesta GFS
+
+**Stato**: aperto. Non bloccante per il deploy (Sprint 8) né per la pagina
+affidabilità (funziona con 5 NWP).

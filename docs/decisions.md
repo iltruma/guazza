@@ -488,3 +488,44 @@ target, dopo che D+0…D+7 sono backfillati).
   sempre, semplicemente corretti da ACI quando warm.
 - Se dopo 30-60gg di operatività la copertura è in target ma il MAE cresce
   → riaprire l'opzione online LightGBM (Sprint 10+).
+
+## D-020 — Skill history: append giornaliero invece di riscrittura full
+
+**Data**: 2026-06-27
+
+**Contesto**: la pagina affidabilità (`affidabilita.html`) mostra solo una
+curva MAE per lead, aggregata su tutta la finestra skill. L'utente chiede
+"vorrei vedere se i modelli ci hanno preso nel passato" — un grafico che
+mostri, per ogni giorno passato, il forecast emesso a D-1 vs l'osservato
+a D, per ogni modello. Time series pura, non aggregata.
+
+**Alternative considerate**:
+- **A. Riscrittura full di un JSON time series a ogni run**: job che interroga
+  DuckDB, ricostruisce tutte le time series, scrive il JSON. Semplice ma
+  O(window_size) a ogni run — scala male, complica il backfill incrementale.
+- **B. Append giornaliero + dump on-demand**: tabella DuckDB dedicata
+  `skill_history_daily` con PK composta, append idempotente di ~21 righe per
+  location al giorno. Il `dump` ricostruisce il JSON dalla tabella quando
+  serve. **Scelto.**
+- **C. Computed on-demand nel frontend**: il frontend interroga DuckDB
+  direttamente via API. Scartato: rompe il pattern "frontend statico, nginx
+  serve JSON", aggiunge complessità operativa (auth, latency, lock).
+
+**Decisione**: B.
+
+**Conseguenze**:
+- Ogni giorno il job `skill_history append` aggiunge 21 × 6 location = ~126
+  righe a `skill_history_daily`. Costo: pochi ms.
+- Il JSON `skill_history.json` viene rigenerato on-demand dal comando `dump`
+  (scrittura atomica). Veloce (DuckDB fa la query su ~21 × N × 6 location
+  e la restituisce come lista Python).
+- Backfill: il comando `append --days N` itera all'indietro, sfruttando la
+  PK per idempotenza. Eseguibile in qualsiasi momento senza rischiare
+  duplicati.
+- Il frontend ha accesso alla finestra completa (la tabella è la verità) e
+  può filtrare lato client per 7gg / 30gg / totale. Niente logica di finestra
+  lato backend.
+
+**Limitazione**: la PK include `lead_h` (oggi fisso a 24h) per future
+estensioni multi-lead (es. confrontare forecast D+0 vs D+3 nel tempo).
+Per ora il JSON espone solo lead 24h.

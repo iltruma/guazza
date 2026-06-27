@@ -8,14 +8,66 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
-### Added
-- `Dockerfile` single-stage (Python 3.13 + nginx) con `uv` per install — niente wheel intermedio
-- `.dockerignore` per ridurre il build context (esclude `.venv/`, `data/`, `tests/`, ecc.)
-- `deploy/nginx-k8s.conf`: variante k8s di nginx (porta 8080, log su stdout/stderr, JSON path sul PVC)
-- `.github/workflows/ci.yml`: CI su push tag `v*.*.*` — ruff/mypy/pytest + build & push immagine `ghcr.io/iltruma/guazza` (con e senza prefisso `v`)
+## [0.11.0] - 2026-06-27
 
-### Changed
-- **Bump Python minimo a 3.13** (`requires-python` e `mypy.python_version` in `pyproject.toml`). Risolve l'errore mypy su `numpy>=1.26` i cui stub `.pyi` usano `type X = ...` (PEP 695, richiede 3.12+). Tutte le deps e il Dockerfile erano già su 3.13.
+Sprint 11 (parte 1) — Skill history time series + pagina "Come ha performato nel tempo".
+Risposta al feedback "vorrei vedere se i modelli ci hanno preso nel passato" invece del
+solo MAE per lead aggregato. Approccio incrementale: append giornaliero, dump JSON,
+frontend con filtri finestra.
+
+### Added
+- **Tabella DuckDB `skill_history_daily`** in `src/guazza/schema.sql`: PK composta
+  `(location_id, target_date, source, variable, lead_h)` + indice di ricerca.
+  Append idempotente via `INSERT ... ON CONFLICT DO UPDATE`.
+- **Job `src/guazza/jobs/skill_history.py`** (typer single-command) con due comandi:
+  - `append [--day YYYY-MM-DD | --days N]` (default: ieri): calcola forecast a D-1
+    (lead 24h) per ogni location × source (Guazza + 6 NWP) × variable (tmin, tmax,
+    precip) e fa upsert. Da `predictions` per Guazza, da aggregazione daily di
+    `forecasts` per NWP, da `obs_weighted_daily` per actual. Riusa `DuckDBClient`
+    (init_schema idempotente) e `job_run` (ping Healthchecks, log JSON, exit code).
+  - `dump [--output PATH]` (default `frontend/data/skill_history.json`): aggrega
+    la tabella in un JSON time series. Una entry per (location, variable) con date
+    allineate, valori per ogni source, finestra `min_date` → `max_date`. Scrittura
+    atomica via tmp file.
+- **Pagina `affidabilita.html`** (estesa): aggiunta sezione "Come ha performato
+  nel tempo" sotto la curva MAE per lead. Due canvas affiancati (T max / T min),
+  filtri 7gg / 30gg / Totale, 8 linee per grafico (actual nera + Guazza accent
+  + 5-6 NWP grigi tratteggiati). NWP con tutti valori null nella finestra sono
+  nascosti automaticamente (onestà su modelli "morti" come GFS).
+- **`frontend/data/skill_history.json`**: nuovo file rigenerabile esposto al
+  frontend via nginx (path `/data/skill_history.json`).
+- **9 test pytest** in `tests/test_skill_history.py`: `_collect_rows` con
+  FakeCon (location, obs vuote, var NULL, NWP mancanti), `_dump_payload`
+  (struttura + tabella vuota), `_atomic_write_json` (replace + parent dirs),
+  smoke test dei comandi typer.
+
+### Frontend (`affidabilita.html` + `affidabilita.js`)
+- Link nell'header dell'SPA: pill "Affidabilità" accanto a "Previsioni" (riusa
+  `.g-tab` esistente, niente CSS nuovo oltre a 2 righe `.g-header__pages`).
+- Sezione history: `.g-skill__hist` (2-col grid responsive), riusa `.g-card`,
+  `.g-skill__seg` (segmented control 7gg/30gg/Totale), `.g-chart-legend`.
+- Caricamento parallelo di `skill.json` + `skill_history.json` in `boot()`;
+  history è best-effort (la pagina resta valida anche senza).
+- Tooltip history mostra solo Actual e Guazza (i 6 NWP sono "rumore visivo" —
+  il pattern tratteggiato rende l'idea dell'incertezza senza intasare il tooltip).
+- `dayTemps()` e tutto il resto dello SPA intoccati (modifica isolata a
+  `affidabilita.*`).
+
+### Known
+- **GFS ha record orari senza `temp_c` valorizzato** (~6.7% del totale). Il
+  backtest GFS è quindi vuoto. Causa probabile: l'API Open-Meteo per GFS ha
+  cambiato parametri o il fetcher non li estrae correttamente. Da investigare
+  in `fetch_openmeteo.py` (KI-025). Nel frattempo il backtest funziona con
+  5 NWP (ECMWF IFS, ICON-EU, ICON-D2, AROME France, ARPAE ICON-2I).
+
+### Note operative
+- **Schedule k8s proposta** per il job `skill_history append`:
+  `15 6 * * *` UTC (15 min dopo `daily` ingest delle 06:00, così le obs di
+  ieri sono nel DB). Il `dump` può essere hookato a `predict` o a un cron
+  separato (es. `30 6 * * *`).
+- **Backfill iniziale**: il comando `append --days N` permette di popolare la
+  tabella con N giorni indietro. Eseguito `append --days 30` in locale al
+  deploy: 588 righe in 1s.
 
 ## [0.10.0] - 2026-06-27
 

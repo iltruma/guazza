@@ -70,11 +70,12 @@ guazza/
 │       ├── ingest.py       # Cron: historical / daily / realtime / forecasts / multilead
 │       ├── features.py     # CLI: features build / info
 │       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
-│       ├── predict.py      # Cron: predict → DuckDB + DLE + JSON output
-│       ├── skill.py        # Cron: curva skill MAE per lead → skill.json
-│       ├── netatmo_daily.py # Cron: aggregazione Netatmo realtime → daily
-│       ├── qc.py           # Cron: qc run / qc report
-│       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 8)
+ │       ├── predict.py      # Cron: predict → DuckDB + DLE + JSON output
+ │       ├── skill.py        # Cron: curva skill MAE per lead → skill.json
+ │       ├── skill_history.py # Cron: append giornaliero + dump JSON time series
+ │       ├── netatmo_daily.py # Cron: aggregazione Netatmo realtime → daily
+ │       ├── qc.py           # Cron: qc run / qc report
+ │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 8)
 ├── data/
 │   ├── guazza.duckdb       # Database analitico (non committato)
 │   ├── models/             # Artefatti LightGBM artifacts.json + model-string .txt (non committati)
@@ -108,9 +109,9 @@ guazza/
 | Sprint 6 | Frontend HTML+JS+Chart.js, layout a 3 sezioni | ✅ Completato |
 | Sprint 7 | Raffinamenti logiche, radar RainViewer, redesign frontend v2 (CSS custom) | ✅ Completato |
 | Sprint 8 | Deploy su Optiplex locale + Cloudflare Tunnel, k3s/ArgoCD, immagine container | 🟡 In corso (S-A: Dockerfile + CI) |
-| Sprint 9 | Model monitoring, coverage alert | — |
+| Sprint 9 | Adaptive Conformal Inference + monitor copertura 30d | ✅ Completato (v0.10.0) |
 | Sprint 10 | Calibrazione soglie DLE post-deploy | — |
-| Sprint 11 | Case study / pubblicazione | — |
+| Sprint 11 | Case study / pubblicazione + skill history time series | 🟡 In corso (skill history fatto, v0.11.0) |
 
 ---
 
@@ -190,6 +191,28 @@ modelli con data ultimo run.
 
 > **Nota locale**: prima di `predict` eseguire `ingest realtime` per avere
 > il campo `current` popolato. In produzione il cron ogni 30 min lo mantiene fresco.
+
+### Skill history (time series forecast vs actual)
+
+```bash
+# Append giornaliero (default: ieri). Calcola forecast lead 24h vs actual
+# per ogni location × source × variable e fa upsert in skill_history_daily.
+uv run python -m guazza.jobs.skill_history append --db data/guazza.duckdb
+
+# Backfill manuale di N giorni (utile al deploy o per ricerche)
+uv run python -m guazza.jobs.skill_history append --db data/guazza.duckdb --days 30
+
+# Genera il JSON time series per il frontend (affidabilita.html, sezione
+# "Come ha performato"). Scrittura atomica su frontend/data/skill_history.json.
+uv run python -m guazza.jobs.skill_history dump --db data/guazza.duckdb \
+    --output frontend/data/skill_history.json
+```
+
+Output: `frontend/data/skill_history.json` con time series per (location,
+variable) allineate per data, valori per ogni source (Guazza + 5-6 NWP).
+
+**Schedule k8s proposta**: `15 6 * * *` UTC per `append` (15 min dopo
+`daily` ingest), `30 6 * * *` per `dump`.
 
 ### Opzioni comuni
 

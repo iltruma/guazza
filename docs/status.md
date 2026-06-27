@@ -1,8 +1,40 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-06-27 (Sprint 9 chiuso · ACI + monitor, v0.10.0)
+> Aggiornato: 2026-06-27 (Sprint 11 parziale · skill history time series + pagina backtest, v0.11.0)
 
 ## Cosa è stato fatto
+
+### Sprint 11 (parte 1) — Skill history time series + pagina "Come ha performato" (completato — 2026-06-27, v0.11.0)
+
+Risposta al feedback: "vorrei vedere se i modelli ci hanno preso nel passato",
+non solo il MAE per lead aggregato. Approccio incrementale (append giornaliero,
+dump JSON, filtri finestra nel frontend).
+
+- **Tabella DuckDB `skill_history_daily`** in `schema.sql` (PK composta
+  `location_id, target_date, source, variable, lead_h`). Append idempotente
+  via `INSERT ... ON CONFLICT DO UPDATE`.
+- **Job `src/guazza/jobs/skill_history.py`** (typer single-command):
+  - `append [--day YYYY-MM-DD | --days N]` (default: ieri): calcola forecast
+    lead 24h per ogni location × source (Guazza + 6 NWP) × variable (tmin,
+    tmax, precip). Da `predictions` per Guazza, da `forecasts` aggregato daily
+    per NWP, da `obs_weighted_daily` per actual. ~21 righe × 6 location ×
+    N giorni. Riusa `DuckDBClient` + `job_run` (Healthchecks, log JSON).
+  - `dump [--output PATH]` (default `frontend/data/skill_history.json`):
+    aggrega in time series allineate, scrittura atomica.
+- **Pagina `affidabilita.html`** estesa: sotto la curva MAE per lead, due
+  canvas affiancati (T max / T min) con filtri 7gg / 30gg / Totale, 8 linee
+  per grafico (actual nera + Guazza accent + 5-6 NWP grigi tratteggiati). NWP
+  con tutti null nella finestra sono nascosti (onestà su GFS, vedi KI-025).
+- **Test**: 9 nuovi test in `tests/test_skill_history.py` (collect_rows con
+  FakeCon, dump_payload struttura + vuoto, atomic_write_json, smoke typer).
+  343 test verdi totali.
+- **Backfill eseguito in locale** al deploy: `append --days 30` → 588 righe
+  in 1s, `dump` → 5 location × 7 date × 3 variabili (le obs arrivano a spot).
+- **Punto aperto (🟡)**: GFS ha ~6.7% di record orari con `temp_c` NULL nel DB
+  (problema di ingestion, KI-025). Il backtest GFS è vuoto, gli altri 5 NWP
+  funzionano regolarmente.
+- **Schedule k8s proposta**: `15 6 * * *` UTC per `append` (15 min dopo
+  `daily`); `30 6 * * *` per `dump`.
 
 ### Sprint 9 — Adaptive Conformal Inference + monitor (completato — 2026-06-27, v0.10.0)
 
@@ -251,10 +283,13 @@ Flag aggiuntivi in `historical` e `daily`:
 - 10 test pytest, tutti verdi
 - **Risultato live**: 19.155 righe, 4 location, 2022-01-02→oggi, >99% target coverage
 
-🟡 **Punto aperto — lead_time_h range 1-11h** (atteso fino a 168h):
-il backfill Open-Meteo ha salvato solo il run più recente per valid time, non la storia dei run.
-In produzione il fetch giornaliero accumulerà run a distanze crescenti. Da verificare dopo
-il primo mese di operatività sul server locale (Sprint 8).
+✅ **Risolto (2026-06-27)**: dopo il multilead backfill Sprint 7, `features_daily` ha
+`lead_time_h` nell'intero range 0-168h. La composizione dei fold walk-forward CV è ora
+disomogenea: fold 1-3 (2023-2025) sono D+0 puro (`lead_time_h=0`), fold 4 (2025-08 →
+2026-07) ha 73% di record a lead >24h. Il "drift" nelle metriche aggregate è effetto di
+composizione del test set, non regressione del modello. I fold 1-3 sono in linea col
+baseline post-KI-022. Vedi fix in `walk_forward_cv` (`models.py`) e nuovo breakdown per
+`lead_bucket` nel job `train eval`.
 
 **Fix same-day (2026-05-17)**: il SQL di `build_features_daily` gestisce correttamente
 `lead_time_days=0` (backfill storico: ts_run e ts_valid sullo stesso giorno). Questi record
@@ -296,6 +331,17 @@ indipendente: tmin +8%, tmax +26% (vedi D-016).
 | tmin_c | +0.320°C | +0.486°C |
 | tmax_c | +0.405°C | +0.519°C |
 | precip_mm | +0.006mm | +0.009mm |
+
+**Nota su composizione fold CV (2026-06-27)**: i fold 1-3 (2023-2025) sono D+0 puro
+(`lead_time_h=0`) per via del backfill Open-Meteo pre-multilead; il fold 4 (2025-08 →
+2026-07) copre l'intero spettro lead 0-168h. Le metriche aggregate del job `train eval`
+sono dominate dal fold 4 per dimensione (11684 record vs 1890×3 degli altri fold); il
+breakdown per `lead_bucket` (introdotto nel fix `walk_forward_cv` di pari data) è lo
+strumento corretto per diagnosticare la calibrazione CQR per orizzonte.
+
+- **Fix CQR per-riga in `walk_forward_cv` (2026-06-27)**: applicazione della correzione
+  CQR stratificata per `lead_bucket` (era hardcoded su `0-6h` per via di `features_daily`
+  storico). Il breakdown per bucket è ora visibile nel job `train eval`.
 
 **benchmark_forecasts implementata (2026-06-05)**: confronto sistematico NWP grezzo vs ML nel
 tempo. `ensure_benchmark_schema()` migra il vecchio schema; `upsert_benchmark_forecasts()` e
