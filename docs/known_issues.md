@@ -448,4 +448,30 @@ riportano la pressione; il valore viene solo da Open-Meteo quando il job `realti
 inserisce le sue osservazioni sintetiche. Se il job non è stato eseguito di recente
 il campo è `null` e la 4a cella della stats grid mostra `—`.
 
+## KI-023 — Spike anomaly target: degradato in walk-forward CV (+28/+44% MAE)
+
+**Severità**: bassa (spike documentato, non in produzione)
+**Stato**: disattivato, candidato per retry con climatologia raffinata
+
+**Prova**: walk-forward CV 4 fold, 2023-01 → 2026-06, 6 modelli NWP.
+
+| Target | Baseline (status.md) | Anomaly | Δ MAE |
+|---|---|---|---|
+| tmin_c | 0.850 | 1.089 | **+28%** |
+| tmax_c | 0.813 | 1.168 | **+44%** |
+| precip_mm | 1.545 | 1.717 | +11% (precip NON era in ANOMALY_TARGETS — il +11% è effetto collaterale: training set ridotto per tmin/tmax quando `clim_tmin_mean` è NULL, leggera instabilità CV) |
+
+Soglia di accettazione +3% MAE tmin/tmax: non centrata, rollback eseguito.
+
+**Causa probabile**: la climatologia usata (`clim_tmin_mean`, mensile, aggregata su 4 anni) è troppo "grezza" per essere un buon anchor di anomalia. La media mensile smussa la variabilità settimanale, e sui 4 anni del training è dominata da 2-3 stagionalità recenti climaticamente non rappresentative. Il modello impara l'anomalia ma non ha feature `anom_*_c` in `FEATURE_COLS` per collegarla al NWP, quindi deve re-imparare il livello assoluto dalle stesse feature che usava prima, con perdita netta.
+
+**Side-finding emerso dal test**: `coverage_80` nei fold recenti (2025-2026) è 0.688/0.699 su tmin/tmax (target 0.80) — **drift di calibrazione CQR già in atto** sui dati di produzione. È esattamente il caso d'uso ACI (vedi Sprint 9).
+
+**Cosa fare se si vuole ritentare**:
+1. Sostituire `clim_tmin_mean` mensile con climatologia settimanale percentile (10/50/90) calcolata su tutti gli anni SIR (2004+) invece dei soli 4 anni del training
+2. Aggiungere `anom_tmin_c`/`anom_tmax_c` direttamente in `FEATURE_COLS` (oggi sono calcolate ma non lette dal modello)
+3. Ripetere la misurazione: se Δ MAE ancora negativo, lasciare perdere l'anomalia come target
+
+**Stato corrente**: `ANOMALY_TARGETS = ()` in `features.py` (disattivato). Codice in `models.py` (`_target_col`, `_invert_anomaly`, campo `anomaly_targets` in `TrainingArtifacts`) tenuto come regression test + punto di partenza per retry futuro. Colonne `anom_*` rimosse da `features_daily` (ALTER TABLE 2026-06-27).
+
 **Nessun fix pianificato**: dipende dalla disponibilità del dato a monte.

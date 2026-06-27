@@ -43,6 +43,12 @@ NWP_FEATURE_COLS: list[str] = [
     f"{prefix}_{var}" for prefix, _src in NWP_MODEL_PREFIXES for var in NWP_DAILY_VARS
 ]
 
+# Target addestrati in anomalia rispetto alla climatologia mensile. Disattivato:
+# spike 2026-06-27 ha mostrato +28/+44% MAE su tmin/tmax (vedi known_issues.md).
+# Spike futuri con climatologia settimanale/percentile possono riattivare.
+# Ponytail: codice tenuto per regression test (tests/test_models.py).
+ANOMALY_TARGETS: tuple[str, ...] = ()
+
 # Blocco pivot: una colonna MAX(CASE …) per (modello × variabile), iniettato in
 # _BUILD_SQL al posto del segnaposto __NWP_PIVOT_COLS__. Genera SQL identico al
 # pivot esplicito precedente, mantenendo la lista derivata da NWP_MODEL_PREFIXES.
@@ -234,6 +240,12 @@ SELECT
     prev.precip_mm   AS obs_precip_mm,
     prev.humidity_pct AS obs_humidity_pct,
 
+    -- Anomaly features (obs giorno prec − climatologia mensile). NULL se obs o clim
+    -- mancanti: il modello impara a ignorarli come per obs_tmin_c. Usati da
+    -- models.py quando ANOMALY_TARGETS contiene il target.
+    prev.tmin_c - c.clim_tmin_mean AS anom_tmin_c,
+    prev.tmax_c - c.clim_tmax_mean AS anom_tmax_c,
+
     -- Climatologia mensile
     c.clim_tmin_mean, c.clim_tmin_std,
     c.clim_tmax_mean, c.clim_tmax_std,
@@ -248,10 +260,14 @@ SELECT
     rp.ring2_precip_d1_mean, rp.ring2_precip_d1_max,
     rp.ring3_precip_d1_mean, rp.ring3_precip_d1_max,
 
-    -- Target (ground truth a target_date)
-    tgt.tmin_c    AS target_tmin_c,
-    tgt.tmax_c    AS target_tmax_c,
-    tgt.precip_mm AS target_precip_mm
+    -- Target (ground truth a target_date). Per i target in ANOMALY_TARGETS
+    -- (tmin/tmax) il modello impara l'anomalia rispetto alla clim mensile; precip
+    -- resta in valore assoluto. A predict time models.py inverte: pred = pred_anom + clim.
+    tgt.tmin_c - c.clim_tmin_mean AS target_tmin_anom_c,
+    tgt.tmax_c - c.clim_tmax_mean AS target_tmax_anom_c,
+    tgt.tmin_c                    AS target_tmin_c,
+    tgt.tmax_c                    AS target_tmax_c,
+    tgt.precip_mm                 AS target_precip_mm
 
 FROM nwp_wide n
 LEFT JOIN obs_weighted prev

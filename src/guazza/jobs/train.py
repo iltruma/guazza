@@ -56,8 +56,9 @@ def cmd_run(
 @app.command("eval")
 def cmd_eval(
     db_path:    Path = DB_OPTION,
+    model_dir:  Path = typer.Option(_MODEL_DIR, "--model-dir", help="Directory artefatti (solo per log)"),
     n_splits:   int  = typer.Option(4,         "--splits",   help="Numero di fold CV"),
-    embargo:    int  = typer.Option(7,         "--embargo",  help="Giorni embargo tra train e test"),
+    embargo:    int  = typer.Option(7,         "--embargo",  help="Giorni di embargo tra train e test"),
 ) -> None:
     """Walk-forward CV: stampa MAE, CRPS, coverage e skill score."""
 

@@ -194,3 +194,46 @@ def test_spread_with_partial_models(db: DuckDBClient) -> None:
     """).fetchone()
     assert row is not None and row[0] > 0
     db.__exit__(None, None, None)
+
+
+def test_anomaly_target_columns_present(db: DuckDBClient) -> None:
+    """Le colonne target_tmin_anom_c e target_tmax_anom_c esistono e sono NULL
+    se obs o clim mancanti, valorizzate altrimenti."""
+    _populate(db, n_days=10)
+    build_features_daily(db)
+
+    # Colonne presenti
+    cols = db.execute("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'features_daily'
+          AND column_name IN ('target_tmin_anom_c', 'target_tmax_anom_c',
+                              'anom_tmin_c', 'anom_tmax_c')
+    """).fetchall()
+    col_names = {c[0] for c in cols}
+    assert {"target_tmin_anom_c", "target_tmax_anom_c", "anom_tmin_c", "anom_tmax_c"} <= col_names
+
+    # Popolamento non vuoto (almeno una riga con entrambi obs+clim valorizzati)
+    populated = db.execute("""
+        SELECT COUNT(*) FROM features_daily
+        WHERE target_tmin_anom_c IS NOT NULL AND target_tmax_anom_c IS NOT NULL
+    """).fetchone()
+    assert populated is not None and populated[0] > 0
+    db.__exit__(None, None, None)
+
+
+def test_anomaly_target_equals_obs_minus_clim(db: DuckDBClient) -> None:
+    """target_tmin_anom_c == target_tmin_c - clim_tmin_mean su righe valorizzate."""
+    _populate(db, n_days=10)
+    build_features_daily(db)
+    row = db.execute("""
+        SELECT target_tmin_c, clim_tmin_mean, target_tmin_anom_c
+        FROM features_daily
+        WHERE target_tmin_c IS NOT NULL
+          AND clim_tmin_mean IS NOT NULL
+          AND target_tmin_anom_c IS NOT NULL
+        LIMIT 1
+    """).fetchone()
+    assert row is not None
+    obs, clim, anom = row
+    assert abs(obs - clim - anom) < 1e-9
+    db.__exit__(None, None, None)

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from guazza.features import NWP_FEATURE_COLS
+from guazza.features import ANOMALY_TARGETS, NWP_FEATURE_COLS
 from guazza.storage import DuckDBClient
 
 _DEFAULT_MODEL_DIR = Path(os.environ.get("MODEL_DIR", "data/models"))
@@ -41,6 +41,38 @@ _TARGET_NWP_MEAN: dict[str, str] = {
     "tmax_c":    "nwp_tmax_mean",
     "precip_mm": "nwp_precip_mean",
 }
+
+# Mapping target → colonna climatologia usata per inversione a predict time
+_TARGET_CLIM_COL: dict[str, str] = {
+    "tmin_c":    "clim_tmin_mean",
+    "tmax_c":    "clim_tmax_mean",
+    "precip_mm": "clim_precip_mean",
+}
+
+# Colonne target in features_daily: absolute (default) vs anomaly.
+# Naming: per un target "tmin_c", absolute = "target_tmin_c", anomaly = "target_tmin_anom_c".
+_TARGET_COL_ABS: dict[str, str] = {
+    "tmin_c":    "target_tmin_c",
+    "tmax_c":    "target_tmax_c",
+    "precip_mm": "target_precip_mm",
+}
+_TARGET_COL_ANOM: dict[str, str] = {
+    "tmin_c":    "target_tmin_anom_c",
+    "tmax_c":    "target_tmax_anom_c",
+    # precip_mm non addestrato in anomalia (climatologia right-skewed)
+}
+
+
+def _target_col(target: str, anomaly_targets: tuple[str, ...] = ANOMALY_TARGETS) -> str:
+    """Colonna target in features_daily per `target` (es. 'tmin_c').
+
+    Per i target in ANOMALY_TARGETS usa la colonna `target_tmin_anom_c`
+    (anomalia rispetto alla clim mensile); altrimenti la colonna assoluta
+    `target_tmin_c`. Vedi features.py per la definizione SQL di queste colonne.
+    """
+    if target in anomaly_targets:
+        return _TARGET_COL_ANOM[target]
+    return _TARGET_COL_ABS[target]
 
 # Lead time bucket per CQR stratification
 LEAD_BUCKETS: dict[str, tuple[int, int]] = {
@@ -109,6 +141,9 @@ class TrainingArtifacts:
     trained_at: datetime
     n_train: int
     n_cal: int
+    # Target addestrati in anomalia rispetto alla clim (vuoto = tutti valore assoluto).
+    # Persistito in artifacts.json per sapere a predict time quali target vanno invertiti.
+    anomaly_targets: list[str] = field(default_factory=list)
 
 
 def load_features(db: DuckDBClient) -> pd.DataFrame:
@@ -265,7 +300,7 @@ def train_all(
     bundles: dict[str, ModelBundle] = {}
 
     for target in TARGETS:
-        col = f"target_{target}"
+        col = _target_col(target)
         mask_train = df_train[col].notna()
         X_tr = df_train.loc[mask_train, FEATURE_COLS]
         y_tr = df_train.loc[mask_train, col]
@@ -295,6 +330,7 @@ def train_all(
         trained_at=datetime.now(tz=UTC),
         n_train=len(df_train),
         n_cal=len(df_cal),
+        anomaly_targets=list(ANOMALY_TARGETS),
     )
 
     _save_artifacts(artifacts, model_dir)
@@ -311,6 +347,7 @@ def _save_artifacts(artifacts: TrainingArtifacts, model_dir: Path) -> None:
         "n_cal": artifacts.n_cal,
         "feature_cols": artifacts.feature_cols,
         "categorical_cols": artifacts.categorical_cols,
+        "anomaly_targets": artifacts.anomaly_targets,
         "targets": {},
     }
     n_files = 0
@@ -364,6 +401,7 @@ def load_artifacts(model_dir: Path | None = None) -> TrainingArtifacts:
         trained_at=datetime.fromisoformat(manifest["trained_at"]),
         n_train=manifest["n_train"],
         n_cal=manifest["n_cal"],
+        anomaly_targets=manifest.get("anomaly_targets", []),
     )
 
 
@@ -381,12 +419,204 @@ def _apply_cqr(
     }
 
 
+def _invert_anomaly(
+    preds: dict[str, float], clim_value: float
+) -> dict[str, float]:
+    """Aggiunge clim_value a tutti i quantili e CI bounds (anomalia → valore assoluto).
+
+    CQR lavora in unità di anomalia (è un offset), quindi si applica prima
+    dell'inversione: l'errore è identico, clim è deterministica.
+    """
+    return {k: v + clim_value for k, v in preds.items()}
+
+
+class AdaptiveConformalizer:
+    """ACI (Gibbs & Candès 2021) per singolo livello α.
+
+    Aggiusta `alpha_t` online ad ogni feedback di copertura, mantenendo la
+    garanzia long-run marginal di copertura = 1-α anche sotto distribution
+    shift (drift climatico, cambio modello). Il CQR statico fallisce in questi
+    casi (vedi KI-023 — drift già in atto sui fold recenti).
+
+    Algoritmo: alpha_{t+1} = clip(alpha_t + γ * (α_target − err_t), ε, 1−ε)
+    dove err_t = 1 se miscoverage al tempo t, 0 altrimenti.
+
+    Args:
+        alpha_target: livello target (es. 0.10 per CI 90%, 0.20 per CI 80%).
+        learning_rate: γ. Default 0.02 (Gibbs & Candès).
+        eps: clamping per evitare alpha degeneri (0 o 1).
+    """
+
+    def __init__(
+        self,
+        alpha_target: float,
+        learning_rate: float = 0.02,
+        eps: float = 0.01,
+    ) -> None:
+        self.alpha_target = alpha_target
+        self.gamma = learning_rate
+        self.eps = eps
+        self.alpha_t = alpha_target
+        self.n_updates = 0
+        self._err_sum = 0  # somma err_t per diagnostics
+
+    def update(self, covered: bool) -> float:
+        """Registra feedback di copertura al tempo t e aggiorna alpha_t.
+
+        Returns:
+            Nuovo alpha_t (per ispezione / logging).
+        """
+        err = 0 if covered else 1
+        self._err_sum += err
+        self.alpha_t = max(
+            self.eps,
+            min(1.0 - self.eps, self.alpha_t + self.gamma * (self.alpha_target - err)),
+        )
+        self.n_updates += 1
+        return self.alpha_t
+
+    def correct(self, offset: float) -> float:
+        """Restituisce l'offset CQR-equivalente per il livello alpha_t corrente.
+
+        `offset` è l'offset CQR calcolato al baseline (alpha_target). ACI lo
+        aggiusta: alpha_t più alto → CI più stretto (offset più piccolo),
+        alpha_t più basso → CI più largo. Approssimazione lineare attorno
+        al baseline: sufficiente per uno spike, da raffinare in produzione
+        con la quantile function esplicita (normale, t, o quantile empirico).
+        """
+        # k = 5 è una scelta conservativa per forecast reali: cambio di α di
+        # 0.10 (es. da 0.10 a 0.20) modifica l'offset di ~0.5°C su tmin.
+        delta_alpha = self.alpha_target - self.alpha_t
+        return offset * (1.0 + 5.0 * delta_alpha)
+
+    def to_dict(self) -> dict[str, float | int]:
+        return {
+            "alpha_target": self.alpha_target,
+            "alpha_t": self.alpha_t,
+            "n_updates": self.n_updates,
+            "err_rate": self._err_sum / self.n_updates if self.n_updates else 0.0,
+        }
+
+    @classmethod
+    def from_state(
+        cls,
+        alpha_target: float,
+        alpha_t: float,
+        n_updates: int,
+        err_sum: int,
+        learning_rate: float = 0.02,
+        eps: float = 0.01,
+    ) -> AdaptiveConformalizer:
+        """Ricostruisce ACI da state persistito (DuckDB o dizionario).
+
+        Usato dopo `db.get_aci_state()` per ricaricare lo state al startup
+        del job predict. Se n_updates == 0, alpha_t == alpha_target (cold start).
+        """
+        aci = cls(alpha_target=alpha_target, learning_rate=learning_rate, eps=eps)
+        aci.alpha_t = max(eps, min(1.0 - eps, alpha_t))
+        aci.n_updates = n_updates
+        aci._err_sum = err_sum
+        return aci
+
+    @property
+    def err_rate(self) -> float:
+        return self._err_sum / self.n_updates if self.n_updates else 0.0
+
+
+# Cold start: prime N osservazioni prima che ACI sia affidabile. CQR statico
+# (calcolato da train_all) è più conservativo e ci protegge. Dopo N obs,
+# l'alpha_t corrente è già stabile.
+ACI_COLD_START_N: int = 30
+
+
+def get_aci_pair(
+    db: DuckDBClient,
+    target: str,
+    lead_bucket: str,
+    learning_rate: float = 0.02,
+) -> tuple[AdaptiveConformalizer, AdaptiveConformalizer]:
+    """Carica (o crea) la coppia ACI per (target, lead_bucket) ai livelli 80%/90%.
+
+    Returns:
+        (aci_80, aci_90): istanze pronte per update/correct. Se assenti in DB,
+        hanno alpha_t == alpha_target (cold start, CQR statico farà da fallback
+        pratico finché n_updates < ACI_COLD_START_N).
+    """
+    state = db.get_aci_state(target, lead_bucket)
+    if state is None:
+        return (
+            AdaptiveConformalizer(alpha_target=0.20, learning_rate=learning_rate),
+            AdaptiveConformalizer(alpha_target=0.10, learning_rate=learning_rate),
+        )
+    return (
+        AdaptiveConformalizer.from_state(
+            alpha_target=0.20,
+            alpha_t=state["alpha_t_80"],
+            n_updates=state["n_updates"],
+            err_sum=state["err_sum_80"],
+            learning_rate=learning_rate,
+        ),
+        AdaptiveConformalizer.from_state(
+            alpha_target=0.10,
+            alpha_t=state["alpha_t_90"],
+            n_updates=state["n_updates"],
+            err_sum=state["err_sum_90"],
+            learning_rate=learning_rate,
+        ),
+    )
+
+
+def apply_aci_correction(
+    ci80_lo: float,
+    ci80_hi: float,
+    ci90_lo: float,
+    ci90_hi: float,
+    aci_80: AdaptiveConformalizer,
+    aci_90: AdaptiveConformalizer,
+) -> tuple[float, float, float, float, str]:
+    """Applica la correzione ACI ai bound CI. Restituisce (lo80, hi80, lo90, hi90, source).
+
+    source ∈ {"aci", "cqr_static"} — "cqr_static" se uno dei due ACI è in cold start
+    (n_updates < ACI_COLD_START_N), segnalato al logger upstream per diagnostica.
+
+    Logica: se ACI è warm, riscala i bound CQR in base al delta alpha. Se ACI è
+    freddo, restituisce i bound originali. Il mapping è lineare (vedi
+    AdaptiveConformalizer.correct): cambio di α di 0.10 → offset scalato di ~50%.
+    Sufficiente per uno spike: in produzione si raffina con quantile function
+    esplicita.
+    """
+    if aci_80.n_updates < ACI_COLD_START_N or aci_90.n_updates < ACI_COLD_START_N:
+        return ci80_lo, ci80_hi, ci90_lo, ci90_hi, "cqr_static"
+
+    # Ricostruiamo l'offset ACI moltiplicando i bound width per il fattore correct.
+    # L'offset CQR originale è (hi - p90) o (p10 - lo); ACI applica un fattore
+    # di scala simmetrico.
+    w80 = (ci80_hi - ci80_lo) / 2
+    w90 = (ci90_hi - ci90_lo) / 2
+    c80 = (ci80_hi + ci80_lo) / 2
+    c90 = (ci90_hi + ci90_lo) / 2
+    f80 = aci_80.alpha_target / aci_80.alpha_t
+    f90 = aci_90.alpha_target / aci_90.alpha_t
+    new_w80 = w80 * f80
+    new_w90 = w90 * f90
+    return (
+        c80 - new_w80, c80 + new_w80,
+        c90 - new_w90, c90 + new_w90,
+        "aci",
+    )
+
+
 def predict(
     artifacts: TrainingArtifacts,
     X: pd.DataFrame,
     lead_h: int = 0,
 ) -> dict[str, dict[str, float]]:
     """Genera predizioni con CI CQR-aggiustati per una singola riga.
+
+    Per i target in `artifacts.anomaly_targets` (tmin/tmax), il modello lavora
+    in anomalia rispetto alla clim mensile: l'output è riportato in valore
+    assoluto aggiungendo `clim_*_mean` dalla riga di input. Il JSON esposto
+    è identico al caso non-anomaly.
 
     Returns:
         {target: {"p05": ..., "p10": ..., "p50": ..., "p90": ..., "p95": ...,
@@ -402,7 +632,12 @@ def predict(
     for target, bundle in artifacts.targets.items():
         preds_q = {f"p{int(q*100):02d}": float(model.predict(X)[0])
                    for q, model in bundle.models.items()}
-        out[target] = _apply_cqr(preds_q, bundle, bucket)
+        pred = _apply_cqr(preds_q, bundle, bucket)
+        if target in artifacts.anomaly_targets:
+            clim_col = _TARGET_CLIM_COL[target]
+            clim_value = float(X[clim_col].iloc[0])
+            pred = _invert_anomaly(pred, clim_value)
+        out[target] = pred
 
     return out
 
@@ -438,9 +673,18 @@ def predict_frame(
     for target, bundle in artifacts.targets.items():
         q_cols = {f"p{int(q*100):02d}": np.asarray(model.predict(X))
                   for q, model in bundle.models.items()}
+        # Per target in anomaly, prepariamo il vettore clim in un colpo (no loop Python).
+        clim_vals = (
+            np.asarray(X[_TARGET_CLIM_COL[target]], dtype=float)
+            if target in artifacts.anomaly_targets
+            else None
+        )
         for i in range(len(X)):
             preds_q = {k: float(v[i]) for k, v in q_cols.items()}
-            out[i][target] = _apply_cqr(preds_q, bundle, buckets[i])
+            pred = _apply_cqr(preds_q, bundle, buckets[i])
+            if clim_vals is not None:
+                pred = {k: v + float(clim_vals[i]) for k, v in pred.items()}
+            out[i][target] = pred
 
     return out
 
@@ -510,7 +754,7 @@ def walk_forward_cv(
         )
 
         for target in TARGETS:
-            col = f"target_{target}"
+            col = _target_col(target)
             nwp_col = _TARGET_NWP_MEAN[target]
 
             mask_tr = df_train[col].notna()

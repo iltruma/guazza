@@ -12,9 +12,11 @@ import pytest
 from guazza.models import (
     QUANTILES,
     TARGETS,
+    AdaptiveConformalizer,
     TrainingArtifacts,
     _cqr_q_hat,
     _lead_time_bucket,
+    apply_aci_correction,
     crps_from_quantiles,
     load_artifacts,
     predict,
@@ -50,6 +52,7 @@ CREATE TABLE IF NOT EXISTS features_daily (
     clim_tmax_mean DOUBLE, clim_tmax_std DOUBLE,
     clim_precip_mean DOUBLE, clim_precip_std DOUBLE,
     month BIGINT, day_of_year BIGINT,
+    target_tmin_anom_c DOUBLE, target_tmax_anom_c DOUBLE,
     target_tmin_c DOUBLE, target_tmax_c DOUBLE, target_precip_mm DOUBLE
 )
 """
@@ -131,22 +134,15 @@ def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) 
                 tmin, 2.0, tmax, 2.0, 1.5, 0.8,
                 # calendar
                 d.month, d.timetuple().tm_yday,
-                # target
+                # target (anomalia: clim_mean == tmin/tmax nel test, quindi anom=0)
+                0.0, 0.0,
                 tmin, tmax, precip,
             ))
 
-    db._conn.executemany("""
-        INSERT INTO features_daily VALUES (
-            ?,?,?,
-            ?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,?,
-            ?,?,?,?,?,?,
-            ?,?,?,?,
-            ?,?,?,?,?,?,
-            ?,?,
-            ?,?,?,?,?,?,
-            ?,?,?
-        )
-    """, rows)
+    db._conn.executemany(
+        "INSERT INTO features_daily VALUES (" + ",".join(["?"] * 62) + ")",
+        rows,
+    )
 
 
 def test_lead_time_bucket() -> None:
@@ -319,3 +315,378 @@ def test_walk_forward_cv_coverage_reasonable(db: DuckDBClient) -> None:
     # su dati sintetici con modelli veloci (n_estimators ridotto dalla fixture fast_lgbm)
     assert (results["coverage_90"] >= 0.0).all()
     assert (results["coverage_90"] <= 1.0).all()
+
+
+def test_train_all_persists_anomaly_targets(db: DuckDBClient, tmp_path: Path) -> None:
+    """train_all deve scrivere anomaly_targets in artifacts (default ANOMALY_TARGETS)."""
+    _insert_features(db, n_days=400, n_locations=2)
+    model_dir = tmp_path / "models"
+
+    artifacts = train_all(db, model_dir=model_dir, cal_days=60)
+
+    # ANOMALY_TARGETS include tmin_c e tmax_c
+    from guazza.features import ANOMALY_TARGETS
+    assert set(artifacts.anomaly_targets) == set(ANOMALY_TARGETS)
+    assert "precip_mm" not in artifacts.anomaly_targets  # precip resta valore assoluto
+
+    # Persistito su disco
+    loaded = load_artifacts(model_dir)
+    assert set(loaded.anomaly_targets) == set(ANOMALY_TARGETS)
+
+
+def test_predict_inverts_anomaly_to_absolute(db: DuckDBClient, tmp_path: Path) -> None:
+    """predict() deve riportare i target in anomaly in valore assoluto.
+
+    Nel test la clim_mean == target (vedi _insert_features), quindi l'anomalia
+    è 0: il modello predice ~0 e predict() aggiunge clim_mean → output ≈ target.
+    Verifica che l'output predict() sia nello stesso range di target assoluto.
+    """
+    _insert_features(db, n_days=400, n_locations=2)
+    artifacts = train_all(db, model_dir=tmp_path / "m", cal_days=60)
+
+    from guazza.models import FEATURE_COLS
+    X = db.execute("SELECT * FROM features_daily LIMIT 3").df()
+    X["location_id"] = X["location_id"].astype("category")
+    actuals = X[["target_tmin_c", "target_tmax_c", "target_precip_mm"]].reset_index(drop=True)
+
+    for i, row in X.iterrows():
+        result = predict(artifacts, pd.DataFrame([row])[FEATURE_COLS], lead_h=0)
+        # Per tmin/tmax (anomaly), l'output p50 deve essere vicino al valore assoluto
+        # (anom=0 → pred_anom≈0 → + clim_mean → ≈ target assoluto).
+        # Per precip (non anomaly), predizione standard.
+        for target in ["tmin_c", "tmax_c", "precip_mm"]:
+            assert target in result
+            # Range plausibile: ordine di grandezza del valore reale
+            actual_val = actuals.iloc[i][f"target_{target}"]
+            pred_val = result[target]["p50"]
+            if not np.isnan(actual_val):
+                # Differenza < 10°C per tmin/tmax, < 10mm per precip (test lasco)
+                assert abs(pred_val - actual_val) < 10.0, (
+                    f"target={target} actual={actual_val} pred={pred_val}"
+                )
+
+
+def test_predict_frame_inverts_anomaly_per_row(db: DuckDBClient, tmp_path: Path) -> None:
+    """predict_frame() deve invertire l'anomalia per ogni riga con la clim corretta."""
+    _insert_features(db, n_days=400, n_locations=2)
+    artifacts = train_all(db, model_dir=tmp_path / "m", cal_days=60)
+
+    from guazza.models import FEATURE_COLS
+    X = db.execute("SELECT * FROM features_daily LIMIT 5").df()
+    X["location_id"] = X["location_id"].astype("category")
+    X_feat = X[FEATURE_COLS].reset_index(drop=True)
+    leads = [0, 24, 48, 120, 168]
+
+    batched = predict_frame(artifacts, X_feat, leads)
+    assert len(batched) == len(X_feat)
+
+    for i in range(len(X_feat)):
+        single = predict(artifacts, pd.DataFrame([X_feat.iloc[i]])[FEATURE_COLS], lead_h=leads[i])
+        for target in ["tmin_c", "tmax_c", "precip_mm"]:
+            for key, val in single[target].items():
+                assert batched[i][target][key] == pytest.approx(val, abs=1e-9), (
+                    f"row={i} target={target} key={key}: batched={batched[i][target][key]} single={val}"
+                )
+
+
+def test_load_legacy_artifacts_without_anomaly_field(tmp_path: Path) -> None:
+    """load_artifacts deve accettare artifacts.json scritti prima del campo anomaly_targets."""
+    import json as _json
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+
+    # Manifest minimale senza anomaly_targets (retrocompat)
+    manifest = {
+        "format_version": 1,
+        "trained_at": "2024-01-01T00:00:00+00:00",
+        "n_train": 100,
+        "n_cal": 30,
+        "feature_cols": ["clim_tmin_mean"],
+        "categorical_cols": [],
+        "targets": {},  # vuoto, basta per test load
+    }
+    (model_dir / "artifacts.json").write_text(_json.dumps(manifest))
+
+    loaded = load_artifacts(model_dir)
+    assert loaded.anomaly_targets == []  # default vuoto = niente inversione
+
+
+# ── Adaptive Conformal Inference (ACI) — spike ─────────────────────────────
+
+def test_aci_starts_at_target() -> None:
+    """ACI deve partire da alpha_t = alpha_target."""
+    aci = AdaptiveConformalizer(alpha_target=0.10)
+    assert aci.alpha_t == 0.10
+    assert aci.n_updates == 0
+
+
+def test_aci_lowers_alpha_under_miscoverage() -> None:
+    """Sequenza di miscoverage: ACI abbassa alpha_t → CI più largo (più copertura)."""
+    aci = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.05)
+    initial = aci.alpha_t
+
+    for _ in range(20):
+        aci.update(covered=False)
+
+    # err=1 → alpha_{t+1} = alpha_t + γ*(0.10 - 1) = alpha_t - 0.9*γ
+    # alpha_t SCENDE, ma è clampato a eps
+    assert aci.alpha_t < initial
+    assert aci.alpha_t >= aci.eps
+    assert aci.n_updates == 20
+
+
+def test_aci_raises_alpha_under_over_coverage() -> None:
+    """Sequenza di coverage: ACI alza alpha_t → CI più stretto (meno over-coverage)."""
+    aci = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.05)
+    initial = aci.alpha_t
+
+    for _ in range(20):
+        aci.update(covered=True)
+
+    # err=0 → alpha_{t+1} = alpha_t + γ*(0.10 - 0) = alpha_t + 0.1*γ
+    # alpha_t SALE, ma è clampato a 1-eps
+    assert aci.alpha_t > initial
+    assert aci.alpha_t <= 1.0 - aci.eps
+    assert aci.n_updates == 20
+
+
+def test_aci_correct_adjusts_offset() -> None:
+    """correct(offset) deve restituire offset più grande se alpha_t < target (CI più largo)."""
+    aci = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.05)
+    # Forza alpha_t sotto target con miscoverage
+    for _ in range(30):
+        aci.update(covered=False)
+    # alpha_t è sceso, ACI vuole CI più largo
+    base_offset = 1.5
+    assert aci.correct(base_offset) > base_offset
+
+    # Simmetrico: ACI con over-coverage → offset più stretto
+    aci2 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.05)
+    for _ in range(30):
+        aci2.update(covered=True)
+    assert aci2.correct(base_offset) < base_offset
+
+
+def test_aci_vs_cqr_static_under_drift() -> None:
+    """ACI mantiene copertura long-run al target sotto drift; CQR statico decade.
+
+    Caso sintetico: predizione perfetta, errore N(0, 1) per i primi N/2 sample,
+    poi drift a N(+0.5, 1) per i secondi N/2 (modello che cambia).
+
+    CQR statico (calibrato sul primo regime) → coverage decade dopo il drift.
+    ACI aggiusta alpha_t online → coverage converge al target.
+    """
+    rng = np.random.default_rng(42)
+    n = 1000
+    pred = np.zeros(n)  # predizione perfetta (no model error)
+    # Errore reale: regime 1 centrato, regime 2 con bias +0.5
+    errors = np.concatenate([
+        rng.normal(0.0, 1.0, n // 2),
+        rng.normal(0.5, 1.0, n // 2),
+    ])
+    actuals = pred + errors
+
+    # CQR statico: offset calibrato sul regime 1 → CI [-1.645, +1.645] per α=0.10
+    q_hat_static = 1.645
+    cov_static_full = (actuals >= -q_hat_static) & (actuals <= q_hat_static)
+    cov_static_late = cov_static_full[n // 2:].mean()
+
+    # ACI: alpha_t parte da 0.10, q_hat si aggiusta in base a correct()
+    aci = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.02)
+    cov_aci = np.zeros(n, dtype=bool)
+    for t in range(n):
+        q_hat_t = aci.correct(q_hat_static)
+        cov_aci[t] = (actuals[t] >= -q_hat_t) & (actuals[t] <= q_hat_t)
+        aci.update(cov_aci[t])
+    cov_aci_late = cov_aci[n // 2:].mean()
+
+    # CQR statico decade sotto il target 0.90 dopo il drift
+    assert cov_static_late < 0.88, (
+        f"Pre-condition fallita: CQR statico dovrebbe decadere, late={cov_static_late:.3f}"
+    )
+    # ACI mantiene copertura significativamente più vicina al target
+    assert cov_aci_late > cov_static_late, (
+        f"ACI dovrebbe battere CQR statico: aci={cov_aci_late:.3f} static={cov_static_late:.3f}"
+    )
+    # E deve essere entro 8pp dal target 0.90
+    assert abs(cov_aci_late - 0.90) < 0.08, (
+        f"ACI late coverage {cov_aci_late:.3f} lontana dal target 0.90"
+    )
+
+
+def test_aci_long_run_coverage_holds() -> None:
+    """Proprietà chiave ACI (Gibbs & Candès 2021): su N lungo, copertura empirica → 1-α."""
+    rng = np.random.default_rng(0)
+    n = 5000
+    # Errore sempre N(0, 1) — copertura "teorica" del CQR statico è 90%
+    errors = rng.normal(0, 1, n)
+    actuals = errors  # pred = 0
+    q_hat_static = 1.645
+    aci = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.02)
+    coverages = np.zeros(n, dtype=bool)
+    for t in range(n):
+        q_hat_t = aci.correct(q_hat_static)
+        coverages[t] = (actuals[t] >= -q_hat_t) & (actuals[t] <= q_hat_t)
+        aci.update(coverages[t])
+
+    # Copertura empirica long-run (no drift) deve essere vicina al target 0.90
+    # (±3pp tolleranza su N=5000: errore standard ≈ sqrt(0.9*0.1/5000) ≈ 0.004)
+    assert abs(coverages.mean() - 0.90) < 0.03
+
+
+def test_aci_from_state_roundtrip() -> None:
+    """from_state deve ricostruire alpha_t e n_updates."""
+    aci = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.02)
+    for _ in range(50):
+        aci.update(covered=False)  # alpha_t scende
+    alpha_t_before = aci.alpha_t
+    n_updates_before = aci.n_updates
+    err_sum_before = aci._err_sum
+
+    reconstructed = AdaptiveConformalizer.from_state(
+        alpha_target=0.10,
+        alpha_t=alpha_t_before,
+        n_updates=n_updates_before,
+        err_sum=err_sum_before,
+    )
+    assert reconstructed.alpha_t == alpha_t_before
+    assert reconstructed.n_updates == n_updates_before
+    assert reconstructed._err_sum == err_sum_before
+    # Deve continuare a funzionare
+    new_alpha = reconstructed.update(covered=True)
+    assert new_alpha > alpha_t_before  # coverage alza alpha
+
+
+def test_apply_aci_correction_cold_start_passthrough() -> None:
+    """In cold start (n_updates < 30), apply_aci_correction ritorna i bound originali."""
+    aci_80 = AdaptiveConformalizer(alpha_target=0.20, learning_rate=0.02)
+    aci_90 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.02)
+    # n_updates == 0, freddo
+    lo80, hi80, lo90, hi90, source = apply_aci_correction(
+        1.0, 9.0, 0.0, 10.0, aci_80, aci_90,
+    )
+    assert (lo80, hi80, lo90, hi90) == (1.0, 9.0, 0.0, 10.0)
+    assert source == "cqr_static"
+
+
+def test_apply_aci_correction_warm_aci() -> None:
+    """ACI warm riscala i bound in base al fattore alpha_target/alpha_t."""
+    # Forza alpha_t sotto target con miscoverage
+    aci_80 = AdaptiveConformalizer(alpha_target=0.20, learning_rate=0.05)
+    aci_90 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.05)
+    for _ in range(50):
+        aci_80.update(covered=False)  # alpha_t scende → fattore scala > 1 → CI più largo
+        aci_90.update(covered=False)
+    assert aci_80.alpha_t < 0.20
+    assert aci_90.alpha_t < 0.10
+
+    lo80, hi80, lo90, hi90, source = apply_aci_correction(
+        1.0, 9.0, 0.0, 10.0, aci_80, aci_90,
+    )
+    assert source == "aci"
+    # CI 80% originale: width = 8, center = 5
+    # ACI allarga → width > 8, center ~ 5
+    assert (hi80 - lo80) > 8.0
+    assert abs(((hi80 + lo80) / 2) - 5.0) < 0.01
+    # CI 90% originale: width = 10, center = 5
+    assert (hi90 - lo90) > 10.0
+
+
+def test_apply_aci_correction_overcoverage_shrinks() -> None:
+    """ACI con over-coverage (alpha_t > target) stringe il CI."""
+    aci_80 = AdaptiveConformalizer(alpha_target=0.20, learning_rate=0.05)
+    aci_90 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.05)
+    for _ in range(50):
+        aci_80.update(covered=True)  # alpha_t sale → fattore scala < 1 → CI più stretto
+        aci_90.update(covered=True)
+    assert aci_80.alpha_t > 0.20
+    assert aci_90.alpha_t > 0.10
+
+    lo80, hi80, _, _, source = apply_aci_correction(
+        1.0, 9.0, 0.0, 10.0, aci_80, aci_90,
+    )
+    assert source == "aci"
+    assert (hi80 - lo80) < 8.0  # CI stretto
+
+
+def test_get_aci_pair_cold_start() -> None:
+    """get_aci_pair senza state in DB deve restituire ACI freschi con alpha_t == alpha_target."""
+    from guazza.models import get_aci_pair
+
+    db = _make_clean_db(__import__("pathlib").Path("/tmp/test_aci_pair"))
+    aci_80, aci_90 = get_aci_pair(db, "tmin_c", "0-6h")
+    assert aci_80.alpha_t == 0.20
+    assert aci_90.alpha_t == 0.10
+    assert aci_80.n_updates == 0
+    db.__exit__(None, None, None)
+
+
+def _make_clean_db(path: Path) -> DuckDBClient:
+    """Helper: DB pulito con schema ACI."""
+    client = DuckDBClient(db_path=path / "test.duckdb")
+    client.__enter__()
+    client.init_schema()
+    client.ensure_aci_schema()
+    return client
+
+
+def test_get_aci_pair_returns_warm_or_cold(tmp_path: Path) -> None:
+    """get_aci_pair restituisce (aci_80, aci_90) coerenti con state DB o fresh."""
+    from guazza.models import get_aci_pair
+
+    db = _make_clean_db(tmp_path)
+    # Cold start: nessuna state in DB
+    aci_80, aci_90 = get_aci_pair(db, "tmin_c", "0-6h")
+    assert aci_80.alpha_t == 0.20
+    assert aci_90.alpha_t == 0.10
+    assert aci_80.n_updates == 0
+
+    # Scrivi state e rileggi
+    db.upsert_aci_state("tmin_c", "0-6h",
+                        alpha_t_80=0.15, alpha_t_90=0.07,
+                        n_updates=50, err_sum_80=10, err_sum_90=5)
+    aci_80, aci_90 = get_aci_pair(db, "tmin_c", "0-6h")
+    assert aci_80.alpha_t == 0.15
+    assert aci_80.n_updates == 50
+    assert aci_80._err_sum == 10
+    assert aci_90.alpha_t == 0.07
+    assert aci_90._err_sum == 5
+
+    db.__exit__(None, None, None)
+
+
+def test_aci_state_persists_via_duckdb(tmp_path: Path) -> None:
+    """upsert_aci_state + get_aci_state roundtrip in DuckDB."""
+    db = _make_clean_db(tmp_path)
+
+    # Cold: assente
+    assert db.get_aci_state("tmin_c", "0-6h") is None
+
+    # Scrivi
+    db.upsert_aci_state("tmin_c", "0-6h",
+                        alpha_t_80=0.18, alpha_t_90=0.09,
+                        n_updates=100, err_sum_80=20, err_sum_90=10)
+
+    # Rileggi
+    state = db.get_aci_state("tmin_c", "0-6h")
+    assert state is not None
+    assert state["alpha_t_80"] == 0.18
+    assert state["alpha_t_90"] == 0.09
+    assert state["n_updates"] == 100
+    assert state["err_sum_80"] == 20
+    assert state["err_sum_90"] == 10
+
+    # Update (idempotente): sovrascrive
+    db.upsert_aci_state("tmin_c", "0-6h",
+                        alpha_t_80=0.16, alpha_t_90=0.08,
+                        n_updates=200, err_sum_80=40, err_sum_90=20)
+    state2 = db.get_aci_state("tmin_c", "0-6h")
+    assert state2 is not None
+    assert state2["alpha_t_80"] == 0.16
+    assert state2["n_updates"] == 200
+
+    # Bucket diverso: indipendente
+    state_other = db.get_aci_state("tmin_c", "24-48h")
+    assert state_other is None
+
+    db.__exit__(None, None, None)

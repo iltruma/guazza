@@ -42,13 +42,18 @@ DB_PATH=/var/lib/guazza/guazza.duckdb
 # SIR pubblica i dati validati del giorno precedente entro le 03:00-05:00 UTC.
 0 6 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.ingest daily >> /var/log/guazza/daily.jsonl 2>&1
 
+# ── Ogni giorno alle 09:00 UTC: monitor copertura ACI + alert drift (Sprint 9) ─
+# Calcola coverage_30d per (target, lead_bucket) e ping /fail su Healthchecks
+# se drift > 5pp dal target. Richiede che le obs del giorno prima siano state
+# backfillate (daily 06:00 le ha rese disponibili).
+5 9 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.monitor run >> /var/log/guazza/monitor.jsonl 2>&1
+
 # ── FUTURI (decommentare quando implementati) ─────────────────────────────────
 
 # Backup DuckDB → Cloudflare R2 (ogni notte alle 03:00)
 # 0 3 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.backup >> /var/log/guazza/backup.jsonl 2>&1
 
-# Validazione accuracy (ogni giorno alle 08:00, dopo che obs della notte sono disponibili)
-# 0 8 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.validate >> /var/log/guazza/validate.jsonl 2>&1
-
-# Retraining LightGBM (domenica notte 02:00)
-# 0 2 * * 0   cd $GUAZZA_DIR && uv run python -m guazza.jobs.retrain >> /var/log/guazza/retrain.jsonl 2>&1
+# Retraining LightGBM (domenica notte 02:00) — ACI corregge la confidenza ma non
+# il modello stesso: il modello resta addestrato sui dati storici finché non
+# rifit. Settimanale è un buon compromesso.
+# 0 2 * * 0   cd $GUAZZA_DIR && uv run python -m guazza.jobs.train run >> /var/log/guazza/retrain.jsonl 2>&1

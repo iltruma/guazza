@@ -1,17 +1,20 @@
 """Entry point cron — predizioni ML + DLE + output JSON.
 
 Pipeline per ogni location (ordine):
-  1. ensure_predictions_schema()    — migrazione schema v0.5 se necessario
-  2. backfill_prediction_obs()      — riempie *_obs su predictions passate
-  3. query features_daily           — miglior lead_time_h per ogni (location, data futura)
-  4. per ogni (location, data):
-       models.predict()             — quantile CI tmin/tmax/precip
-       upsert_predictions()         — salva in DuckDB
-       build_signals() + DLE        — valuta indicatori
-       log_results()                — indicator_log
-  5. per ogni location:
-       compute_coverage_30d()       — copertura empirica rolling
-       write_location_json()        — {output_dir}/{location_id}.json (tutti i giorni)
+  1. ensure_*_schema()                — migrazioni idempotenti
+  2. backfill_prediction_obs()        — riempie *_obs su predictions passate
+  3. update_aci_from_history()        — Adaptive Conformal Inference: aggiorna
+                                        alpha_t su predizioni passate con actual
+  4. query features_daily             — miglior lead_time_h per ogni (location, data futura)
+  5. per ogni (location, data):
+        models.predict()               — quantile CI tmin/tmax/precip (CQR)
+        apply_aci_correction()         — riscala CI bounds con ACI alpha_t corrente
+        upsert_predictions()           — salva in DuckDB
+        build_signals() + DLE          — valuta indicatori
+        log_results()                  — indicator_log
+  6. per ogni location:
+        compute_coverage_30d()         — copertura empirica rolling
+        write_location_json()          — {output_dir}/{location_id}.json (tutti i giorni)
 
 Cron: ogni 6h, subito dopo il job forecasts + features build.
 """
@@ -23,13 +26,22 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import typer
 from loguru import logger
 
 from guazza._logging import setup_logging
 from guazza.indicators import evaluate_all, load_indicators, log_results
 from guazza.jobs._common import DB_OPTION, OUTPUT_DIR_OPTION, job_run
-from guazza.models import load_artifacts, predict_frame
+from guazza.models import (
+    LEAD_BUCKETS,
+    TARGETS,
+    _lead_time_bucket,
+    apply_aci_correction,
+    get_aci_pair,
+    load_artifacts,
+    predict_frame,
+)
 from guazza.output import (
     apply_intraday_correction,
     build_signals,
@@ -74,6 +86,69 @@ def _to_date(val: Any) -> Any:
     return val.date() if hasattr(val, "date") else val
 
 
+def _aci_update_from_history(db: DuckDBClient) -> int:
+    """Aggiorna ACI su TUTTE le predictions passate con actual valorizzato.
+
+    Per ogni (target, lead_bucket) caricato da aci_state (o fresh se cold start),
+    itera sulle predictions con *_obs valorizzato in ordine cronologico e chiama
+    aci.update(covered). Salva lo state finale.
+
+    Idempotenza: n_updates è persistito in aci_state, ogni run ricalcola da lì.
+    Il costo è O(N_predictions) per run, ~1s su 20k righe.
+
+    Returns:
+        Numero di coppie (target, bucket) aggiornate.
+    """
+    if not db.execute("""
+        SELECT COUNT(*) FROM information_schema.tables
+        WHERE table_name = 'predictions'
+    """).fetchone()[0]:
+        return 0
+
+    rows = db.execute("""
+        SELECT lead_time_h,
+               tmin_p10, tmin_p90, tmin_p05, tmin_p95, tmin_obs,
+               tmax_p10, tmax_p90, tmax_p05, tmax_p95, tmax_obs,
+               precip_p10, precip_p90, precip_p05, precip_p95, precip_obs
+        FROM predictions
+        WHERE tmin_obs IS NOT NULL OR tmax_obs IS NOT NULL OR precip_obs IS NOT NULL
+        ORDER BY ts_valid
+    """).df()
+
+    if rows.empty:
+        return 0
+
+    target_obs = {
+        "tmin_c":    ("tmin_obs",    "tmin_p10",    "tmin_p90",    "tmin_p05",    "tmin_p95"),
+        "tmax_c":    ("tmax_obs",    "tmax_p10",    "tmax_p90",    "tmax_p05",    "tmax_p95"),
+        "precip_mm": ("precip_obs",  "precip_p10",  "precip_p90",  "precip_p05",  "precip_p95"),
+    }
+
+    n_updated = 0
+    for target, (obs_col, p10_col, p90_col, p05_col, p95_col) in target_obs.items():
+        for bucket in LEAD_BUCKETS:
+            aci_80, aci_90 = get_aci_pair(db, target, bucket)
+            for _, row in rows.iterrows():
+                actual = row[obs_col]
+                if pd.isna(actual):
+                    continue
+                # Coverage vs quantili predetti (p10/p90 per 80%, p05/p95 per 90%).
+                # Non usiamo i bound CI: ACI calibra la *frequenza* del quantile,
+                # non l'offset CQR.
+                cov_80 = (row[p10_col] <= actual <= row[p90_col])
+                cov_90 = (row[p05_col] <= actual <= row[p95_col])
+                aci_80.update(bool(cov_80))
+                aci_90.update(bool(cov_90))
+            db.upsert_aci_state(
+                target, bucket,
+                aci_80.alpha_t, aci_90.alpha_t,
+                aci_80.n_updates,
+                aci_80._err_sum, aci_90._err_sum,
+            )
+            n_updated += 1
+    return n_updated
+
+
 @app.command("run")
 def cmd_run(
     db_path:    Path = DB_OPTION,
@@ -98,12 +173,17 @@ def cmd_run(
                 db.init_schema()
                 db.ensure_predictions_schema()
                 db.ensure_benchmark_schema()
+                db.ensure_aci_schema()
                 n_backfilled = db.backfill_prediction_obs()
                 if n_backfilled:
                     logger.info(f"Obs backfilled: {n_backfilled} predictions aggiornate")
                 n_bench_backfilled = db.backfill_benchmark_obs()
                 if n_bench_backfilled:
                     logger.info(f"Obs backfilled: {n_bench_backfilled} benchmark aggiornati")
+                # ACI: aggiorna alpha_t su predizioni passate con actual (Sprint 9)
+                n_aci = _aci_update_from_history(db)
+                if n_aci:
+                    logger.info(f"ACI aggiornato: {n_aci} coppie (target, lead_bucket)")
 
             # Per ogni (location, data): forecast più recente = lead_time_h più corto
             df_all = db.execute("""
@@ -139,10 +219,45 @@ def cmd_run(
                     artifacts, loc_df[artifacts.feature_cols], lead_times
                 )
 
+                # Cache ACI per (target, lead_bucket) — un caricamento per bucket
+                # invece di uno per riga.
+                aci_cache: dict[tuple[str, str], tuple] = {}
+
                 for i, row in loc_df.iterrows():
                     target_date_obj = _to_date(row["target_date"])
                     lead_time_h = lead_times[i]
                     pred = preds[i]
+                    bucket = _lead_time_bucket(lead_time_h)
+
+                    # ACI correct sui bound CI (se warm). Drop-in trasparente:
+                    # in cold start apply_aci_correction restituisce i bound CQR
+                    # immutati + source="cqr_static", nessun effetto visibile.
+                    if not dry_run:
+                        aci_corrected = 0
+                        aci_skipped = 0
+                        for target in TARGETS:
+                            key = (target, bucket)
+                            if key not in aci_cache:
+                                aci_cache[key] = get_aci_pair(db, target, bucket)
+                            aci_80, aci_90 = aci_cache[key]
+                            new_lo80, new_hi80, new_lo90, new_hi90, source = apply_aci_correction(
+                                pred[target]["ci80_lo"], pred[target]["ci80_hi"],
+                                pred[target]["ci90_lo"], pred[target]["ci90_hi"],
+                                aci_80, aci_90,
+                            )
+                            if source == "aci":
+                                aci_corrected += 1
+                            else:
+                                aci_skipped += 1
+                            pred[target]["ci80_lo"] = new_lo80
+                            pred[target]["ci80_hi"] = new_hi80
+                            pred[target]["ci90_lo"] = new_lo90
+                            pred[target]["ci90_hi"] = new_hi90
+                        if aci_corrected and i == 0:
+                            logger.debug(
+                                f"[{location_id}] {target_date_obj} bucket={bucket}: "
+                                f"ACI applicato a {aci_corrected}/{aci_corrected + aci_skipped} target"
+                            )
 
                     if target_date_obj == date.today():
                         current_obs = get_current_conditions(db, location_id)

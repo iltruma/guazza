@@ -1,8 +1,50 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-06-25 (Sprint 7 chiuso · Sprint 8 S-A: Dockerfile + CI build, immagine `ghcr.io/iltruma/guazza`)
+> Aggiornato: 2026-06-27 (Sprint 9 chiuso · ACI + monitor, v0.10.0)
 
 ## Cosa è stato fatto
+
+### Sprint 9 — Adaptive Conformal Inference + monitor (completato — 2026-06-27, v0.10.0)
+
+Risposta al **drift di calibrazione CQR** già in atto (KI-023: walk-forward CV
+2025-2026 → `coverage_80` = 0.688/0.699 vs target 0.80, drift di 5-11pp).
+
+- **`AdaptiveConformalizer`** in `models.py` (Gibbs & Candès 2021): `alpha_{t+1} =
+  clip(alpha_t + γ·(α_target − err_t), ε, 1−ε)`. Garantisce copertura long-run
+  marginal anche sotto distribution shift. Mapping α → CI: `width_corrected =
+  width_CQR · (α_target / α_t)`. Spike sufficiente; Sprint 11+ raffina con
+  quantile function esplicita.
+- **Persistenza DuckDB**: tabella `aci_state(target, lead_bucket, alpha_t_80,
+  alpha_t_90, n_updates, err_sum_*, updated_at)`. Sopravvive ai restart.
+- **Integrazione `jobs/predict.py`**: prima di generare prediction future,
+  aggiorna ACI su TUTTE le prediction passate con `actual` valorizzato
+  (loop cronologico, idempotente: n_updates persistito). Poi applica
+  `apply_aci_correction()` ai bound CI delle prediction future. Cold start
+  (`n_updates < 30`) → drop-in trasparente a CQR statico.
+- **`jobs/monitor.py`** (nuovo): calcola `coverage_30d` per (target, lead_bucket)
+  aggregato. Log INFO/WARN per combinazione, ping Healthchecks `/fail` se
+  drift > 5pp. Schedule: `5 9 * * *` UTC.
+- **Cache ACI per bucket**: in predict job, un caricamento per (target, bucket)
+  invece di uno per riga (ottimizzazione batch).
+- **16 nuovi test** (ACI round-trip DuckDB, apply_aci_correction in cold/warm/
+  overcoverage, get_aci_pair, monitor coverage 30gg + finestra + drift). **334
+  test verdi** totali, ruff + mypy puliti.
+- **Nessuna modifica al contract JSON**: il consumatore vede i bound CI di
+  sempre, semplicemente corretti da ACI quando warm.
+
+Decisione architetturale: ACI + monitor in unico sprint (coesione naturale,
+stessa metrica di feedback). `online LightGBM` rimandato: ACI corregge la
+confidenza, non il modello. Se dopo 30-60gg di operatività la copertura è in
+target ma il MAE cresce, allora serve online LightGBM (Sprint 10+).
+
+### Spike anomaly target (fallito — 2026-06-27)
+
+Vedi **KI-024** in `known_issues.md`. Anomaly target (`obs - clim_mean`)
+misurato in walk-forward CV: tmin MAE +28%, tmax MAE +44% vs baseline. Causa
+probabile: clim mensile troppo grezza su 4 anni di training, niente feature
+`anom_*_c` in `FEATURE_COLS`. Rollback eseguito (colonne rimosse con ALTER
+TABLE, `ANOMALY_TARGETS = ()` in `features.py`). Spike tenuto come regression
+test + punto di partenza per retry futuro con clim settimanale/percentile.
 
 ### Rifattorizzazione trasversale (2026-06-13, v0.9.0)
 
@@ -655,7 +697,7 @@ in D-016. 🟡 La versione multi-anno resta gated sull'accumulo forward (deploy)
 - **Target di deploy**: cluster k3s homelab (`houston`, VM `iss` 192.168.178.3) come namespace k8s dedicato (`guazza`); manifest in `k8s/apps/guazza/` nel repo Houston; ApplicationSet ArgoCD già presente genera l'`Application` automaticamente.
 - **Immagine container**: `ghcr.io/iltruma/guazza:vX.Y.Z` (e `:X.Y.Z`), allineata a `pyproject.toml`. Single-stage `python:3.13-slim` + nginx, install via `uv` (niente builder/wheel); gira come utente non-root (UID 1000). Buildata su push tag `v*.*.*` (CI: test/lint/mypy + buildx). Dettaglio in CHANGELOG Unreleased.
 - **Storage**: PVC 10Gi, `storageClassName: local-path` (k3s su NVMe), `ReadWriteOnce` (DuckDB single-writer). Path `/var/lib/guazza/` con `db/`, `models/`, `parquet/`, `output/`, `logs/`.
-- **Scheduling**: `CronJob` k8s (non crontab sul 3050), `concurrencyPolicy: Forbid` su tutti i writer DuckDB. Schedule sfalsate: realtime `*/15`, daily `0 6 * * *`, forecasts `0 0,6,12,18 * * *`, features `15 1,7,13,19 * * *`, predict `30 1,7,13,19 * * *`, qc `0 4 * * 1`, skill `0 9 * * 0`, historical `0 0 31 2 *` (31 febbraio, lanciabile on-demand via `kubectl create job --from=cronjob/...`).
+- **Scheduling**: `CronJob` k8s (non crontab sul 3050), `concurrencyPolicy: Forbid` su tutti i writer DuckDB. Schedule sfalsate: realtime `*/15`, daily `0 6 * * *`, forecasts `0 0,6,12,18 * * *`, features `15 1,7,13,19 * * *`, predict `30 1,7,13,19 * * *`, qc `0 4 * * 1`, **monitor `5 9 * * *` (Sprint 9 — copertura ACI + alert drift)**, skill `0 9 * * 0`, historical `0 0 31 2 *` (31 febbraio, lanciabile on-demand via `kubectl create job --from=cronjob/...`).
 - **Accesso esterno**: Cloudflare Tunnel `homelab` (già operativo, 2 repliche in `cloudflared`) — aggiungere riga in `k8s/apps/cloudflared/configmap.yaml` + CNAME in dashboard per `guazza.paroparo.it` → `http://guazza-web.guazza.svc.cluster.local:80`.
 - **Interno**: `guazza.lab.paroparo.it` (record in Pi-hole) → ingress Traefik su wildcard `*.lab.paroparo.it` (già emesso da cert-manager DNS-01 Cloudflare).
 - **Secret**: 2 SealedSecret nel repo Houston — `netatmo-credentials` (client_id+client_secret) e `healthchecks-url`. Iniettati come env nei pod tramite `envFrom`. Backup R2 rimandato a sprint successivo (oltre lo scope S-A).

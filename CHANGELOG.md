@@ -17,6 +17,56 @@ Versioning: major per sprint, minor per milestone interne.
 ### Changed
 - **Bump Python minimo a 3.13** (`requires-python` e `mypy.python_version` in `pyproject.toml`). Risolve l'errore mypy su `numpy>=1.26` i cui stub `.pyi` usano `type X = ...` (PEP 695, richiede 3.12+). Tutte le deps e il Dockerfile erano già su 3.13.
 
+## [0.10.0] - 2026-06-27
+
+Sprint 9 — Adaptive Conformal Inference + monitor copertura. Risposta al
+drift di calibrazione CQR già in atto sui fold recenti del walk-forward CV
+(vedi KI-023: `coverage_80` post-drift = 0.688/0.699 vs target 0.80).
+
+### Added
+- **`AdaptiveConformalizer`** in `src/guazza/models.py`: classe ACI (Gibbs & Candès 2021)
+  con `update(covered) → alpha_t` e `correct(offset)` per scalare il CI. Garantisce
+  copertura long-run marginal anche sotto distribution shift. Mapping alpha→CI
+  lineare sufficiente per spike; in Sprint 11+ si raffina con quantile function
+  esplicita.
+- **Persistenza ACI state** in DuckDB: `aci_state(target, lead_bucket, alpha_t_80,
+  alpha_t_90, n_updates, err_sum_80, err_sum_90, updated_at)`. API: `ensure_aci_schema`,
+  `get_aci_state`, `upsert_aci_state` in `storage.py`. Sopravvive ai restart del job.
+- **Integrazione predict**: `jobs/predict.py` aggiorna ACI su TUTTE le prediction
+  passate con actual valorizzato (via `backfill_prediction_obs`) e applica la
+  correzione ACI ai bound CI delle prediction future via `apply_aci_correction`.
+  Drop-in trasparente: cold start (n_updates < 30) usa CQR statico.
+- **`jobs/monitor.py`**: nuovo job CLI per il monitoraggio copertura. Calcola
+  `coverage_30d` per (target, lead_bucket) aggregato su tutte le location, logga
+  WARN/INFO, pinga Healthchecks `/fail` se drift > 5pp dal target. Schedule:
+  `5 9 * * *` UTC (dopo daily ingest che backfilla obs).
+- **Cold start**: `ACI_COLD_START_N = 30` in `models.py`. Prime 30 obs per bucket
+  usano CQR statico, poi ACI prende il sopravvento.
+- **Cache ACI per bucket**: predict job carica `(aci_80, aci_90)` una volta per
+  (target, lead_bucket) invece di una volta per riga (ottimizzazione batch).
+- **Test integrazione**: 16 nuovi test (ACI round-trip DuckDB, apply_aci_correction
+  cold/warm/overcoverage, get_aci_pair cold/warm, monitor coverage 30gg + alert
+  drift, finestra 30gg). Totale: **334 test verdi**.
+
+### Changed
+- **Nessun cambiamento al contract JSON di output**: il JSON di predict ha lo
+  stesso shape di prima. I bound CI passano attraverso `apply_aci_correction`
+  (drop-in trasparente), ma il consumatore finale non vede differenze salvo che
+  i CI bounds sono leggermente più larghi/stretti se ACI è warm.
+- **Schedule cron k8s** (in `docs/status.md`): aggiunto `monitor 5 9 * * *`.
+  Commentato `train run` settimanale (ACI corregge la confidenza ma non il
+  modello — il modello resta addestrato sui dati storici finché non rifit).
+- `deploy/crontab.template`: aggiunta riga monitor + commento esplicito sul perché
+  train run è commentato.
+
+### Notes
+- **KI-024 (ex KI-023 — anomaly target spike, vedi status.md)**: rimane valido.
+  Spike anomaly target 2026-06-27 ha mostrato +28/+44% MAE su tmin/tmax
+  (rollback eseguito). Anomaly code tenuto come spike documentato, ANOMALY_TARGETS
+  = () di default.
+- **Non rompe retrocompat**: artifacts.json esistenti senza `anomaly_targets`
+  caricati correttamente (default lista vuota).
+
 ## [0.9.0] - 2026-06-13
 
 Rifattorizzazione trasversale su manutenibilità, sicurezza e performance. Nessun

@@ -271,6 +271,79 @@ class DuckDBClient:
             logger.info(f"backfill_prediction_obs: {count} righe aggiornate")
         return count
 
+    # ── ACI state (Adaptive Conformal Inference, Sprint 9) ───────────────────
+
+    def ensure_aci_schema(self) -> None:
+        """Crea tabella aci_state per persistere lo state ACI tra restart.
+
+        Una riga per (target, lead_bucket): alpha corrente (80% e 90%), n_updates,
+        err_rate, updated_at. Idempotente (CREATE IF NOT EXISTS).
+        """
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS aci_state (
+                target       VARCHAR  NOT NULL,
+                lead_bucket  VARCHAR  NOT NULL,
+                alpha_t_80   DOUBLE   NOT NULL,
+                alpha_t_90   DOUBLE   NOT NULL,
+                n_updates    BIGINT   NOT NULL,
+                err_sum_80   BIGINT   NOT NULL,
+                err_sum_90   BIGINT   NOT NULL,
+                updated_at   TIMESTAMP NOT NULL,
+                PRIMARY KEY (target, lead_bucket)
+            )
+        """)
+        logger.debug("aci_state: schema pronto")
+
+    def get_aci_state(self, target: str, lead_bucket: str) -> dict[str, Any] | None:
+        """Carica state ACI per (target, lead_bucket). None se assente (cold start)."""
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+        row = self._conn.execute("""
+            SELECT alpha_t_80, alpha_t_90, n_updates, err_sum_80, err_sum_90, updated_at
+            FROM aci_state
+            WHERE target = ? AND lead_bucket = ?
+        """, [target, lead_bucket]).fetchone()
+        if not row:
+            return None
+        return {
+            "alpha_t_80": row[0],
+            "alpha_t_90": row[1],
+            "n_updates":  int(row[2]),
+            "err_sum_80": int(row[3]),
+            "err_sum_90": int(row[4]),
+            "updated_at": row[5],
+        }
+
+    def upsert_aci_state(
+        self,
+        target: str,
+        lead_bucket: str,
+        alpha_t_80: float,
+        alpha_t_90: float,
+        n_updates: int,
+        err_sum_80: int,
+        err_sum_90: int,
+    ) -> None:
+        """Salva/aggiorna state ACI. INSERT ON CONFLICT: idempotente."""
+        if self._conn is None:
+            raise RuntimeError("DuckDBClient non è nel context manager.")
+        self._conn.execute("""
+            INSERT INTO aci_state
+                (target, lead_bucket, alpha_t_80, alpha_t_90,
+                 n_updates, err_sum_80, err_sum_90, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+            ON CONFLICT (target, lead_bucket) DO UPDATE SET
+                alpha_t_80 = excluded.alpha_t_80,
+                alpha_t_90 = excluded.alpha_t_90,
+                n_updates  = excluded.n_updates,
+                err_sum_80 = excluded.err_sum_80,
+                err_sum_90 = excluded.err_sum_90,
+                updated_at = NOW()
+        """, [target, lead_bucket, alpha_t_80, alpha_t_90,
+              n_updates, err_sum_80, err_sum_90])
+
     def init_schema(self) -> None:
         """Applica schema.sql al database (IF NOT EXISTS — idempotente)."""
         if not _SCHEMA_SQL.exists():
