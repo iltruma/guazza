@@ -1211,27 +1211,40 @@ function _makeTooltipHandler(elId) {
     const items = tooltip.dataPoints ?? [];
     if (!items.length) return;
 
+    // Cerca i dataset per LABEL, non per indice. Le label sono stabili mentre
+    // l'ordine dei dataset cambia con showBands e modello (Guazza ha CI bands,
+    // NWP no). Senza questo, il tooltip mostra i bound CI come "Temp" / "Precip".
+    const byLabel = (label) => items.find(i => i.dataset.label === label);
+    const temp   = byLabel('Temperatura (°C)');
+    const prec   = byLabel('Precipitazioni (mm)');
+    const wind   = byLabel('Vento (km/h)');
+    const tLo    = byLabel('Temp CI 80% (low)');
+    const tHi    = byLabel('Temp CI 80% (high)');
+    const pLo    = byLabel('Precip CI 80% (low)');
+    const pHi    = byLabel('Precip CI 80% (high)');
+
     const ts   = new Date(items[0].raw.x);
     const date = ts.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
     const time = ts.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const temp = items.find(i => i.datasetIndex === 0);
-    const prec = items.find(i => i.datasetIndex === 1);
-    const wind = items.find(i => i.datasetIndex === 2);
 
     const row = (dotColor, label, val) =>
       `<div style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:3px 0">
          <span style="display:flex;align-items:center;gap:6px;font-size:0.6875rem;font-family:var(--ff-mono);color:var(--text-3)"><span style="width:6px;height:6px;border-radius:50%;background:${dotColor};flex-shrink:0;display:inline-block"></span>${label}</span>
          <span style="font-size:0.6875rem;font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--ff-mono);color:var(--text-1)">${val}</span>
-       </div>`;
+        </div>`;
+    const ciRow = (dotColor, label, lo, hi) =>
+      row(dotColor, label + ' (80%)', `${lo.toFixed(1)} – ${hi.toFixed(1)}`);
 
     el.innerHTML = `
       <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border-1)">
         <span style="font-size:0.625rem;font-family:var(--ff-mono);text-transform:capitalize;color:var(--text-3)">${date}</span>
         <span style="font-size:0.8125rem;font-weight:700;font-family:var(--ff-mono);font-variant-numeric:tabular-nums;color:var(--text-1)">${time}</span>
       </div>
-      ${temp ? row('var(--chart-temp)', 'Temp',    `${temp.raw.y.toFixed(1)}°C`)   : ''}
+      ${temp ? row('var(--chart-temp)', 'Temp',  `${temp.raw.y.toFixed(1)}°C`) : ''}
+      ${(tLo && tHi) ? ciRow('var(--chart-temp)',  'Temp CI',  tLo.raw.y, tHi.raw.y) : ''}
       ${prec && prec.raw.y > 0.05 ? row('var(--chart-precip)', 'Precip', `${prec.raw.y.toFixed(1)} mm`) : ''}
-      ${wind ? row('var(--chart-wind)', 'Vento',   `${wind.raw.y.toFixed(0)} km/h`) : ''}`;
+      ${(pLo && pHi && (pHi.raw.y - pLo.raw.y) > 0.1) ? ciRow('var(--chart-precip)', 'Precip CI', pLo.raw.y, pHi.raw.y) : ''}
+      ${wind ? row('var(--chart-wind)', 'Vento', `${wind.raw.y.toFixed(0)} km/h`) : ''}`;
 
     const cRect = chart.canvas.parentElement.getBoundingClientRect();
     el.style.opacity = '1';
@@ -1303,6 +1316,8 @@ const externalTooltipHandlerWeekly = _makeTooltipHandler('chart-weekly-tooltip')
 
 // Raccoglie temp (°C), vento (km/h) e precip (mm) di TUTTI i modelli (Guazza +
 // NWP) per la vista corrente: targetDate = un giorno (daily), null = tutti (weekly).
+// Include anche i bound CI 80% (lo/hi) per temp e precip: senza, l'asse Y calcolato
+// non copre i bound estremi dei band dataset e il fill Chart.js esce dall'area visibile.
 function _collectAcrossModels(data, targetDate) {
   const temps = [], windsKmh = [], precips = [];
   const add = (t, wms, pr) => {
@@ -1311,7 +1326,14 @@ function _collectAcrossModels(data, targetDate) {
     if (pr != null) precips.push(pr);
   };
   const days = targetDate ? data.days.filter(d => d.target_date === targetDate) : data.days;
-  days.forEach(d => (d.hourly || []).forEach(h => add(h.temp_c, h.wind_speed_ms, h.precip_mm)));
+  days.forEach(d => (d.hourly || []).forEach(h => {
+    add(h.temp_c, h.wind_speed_ms, h.precip_mm);
+    // Bound CI 80% (Guazza): inclusi nel range per non essere clippati dal fill.
+    if (h.temp_ci80_lo != null) temps.push(h.temp_ci80_lo);
+    if (h.temp_ci80_hi != null) temps.push(h.temp_ci80_hi);
+    if (h.precip_ci80_lo != null) precips.push(h.precip_ci80_lo);
+    if (h.precip_ci80_hi != null) precips.push(h.precip_ci80_hi);
+  }));
 
   let inScope = () => true;
   if (targetDate) {
@@ -1530,8 +1552,11 @@ function updateChartModel(data, model, targetDate) {
   applyAxisRanges(meteoChart.options.scales, sharedAxisRanges(data, targetDate));
   const points = buildChartPoints(data, model, targetDate);
   const p = chartPalette();
-  const ds = _buildChartDatasets(canvas, points, p);
-  meteoChart.data.datasets.forEach((d, i) => { d.data = ds[i].data; if (i === 1) d.backgroundColor = ds[i].backgroundColor; });
+  // Riassegno l'intero array datasets: il numero cambia (3 senza band, 7 con band)
+  // a seconda di `showBands` e del modello (Guazza ha CI, NWP no). Il merge per
+  // indice precedente lasciava dataset vecchi nell'array quando si faceva switch
+  // modello → band stale di Guazza restavano visibili su NWP.
+  meteoChart.data.datasets = _buildChartDatasets(canvas, points, p);
   meteoChart.$weatherPoints = points;
   meteoChart.$locMeta = LOCATIONS.find(l => l.id === data.location_id);
   meteoChart.$iconsDirty = true;
@@ -1573,8 +1598,9 @@ function updateWeeklyChart(data, model) {
   const points = buildWeeklyPoints(data, model);
   const p = chartPalette();
   applyAxisRanges(multiDayChart.options.scales, sharedAxisRanges(data, null));
-  const ds = _buildChartDatasets(canvas, points, p);
-  multiDayChart.data.datasets.forEach((d, i) => { d.data = ds[i].data; if (i === 1) d.backgroundColor = ds[i].backgroundColor; });
+  // Vedi updateChartModel: riassegno l'intero array datasets per evitare dataset
+  // stale quando il numero cambia con modello/band.
+  multiDayChart.data.datasets = _buildChartDatasets(canvas, points, p);
   multiDayChart.$weatherPoints = points;
   multiDayChart.$locMeta = LOCATIONS.find(l => l.id === data.location_id);
   multiDayChart.$iconsDirty = true;
