@@ -5,7 +5,7 @@ Output: righe wide per `observations` (granularity 'hourly' per NRT, 'daily' per
 
 from __future__ import annotations
 
-import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
@@ -49,7 +49,7 @@ _ARPAT_PARAM_MAP: dict[str, tuple[str, float]] = {
 
 @retry(
     stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=60, max=600),
+    wait=wait_exponential(multiplier=1, min=10, max=60),
     retry=retry_if_exception(_is_retryable_http),
 )
 def _fetch_arpat_nrt_json(station_id: str) -> Any:
@@ -147,33 +147,51 @@ def fetch_arpat_all_locations(
     """Fetch ARPAT NRT per tutte le location con extras: [aria_qualita].
 
     Usa l'endpoint /last — restituisce gli ultimi valori disponibili per ogni stazione.
+    Le richieste sono eseguite in parallelo (4 worker) per ridurre il tempo totale
+    in caso di endpoint lento: 24 chiamate seriali con timeout = fino a 72 min,
+    parallelo = ~3-4 min worst case.
 
     Args:
         locations: dict locations da locations.yaml["locations"].
 
     Returns:
-        Dict {location_id: [record, ...]}
+        Dict {location_id: [record, ...]} — location con 0 record inclusa se configurata.
     """
-    results: dict[str, list[dict[str, Any]]] = {}
+    # Raccogli le coppie (station_id, location_id, weight) deduplicando per station_id.
+    tasks: list[tuple[str, str, float]] = []
     seen_stations: set[str] = set()
-
+    seen_locations: set[str] = set()
     for loc_id, loc in locations.items():
         if "aria_qualita" not in (loc.get("extras") or []):
             continue
-
-        arpat_stations: list[dict[str, Any]] = loc.get("arpat_stations") or []
-        loc_records: list[dict[str, Any]] = []
-
-        for station in arpat_stations:
+        seen_locations.add(loc_id)
+        for station in (loc.get("arpat_stations") or []):
             sid: str = station["id"]
             w: float = float(station.get("weight", 1.0))
             if sid in seen_stations:
                 continue
             seen_stations.add(sid)
-            loc_records.extend(fetch_arpat_nrt_station(sid, loc_id, w))
-            time.sleep(0.5)
+            tasks.append((sid, loc_id, w))
 
-        results[loc_id] = loc_records
+    if not tasks:
+        return {}
+
+    results: dict[str, list[dict[str, Any]]] = {loc_id: [] for loc_id in seen_locations}
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        future_to_loc = {
+            ex.submit(fetch_arpat_nrt_station, sid, loc_id, w): loc_id
+            for sid, loc_id, w in tasks
+        }
+        for fut in future_to_loc:
+            loc_id = future_to_loc[fut]
+            try:
+                records = fut.result()
+                results[loc_id].extend(records)
+            except Exception as e:
+                # fetch_arpat_nrt_station già logga fail via log_scrape; qui
+                # catturiamo solo l'eventuale eccezione dal future (non dovrebbe).
+                logger.warning(f"ARPAT future {loc_id} unexpected error: {e}")
 
     return results
 
@@ -188,7 +206,7 @@ _ARPAT_BOLLETTINO_URL = (
 
 @retry(
     stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=60, max=600),
+    wait=wait_exponential(multiplier=1, min=10, max=60),
     retry=retry_if_exception(_is_retryable_http),
 )
 def _fetch_arpat_bollettino_json() -> Any:
