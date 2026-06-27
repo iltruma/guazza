@@ -418,14 +418,30 @@ def load_artifacts(model_dir: Path | None = None) -> TrainingArtifacts:
 def _apply_cqr(
     preds_q: dict[str, float], bundle: ModelBundle, bucket: str
 ) -> dict[str, float]:
-    """Aggiunge i bound CI CQR-aggiustati ai 5 quantili predetti per un target."""
+    """Aggiunge i bound CI CQR-aggiustati ai 5 quantili predetti per un target.
+
+    Nested CI guarantee: il bound al 90% contiene sempre quello all'80%.
+    CQR non garantisce naturalmente questa proprietà se `q_hat_90 < q_hat_80`
+    (succede per `precip_mm` con cal set molto zero-inflated: il quantile
+    90% dei conformity scores su q05-q95 risulta < quantile 80% dei
+    conformity scores su q10-q90 perché q95-q05 è stretto e centrato).
+    Forziamo `ci90_lo = min(ci90_lo, ci80_lo)` e `ci90_hi = max(...)` per
+    rispettare la proprietà teorica del CQR nested.
+    """
     corr = bundle.cqr.get(bucket, bundle.cqr["0-6h"])
+    ci80_lo = preds_q["p10"] - corr.ci80
+    ci80_hi = preds_q["p90"] + corr.ci80
+    ci90_lo = preds_q["p05"] - corr.ci90
+    ci90_hi = preds_q["p95"] + corr.ci90
+    # Nested CI: la CI al 90% contiene sempre la CI all'80%.
+    ci90_lo = min(ci90_lo, ci80_lo)
+    ci90_hi = max(ci90_hi, ci80_hi)
     return {
         **preds_q,
-        "ci80_lo": preds_q["p10"] - corr.ci80,
-        "ci80_hi": preds_q["p90"] + corr.ci80,
-        "ci90_lo": preds_q["p05"] - corr.ci90,
-        "ci90_hi": preds_q["p95"] + corr.ci90,
+        "ci80_lo": ci80_lo,
+        "ci80_hi": ci80_hi,
+        "ci90_lo": ci90_lo,
+        "ci90_hi": ci90_hi,
     }
 
 

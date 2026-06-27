@@ -9,6 +9,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
+# Schema di test derivato dalle costanti condivise con features.build_features_daily.
+# L'ordine delle colonne deve matchare esattamente quello di features_daily in
+# produzione, altrimenti l'INSERT in _insert_features inserisce valori nelle
+# colonne sbagliate. Se NWP_MODEL_PREFIXES cambia, lo schema di test si adatta.
+from guazza.features import NWP_DAILY_VARS, NWP_MODEL_PREFIXES
 from guazza.models import (
     QUANTILES,
     TARGETS,
@@ -26,30 +31,28 @@ from guazza.models import (
 )
 from guazza.storage import DuckDBClient
 
-_CREATE_FEATURES_DAILY = """
+_NWP_FEATURE_COLS = ",\n    ".join(
+    f"{prefix}_{var} DOUBLE"
+    for prefix, _src in NWP_MODEL_PREFIXES
+    for var in NWP_DAILY_VARS
+)
+
+_CREATE_FEATURES_DAILY = f"""
 CREATE TABLE IF NOT EXISTS features_daily (
     location_id VARCHAR, target_date DATE, lead_time_h BIGINT,
-    ecmwf_tmin_c DOUBLE, ecmwf_tmax_c DOUBLE, ecmwf_precip_mm DOUBLE,
-    ecmwf_humidity_pct DOUBLE, ecmwf_wind_ms DOUBLE,
-    icon_tmin_c DOUBLE, icon_tmax_c DOUBLE, icon_precip_mm DOUBLE,
-    icon_humidity_pct DOUBLE, icon_wind_ms DOUBLE,
-    icond2_tmin_c DOUBLE, icond2_tmax_c DOUBLE, icond2_precip_mm DOUBLE,
-    icond2_humidity_pct DOUBLE, icond2_wind_ms DOUBLE,
-    arome_tmin_c DOUBLE, arome_tmax_c DOUBLE, arome_precip_mm DOUBLE,
-    arome_humidity_pct DOUBLE, arome_wind_ms DOUBLE,
-    icon2i_tmin_c DOUBLE, icon2i_tmax_c DOUBLE, icon2i_precip_mm DOUBLE,
-    icon2i_humidity_pct DOUBLE, icon2i_wind_ms DOUBLE,
+    {_NWP_FEATURE_COLS},
     nwp_tmin_mean DOUBLE, nwp_tmin_spread DOUBLE,
     nwp_tmax_mean DOUBLE, nwp_tmax_spread DOUBLE,
     nwp_precip_mean DOUBLE, nwp_precip_spread DOUBLE,
     obs_tmin_c DOUBLE, obs_tmax_c DOUBLE, obs_precip_mm DOUBLE, obs_humidity_pct DOUBLE,
-    ring1_precip_d1_mean DOUBLE, ring1_precip_d1_max DOUBLE,
-    ring2_precip_d1_mean DOUBLE, ring2_precip_d1_max DOUBLE,
-    ring3_precip_d1_mean DOUBLE, ring3_precip_d1_max DOUBLE,
+    anom_tmin_c DOUBLE, anom_tmax_c DOUBLE,
     clim_tmin_mean DOUBLE, clim_tmin_std DOUBLE,
     clim_tmax_mean DOUBLE, clim_tmax_std DOUBLE,
     clim_precip_mean DOUBLE, clim_precip_std DOUBLE,
     month BIGINT, day_of_year BIGINT,
+    ring1_precip_d1_mean DOUBLE, ring1_precip_d1_max DOUBLE,
+    ring2_precip_d1_mean DOUBLE, ring2_precip_d1_max DOUBLE,
+    ring3_precip_d1_mean DOUBLE, ring3_precip_d1_max DOUBLE,
     target_tmin_anom_c DOUBLE, target_tmax_anom_c DOUBLE,
     target_tmin_c DOUBLE, target_tmax_c DOUBLE, target_precip_mm DOUBLE
 )
@@ -94,7 +97,13 @@ def db(tmp_path: Path) -> DuckDBClient:
 
 
 def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) -> None:
-    """Inserisce righe sintetiche in features_daily per il testing."""
+    """Inserisce righe sintetiche in features_daily per il testing.
+
+    L'ordine e il numero di colonne deve matchare `_CREATE_FEATURES_DAILY` (e quindi
+    lo schema reale prodotto da `build_features_daily`). NWP e placeholder INSERT
+    sono derivati da `NWP_MODEL_PREFIXES × NWP_DAILY_VARS` per restare allineati
+    automaticamente a eventuali cambi di modelli.
+    """
     rng = np.random.default_rng(42)
     base = date(2022, 1, 1)
 
@@ -106,37 +115,38 @@ def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) 
             tmin = 5.0 + 10 * np.sin(2 * np.pi * i / 365) + rng.normal(0, 1)
             tmax = tmin + 8 + rng.normal(0, 0.5)
             precip = max(0.0, rng.exponential(1.5) if rng.random() < 0.3 else 0.0)
+            # NWP per modello: 5 valori (tmin, tmax, precip, humidity, wind) per NWP.
+            nwp_values: list[float] = []
+            for _prefix, _src in NWP_MODEL_PREFIXES:
+                nwp_values.extend([
+                    tmin + rng.normal(0, 0.3), tmax + rng.normal(0, 0.3), precip,
+                    70.0, 3.0,
+                ])
             rows.append((
                 loc, d, 0,
-                tmin + rng.normal(0, 0.3), tmax + rng.normal(0, 0.3), precip,
-                70.0, 3.0,
-                tmin + rng.normal(0, 0.5), tmax + rng.normal(0, 0.5), precip,
-                70.0, 3.0,
-                tmin + rng.normal(0, 0.4), tmax + rng.normal(0, 0.4), precip,
-                70.0, 3.0,
-                tmin + rng.normal(0, 0.7), tmax + rng.normal(0, 0.7), precip,
-                70.0, 3.0,
-                tmin + rng.normal(0, 0.4), tmax + rng.normal(0, 0.4), precip,
-                70.0, 3.0,
-                # ensemble stats
+                *nwp_values,
+                # ensemble stats (tmin/tmax/precip mean+spread — niente humidity/wind)
                 tmin + rng.normal(0, 0.1), 1.0,
                 tmax + rng.normal(0, 0.1), 1.0,
                 precip, 0.5,
                 # obs yesterday
                 tmin - 0.5, tmax - 0.5, precip, 68.0,
-                # ring features (NULL — nessuna stazione upstream nei test sintetici)
-                None, None, None, None, None, None,
+                # anom (clim_mean == obs nel test, anom=0)
+                0.0, 0.0,
                 # climatology
                 tmin, 2.0, tmax, 2.0, 1.5, 0.8,
                 # calendar
                 d.month, d.timetuple().tm_yday,
-                # target (anomalia: clim_mean == tmin/tmax nel test, quindi anom=0)
+                # ring features (NULL — nessuna stazione upstream nei test sintetici)
+                None, None, None, None, None, None,
+                # target
                 0.0, 0.0,
                 tmin, tmax, precip,
             ))
 
+    n_cols = len(rows[0])
     db._conn.executemany(
-        "INSERT INTO features_daily VALUES (" + ",".join(["?"] * 57) + ")",
+        "INSERT INTO features_daily VALUES (" + ",".join(["?"] * n_cols) + ")",
         rows,
     )
 
@@ -216,6 +226,42 @@ def test_load_artifacts_roundtrip(db: DuckDBClient, tmp_path: Path) -> None:
     pred_disk = predict(loaded, X[FEATURE_COLS], lead_h=0)
     for target in TARGETS:
         assert pred_disk[target]["p50"] == pytest.approx(pred_mem[target]["p50"], abs=1e-6)
+
+
+def test_apply_cqr_enforces_nested_ci() -> None:
+    """La CI al 90% deve sempre contenere la CI all'80% (nested CI).
+
+    Caso patologico (precip_mm con cal set zero-inflated): CQR naturale
+    produce q_hat_90 < q_hat_80 perché i conformity scores su q05-q95
+    (intervallo stretto) sono in media minori di quelli su q10-q90.
+    Senza enforcement, ci80_hi > ci90_hi — violazione della proprietà
+    teorica del CI nested.
+    """
+    from guazza.models import CQRCorrection, ModelBundle, _apply_cqr
+
+    # Crea un bundle con 5 modelli finti (solo predict, niente LightGBM)
+    class FakeModel:
+        def __init__(self, q): self.q = q
+        def predict(self, X): return [self.q]
+    bundle = ModelBundle(
+        models={0.05: FakeModel(0.10), 0.10: FakeModel(0.20),
+                0.50: FakeModel(0.50), 0.90: FakeModel(0.90),
+                0.95: FakeModel(0.95)},
+        cqr={"0-6h": CQRCorrection(ci80=0.32, ci90=0.14, n_cal=120)},
+    )
+
+    preds_q = {"p05": 0.10, "p10": 0.20, "p50": 0.50, "p90": 1.20, "p95": 1.30}
+    out = _apply_cqr(preds_q, bundle, "0-6h")
+    # Senza enforcement: ci80_hi = 1.20+0.32=1.52, ci90_hi = 1.30+0.14=1.44 (VIOLATO)
+    # Con enforcement: ci90_hi = max(1.44, 1.52) = 1.52 (nested CI rispettato)
+    assert out["ci80_hi"] == pytest.approx(1.52)
+    assert out["ci90_hi"] == pytest.approx(1.52)
+    assert out["ci80_hi"] <= out["ci90_hi"]
+    # Lato basso: ci80_lo = 0.20-0.32=-0.12, ci90_lo = 0.10-0.14=-0.04
+    # Con enforcement: ci90_lo = min(-0.04, -0.12) = -0.12
+    assert out["ci80_lo"] == pytest.approx(-0.12)
+    assert out["ci90_lo"] == pytest.approx(-0.12)
+    assert out["ci90_lo"] <= out["ci80_lo"]
 
 
 def test_load_artifacts_rejects_legacy_pickle(tmp_path: Path) -> None:
