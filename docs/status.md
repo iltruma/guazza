@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-06-27 (Sprint 11 parziale · skill history time series + pagina backtest, v0.11.0)
+> Aggiornato: 2026-06-27 (Sprint 11 parziale · skill history time series + pagina backtest, v0.11.0 + rimozione GFS v0.11.1)
 
 ## Cosa è stato fatto
 
@@ -35,6 +35,31 @@ dump JSON, filtri finestra nel frontend).
   funzionano regolarmente.
 - **Schedule k8s proposta**: `15 6 * * *` UTC per `append` (15 min dopo
   `daily`); `30 6 * * *` per `dump`.
+
+### Sprint 11 (parte 2) — Rimozione GFS dal setup (completato — 2026-06-27, v0.11.1)
+
+Decisione: rimuovere completamente GFS invece di fixare il fetcher. Causa:
+~6.7% record orari con `temp_c` valorizzato, escluso dal multilead
+(`previous_dayN` non archiviato), costo/beneficio del fix sfavorevole.
+
+- **`NWP_MODEL_PREFIXES` in `features.py`**: 6 → 5 NWP (rimosso GFS).
+  `NWP_FEATURE_COLS` auto-derivato, 25 feature NWP invece di 30.
+- **Pivot e ensemble SQL in `features.py`**: tutte le `n.gfs_*` rimosse
+  da SELECT, COALESCE, GREATEST/LEAST. Ricalcolato su 5 NWP.
+- **`OM_MODELS` in `fetch_openmeteo.py`**: il fetcher live non scarica
+  più GFS (risparmio banda + niente record rovinati).
+- **`_NWP_WIND_COLS`, `_NWP_HUM_COLS`, `_MODEL_ORDER`, `_MODEL_LABELS` in
+  `output.py`**: GFS rimosso dal model switch del JSON di output.
+- **`NWP_SOURCES` in `affidabilita.js`**: backtest grafico senza GFS
+  (frontend onesto: 5 NWP, non 5-6 con uno vuoto).
+- **246k record GFS in `forecasts`**: lasciati nel DB, dati morti ma
+  innocui (nessun job li legge più). Niente `DROP` per non rompere audit.
+- **KI-025 riscritto**: da "aperto" a "risolto tramite rimozione", con
+  dettagli e azione richiesta per l'utente.
+- **🟡 Azione utente**: `features build` + `train run` (retrain del
+  modello con 25 feature NWP invece di 30). Le metriche di skill
+  post-retrain potrebbero cambiare di poco in meglio (GFS portava
+  rumore).
 
 ### Sprint 9 — Adaptive Conformal Inference + monitor (completato — 2026-06-27, v0.10.0)
 

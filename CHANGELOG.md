@@ -8,6 +8,34 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-06-27
+
+Rimozione di GFS dal setup: NWP con ~6.7% record orari con `temp_c`
+valorizzato, escluso dal multilead (`previous_dayN` non archiviato),
+sostanzialmente inutile per il training. Soluzione: rimozione completa
+invece di fixare il fetcher (costo/beneficio sfavorevole).
+
+### Removed
+- **GFS rimosso dal setup** (KI-025 risolto): 6 → 5 NWP
+  (ECMWF IFS, ICON-EU, ICON-D2, AROME France, ARPAE ICON-2I).
+  - `NWP_MODEL_PREFIXES` in `features.py`: 5 modelli
+  - `OM_MODELS` in `fetch_openmeteo.py`: il fetcher live non scarica più GFS
+  - `NWP_SOURCES` / `NWP_LABELS` in `affidabilita.js` + `output.py`:
+    backtest grafico e model switch senza GFS
+  - `_OM_PREVIOUS_DAY_MAX` in `fetch_openmeteo.py`
+  - `models_available` in `config/sources.yaml`
+- Le 246k righe GFS già presenti in `forecasts` restano nel DB (dati
+  morti ma innocui, lasciati per non rompere audit).
+
+### Changed
+- `features.py`: pivot e ensemble mean/spread ricalcolati sui 5 NWP
+  (righe SQL ripulite). `NWP_FEATURE_COLS` auto-derivato, 25 feature NWP
+  invece di 30.
+
+### Note operative
+- **Azione richiesta**: `features build` (ricrea `features_daily` senza
+  colonne `gfs_*`) + `train run` (retrain con 25 feature NWP).
+
 ## [0.11.0] - 2026-06-27
 
 Sprint 11 (parte 1) — Skill history time series + pagina "Come ha performato nel tempo".
