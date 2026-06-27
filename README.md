@@ -111,7 +111,7 @@ guazza/
 | Sprint 8 | Deploy su Optiplex locale + Cloudflare Tunnel, k3s/ArgoCD, immagine container | 🟡 In corso (S-A: Dockerfile + CI) |
 | Sprint 9 | Adaptive Conformal Inference + monitor copertura 30d | ✅ Completato (v0.10.0) |
 | Sprint 10 | Calibrazione soglie DLE post-deploy | — |
-| Sprint 11 | Case study / pubblicazione + skill history time series | 🟡 In corso (skill history fatto, v0.11.0; GFS rimosso, v0.11.1) |
+| Sprint 11 | Case study / pubblicazione + skill history time series | 🟡 In corso (skill history fatto, v0.11.0; GFS rimosso, v0.11.1; fix CQR, v0.11.2) |
 
 ---
 

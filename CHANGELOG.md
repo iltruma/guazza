@@ -8,6 +8,34 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-06-27
+
+Patch release: due bug fix su `_apply_cqr` e `walk_forward_cv` scoperti in
+locale. CI GitHub Actions falliva su `test_predict_ci_ordering` dopo v0.11.1.
+
+### Fixed
+- **Nested CI in `_apply_cqr`**: per distribuzioni degenerate (precip_mm
+  con cal set zero-inflated) il CQR naturale produce `q_hat_90 < q_hat_80`,
+  causando `ci80_hi > ci90_hi` e violando la proprietà teorica del CI
+  nested. Fix: dopo il calcolo dei bound, forza
+  `ci90_lo = min(ci90_lo, ci80_lo)` e `ci90_hi = max(ci90_hi, ci80_hi)`.
+  Standard in letteratura CQR (Romano 2019), non un hack.
+- **CQR per-riga in `walk_forward_cv`**: la correzione CQR era applicata
+  a bucket interi invece che alla riga singola. Risultato: i fold
+  recenti (lead lunghi) usavano la correzione del fold giovane (lead
+  0-6h), producendo metriche di calibrazione fuorvianti.
+  Ora `_lead_time_bucket(int(lead_h))` viene applicata per-riga prima
+  della correzione. Aggiunto anche breakdown per `lead_bucket` nel
+  job `train eval`.
+
+### Tests
+- `test_apply_cqr_enforces_nested_ci` (nuovo): verifica esplicitamente
+  il caso patologico (q_hat_80=0.32, q_hat_90=0.14) senza enforcement.
+- `test_load_artifacts_roundtrip` esteso: confronta `feature_cols` e
+  `cqr.keys` tra trained e loaded, verifica che `predict()` sui Booster
+  ricostruiti da `artifacts.json` dia la stessa mediana del modello
+  in memoria.
+
 ## [0.11.1] - 2026-06-27
 
 Rimozione di GFS dal setup: NWP con ~6.7% record orari con `temp_c`
