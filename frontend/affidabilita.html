@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guazza · Affidabilità</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js" defer></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <header class="g-header" id="g-header">
+    <div class="g-header__top">
+      <h1 class="g-header__brand">
+        <span aria-hidden="true">🌧️</span>
+        <span>Guazza</span>
+      </h1>
+      <div id="header-meta" class="g-header__meta"></div>
+      <nav class="g-header__pages" aria-label="Sezioni">
+        <a href="index.html" class="g-tab">Previsioni</a>
+        <a href="affidabilita.html" class="g-tab g-tab--active" aria-current="page">Affidabilità</a>
+      </nav>
+    </div>
+    <div class="g-tabs-wrap">
+      <nav id="aff-locations" class="g-tabs no-scrollbar" aria-label="Location"></nav>
+    </div>
+  </header>
+
+  <main id="app" class="g-main">
+
+    <div id="aff-error" class="g-error hidden">
+      <p class="g-error__msg">Impossibile caricare <code>skill.json</code></p>
+      <p class="g-error__hint">Il job <code>guazza-skill</code> deve aver generato almeno una volta <code>/data/skill.json</code>.</p>
+    </div>
+
+    <section id="aff-card" class="g-card hidden">
+      <div class="g-card__header">
+        <div class="g-skill__head">
+          <span class="g-section__kicker" style="padding:0;font-size:0.625rem">Quanto è affidabile</span>
+          <span id="aff-sub" class="g-skill__sub"></span>
+        </div>
+        <div class="g-chart-legend">
+          <span class="g-chart-legend__item">
+            <span class="g-chart-legend__dot g-chart-legend__dot--temp"></span>T max
+          </span>
+          <span class="g-chart-legend__item">
+            <span class="g-chart-legend__dot" style="background:var(--cold)"></span>T min
+          </span>
+          <span class="g-chart-legend__item" style="font-size:0.6rem;color:var(--text-3);font-family:var(--ff-mono)">— pieno: Guazza · tratteggiato: NWP</span>
+        </div>
+      </div>
+      <div class="g-chart-wrap g-skill__wrap">
+        <canvas id="aff-chart" role="img" aria-label="Errore medio assoluto di Guazza e del consensus NWP per Tmin e Tmax, per orizzonte di previsione da D+0 a D+7."></canvas>
+      </div>
+      <p id="aff-caption" class="g-skill__caption"></p>
+    </section>
+
+    <section id="hist-card" class="g-card hidden">
+      <div class="g-card__header">
+        <div class="g-skill__head">
+          <span class="g-section__kicker" style="padding:0;font-size:0.625rem">Come ha performato nel tempo</span>
+          <span id="hist-sub" class="g-skill__sub"></span>
+        </div>
+        <div id="hist-seg" class="g-skill__seg" role="tablist" aria-label="Finestra">
+          <button class="g-skill__seg-btn" data-window="7" role="tab">7gg</button>
+          <button class="g-skill__seg-btn is-active" data-window="30" role="tab">30gg</button>
+          <button class="g-skill__seg-btn" data-window="0" role="tab">Totale</button>
+        </div>
+      </div>
+      <div class="g-chart-legend" style="padding:8px 20px 0;display:flex;flex-wrap:wrap;gap:14px">
+        <span class="g-chart-legend__item" style="font-weight:600;color:var(--text-1)">
+          <span class="g-chart-legend__dot" style="background:var(--text-1);border:1px solid var(--text-2)"></span>Osservato
+        </span>
+        <span class="g-chart-legend__item" style="font-weight:600">
+          <span class="g-chart-legend__dot" style="background:var(--accent)"></span>Guazza ML
+        </span>
+        <span class="g-chart-legend__item" style="color:var(--text-3);font-family:var(--ff-mono);font-size:0.6rem">— tratteggiati: modelli NWP</span>
+      </div>
+      <div class="g-skill__hist">
+        <div class="g-skill__hist-col">
+          <span class="g-section__kicker" style="padding:0;font-size:0.625rem">T max</span>
+          <div class="g-chart-wrap">
+            <canvas id="hist-chart-tmax" role="img" aria-label="Serie storica di T massima: forecast dei modelli e valore osservato."></canvas>
+          </div>
+        </div>
+        <div class="g-skill__hist-col">
+          <span class="g-section__kicker" style="padding:0;font-size:0.625rem">T min</span>
+          <div class="g-chart-wrap">
+            <canvas id="hist-chart-tmin" role="img" aria-label="Serie storica di T minima: forecast dei modelli e valore osservato."></canvas>
+          </div>
+        </div>
+      </div>
+      <p id="hist-caption" class="g-skill__caption"></p>
+    </section>
+
+  </main>
+
+  <script src="affidabilita.js" defer></script>
+</body>
+</html>
