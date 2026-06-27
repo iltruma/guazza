@@ -719,7 +719,7 @@ def walk_forward_cv(
     min_train_days: int = 365,
     embargo_days: int = 7,
     cal_fraction: float = 0.15,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Walk-forward CV temporale con embargo 7 giorni.
 
     Ogni fold:
@@ -728,8 +728,11 @@ def walk_forward_cv(
       test:   finestra di ~fold_size giorni
 
     Returns:
-        DataFrame con colonne: split, target, mae, crps, coverage_80, coverage_90,
-        skill_mae (vs nwp_mean), n_test.
+        Tupla (aggregate_df, per_bucket_df):
+          - aggregate_df: 1 riga per (split, target) con metriche aggregate sul test set
+          - per_bucket_df: 1 riga per (split, target, lead_bucket) — breakdown per bucket
+            di lead_time_h (0-6h, 6-12h, 12-24h, 24-48h, 48-72h, 72h+) per diagnosticare
+            la calibrazione CQR per orizzonte.
     """
     df = load_features(db)
     if df.empty:
@@ -748,6 +751,7 @@ def walk_forward_cv(
     fold_size = max(30, len(fold_dates) // n_splits)
 
     rows: list[dict[str, Any]] = []
+    rows_per_bucket: list[dict[str, Any]] = []
 
     for i in range(n_splits):
         test_start = fold_dates[i * fold_size]
@@ -811,12 +815,24 @@ def walk_forward_cv(
             # CRPS
             crps = crps_from_quantiles(y_te, preds)
 
-            # Coverage empirica con CQR
-            corr = cqr["0-6h"]  # tutti i test hanno lead_time_h=0
-            ci80_lo = preds[0.10] - corr.ci80
-            ci80_hi = preds[0.90] + corr.ci80
-            ci90_lo = preds[0.05] - corr.ci90
-            ci90_hi = preds[0.95] + corr.ci90
+            # Coverage empirica con CQR stratificata per lead bucket.
+            # features_daily ha lead_time_h 0-168h (post multilead backfill): la
+            # correzione CQR è specifica per bucket e va applicata per-riga.
+            lead_h_te = df_test.loc[mask_te, "lead_time_h"].values
+            buckets_te = np.array([_lead_time_bucket(int(h)) for h in lead_h_te])
+            ci80_lo = preds[0.10].copy()
+            ci80_hi = preds[0.90].copy()
+            ci90_lo = preds[0.05].copy()
+            ci90_hi = preds[0.95].copy()
+            for label, _ in LEAD_BUCKETS.items():
+                m_b = buckets_te == label
+                if not m_b.any():
+                    continue
+                corr = cqr[label]
+                ci80_lo[m_b] = preds[0.10][m_b] - corr.ci80
+                ci80_hi[m_b] = preds[0.90][m_b] + corr.ci80
+                ci90_lo[m_b] = preds[0.05][m_b] - corr.ci90
+                ci90_hi[m_b] = preds[0.95][m_b] + corr.ci90
             cov80 = float(np.mean((y_te >= ci80_lo) & (y_te <= ci80_hi)))
             cov90 = float(np.mean((y_te >= ci90_lo) & (y_te <= ci90_hi)))
 
@@ -843,4 +859,38 @@ def walk_forward_cv(
                 "n_test":     int(mask_te.sum()),
             })
 
-    return pd.DataFrame(rows)
+            # Breakdown per lead bucket: una riga per bucket presente nel test
+            for label, _ in LEAD_BUCKETS.items():
+                m_b = buckets_te == label
+                n_b = int(m_b.sum())
+                if n_b == 0:
+                    continue
+                y_b = y_te[m_b]
+                preds_b_50 = preds[0.50][m_b]
+                mae_b = float(np.mean(np.abs(y_b - preds_b_50)))
+                cov80_b = float(np.mean((y_b >= ci80_lo[m_b]) & (y_b <= ci80_hi[m_b])))
+                cov90_b = float(np.mean((y_b >= ci90_lo[m_b]) & (y_b <= ci90_hi[m_b])))
+                nwp_b = nwp_vals[m_b]
+                nwp_mask_b = ~np.isnan(nwp_b)
+                if nwp_mask_b.sum() > 0:
+                    mae_nwp_b = float(np.mean(np.abs(y_b[nwp_mask_b] - nwp_b[nwp_mask_b])))
+                    skill_b = 1 - mae_b / mae_nwp_b if mae_nwp_b > 0 else float("nan")
+                else:
+                    skill_b = float("nan")
+                preds_b_dict: dict[float, np.ndarray] = {
+                    q: preds[q][m_b] for q in QUANTILES
+                }
+                crps_b = crps_from_quantiles(y_b, preds_b_dict)
+                rows_per_bucket.append({
+                    "split":       i + 1,
+                    "target":      target,
+                    "lead_bucket": label,
+                    "mae":         round(mae_b, 3),
+                    "crps":        round(crps_b, 3),
+                    "coverage_80": round(cov80_b, 3),
+                    "coverage_90": round(cov90_b, 3),
+                    "skill_mae":   round(skill_b, 3) if not np.isnan(skill_b) else None,
+                    "n_test":      n_b,
+                })
+
+    return pd.DataFrame(rows), pd.DataFrame(rows_per_bucket)

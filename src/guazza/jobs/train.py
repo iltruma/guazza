@@ -63,7 +63,7 @@ def cmd_eval(
     """Walk-forward CV: stampa MAE, CRPS, coverage e skill score."""
 
     with DuckDBClient(db_path=db_path, read_only=True) as db:
-        results = walk_forward_cv(db, n_splits=n_splits, embargo_days=embargo)
+        results, per_bucket = walk_forward_cv(db, n_splits=n_splits, embargo_days=embargo)
 
     if results.empty:
         typer.echo("Nessun risultato CV — dati insufficienti.")
@@ -89,6 +89,24 @@ def cmd_eval(
     typer.echo("\n=== Dettaglio per fold ===")
     cols = ["split", "test_start", "target", "mae", "crps", "coverage_80", "coverage_90", "skill_mae"]
     typer.echo(results[cols].to_string(index=False))
+
+    # Breakdown per lead bucket — media su tutti i fold. È lo strumento corretto
+    # per diagnosticare la calibrazione CQR per orizzonte previsionale.
+    if not per_bucket.empty:
+        by_bucket = (
+            per_bucket.groupby(["target", "lead_bucket"])
+            .agg(
+                mae=("mae", "mean"),
+                crps=("crps", "mean"),
+                coverage_80=("coverage_80", "mean"),
+                coverage_90=("coverage_90", "mean"),
+                skill_mae=("skill_mae", "mean"),
+                n_test=("n_test", "sum"),
+            )
+            .round(3)
+        )
+        typer.echo("\n=== Walk-forward CV — metriche per lead bucket (media su tutti i fold) ===")
+        typer.echo(by_bucket.to_string())
 
 
 def _print_cqr_summary(artifacts: TrainingArtifacts) -> None:

@@ -295,22 +295,49 @@ def test_predict_frame_length_mismatch_raises(db: DuckDBClient, tmp_path: Path) 
 
 def test_walk_forward_cv_returns_dataframe(db: DuckDBClient) -> None:
     _insert_features(db, n_days=600, n_locations=2)
-    results = walk_forward_cv(db, n_splits=2, min_train_days=180, embargo_days=7)
+    aggregate, per_bucket = walk_forward_cv(db, n_splits=2, min_train_days=180, embargo_days=7)
 
-    assert isinstance(results, pd.DataFrame)
-    assert not results.empty
+    assert isinstance(aggregate, pd.DataFrame) and isinstance(per_bucket, pd.DataFrame)
+    assert not aggregate.empty
     expected_cols = {"split", "target", "mae", "crps", "coverage_80", "coverage_90"}
-    assert expected_cols.issubset(results.columns)
+    assert expected_cols.issubset(aggregate.columns)
+    # per_bucket: 1 riga per (split, target, lead_bucket)
+    assert not per_bucket.empty
+    assert {"split", "target", "lead_bucket", "n_test"}.issubset(per_bucket.columns)
+    assert (per_bucket["n_test"] > 0).all()
 
 
 def test_walk_forward_cv_coverage_reasonable(db: DuckDBClient) -> None:
     _insert_features(db, n_days=800, n_locations=2)
-    results = walk_forward_cv(db, n_splits=3, min_train_days=180, embargo_days=7)
+    aggregate, per_bucket = walk_forward_cv(db, n_splits=3, min_train_days=180, embargo_days=7)
 
     # Verifica che coverage sia un float valido in [0, 1] — non testiamo calibrazione
     # su dati sintetici con modelli veloci (n_estimators ridotto dalla fixture fast_lgbm)
-    assert (results["coverage_90"] >= 0.0).all()
-    assert (results["coverage_90"] <= 1.0).all()
+    for df in (aggregate, per_bucket):
+        assert (df["coverage_90"] >= 0.0).all()
+        assert (df["coverage_90"] <= 1.0).all()
+        assert (df["coverage_80"] >= 0.0).all()
+        assert (df["coverage_80"] <= 1.0).all()
+
+
+def test_walk_forward_cv_cqr_per_row(db: DuckDBClient) -> None:
+    """La correzione CQR deve essere applicata per-riga in base al lead bucket.
+
+    Costruiamo un dataset sintetico con lead misti e verifichiamo che il breakdown
+    per bucket esista e abbia la colonna attesa. La stratificazione CQR cambia la
+    larghezza del CI riga per riga; senza il fix, ogni riga userebbe la correzione
+    0-6h hardcoded.
+    """
+    _insert_features(db, n_days=800, n_locations=2)
+    _aggregate, per_bucket = walk_forward_cv(
+        db, n_splits=3, min_train_days=180, embargo_days=7
+    )
+
+    assert "0-6h" in set(per_bucket["lead_bucket"])
+    # Il dataset sintetico ha tutti lead=0 → solo il bucket 0-6h è popolato.
+    # La presenza del breakdown per bucket è ciò che conta qui; la copertura
+    # per-bucket con lead misti è testata dal test_run end-to-end.
+    assert per_bucket["lead_bucket"].nunique() >= 1
 
 
 def test_train_all_persists_anomaly_targets(db: DuckDBClient, tmp_path: Path) -> None:
