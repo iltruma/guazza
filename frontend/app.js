@@ -1212,7 +1212,7 @@ function _makeTooltipHandler(elId) {
     if (!items.length) return;
 
     // Cerca i dataset per LABEL, non per indice. Le label sono stabili mentre
-    // l'ordine dei dataset cambia con showBands e modello (Guazza ha CI bands,
+    // l'ordine dei dataset cambia con il modello (Guazza ha CI bands,
     // NWP no). Senza questo, il tooltip mostra i bound CI come "Temp" / "Precip".
     const byLabel = (label) => items.find(i => i.dataset.label === label);
     const temp   = byLabel('Temperatura (°C)');
@@ -1399,7 +1399,7 @@ function _buildChartDatasets(canvas, points, p) {
   // per prime (order alto) così le linee centrali restano in primo piano.
   const tempLo = points.filter(pt => pt.temp_ci80_lo != null).map(pt => ({ x: pt.ts, y: pt.temp_ci80_lo }));
   const tempHi = points.filter(pt => pt.temp_ci80_hi != null).map(pt => ({ x: pt.ts, y: pt.temp_ci80_hi }));
-  if (showBands && tempLo.length && tempHi.length) {
+  if (SHOW_BANDS && tempLo.length && tempHi.length) {
     datasets.push({
       type: 'line', label: 'Temp CI 80% (low)',
       data: tempLo,
@@ -1420,7 +1420,7 @@ function _buildChartDatasets(canvas, points, p) {
   // fill: '+1' colora l'area tra ci80_lo (dataset N) e ci80_hi (dataset N+1).
   const precipLo = points.filter(pt => pt.precip_ci80_lo != null).map(pt => ({ x: pt.ts, y: pt.precip_ci80_lo }));
   const precipHi = points.filter(pt => pt.precip_ci80_hi != null).map(pt => ({ x: pt.ts, y: pt.precip_ci80_hi }));
-  if (showBands && precipLo.length && precipHi.length) {
+  if (SHOW_BANDS && precipLo.length && precipHi.length) {
     datasets.push({
       type: 'bar', label: 'Precip CI 80% (low)',
       data: precipLo, backgroundColor: 'rgba(96,165,250,0.08)',
@@ -1460,10 +1460,8 @@ function _buildChartDatasets(canvas, points, p) {
   return datasets;
 }
 
-// Toggle globale per mostrare/nascondere le bande CI 80% nei grafici.
-// Default ON: l'utente vede subito la fascia d'incertezza; può spegnerla se
-// preferisce un grafico più pulito.
-let showBands = true;
+// Bande CI 80%: sempre visibili (fisso).
+const SHOW_BANDS = true;
 
 // Helper: convert hex color (#rrggbb) a rgba(r,g,b,a) per fill semi-trasparente.
 function hexToRgba(hex, alpha) {
@@ -1552,8 +1550,8 @@ function updateChartModel(data, model, targetDate) {
   applyAxisRanges(meteoChart.options.scales, sharedAxisRanges(data, targetDate));
   const points = buildChartPoints(data, model, targetDate);
   const p = chartPalette();
-  // Riassegno l'intero array datasets: il numero cambia (3 senza band, 7 con band)
-  // a seconda di `showBands` e del modello (Guazza ha CI, NWP no). Il merge per
+  // Riassegno l'intero array datasets: il numero cambia con il modello
+  // (Guazza ha CI, NWP no). Il merge per
   // indice precedente lasciava dataset vecchi nell'array quando si faceva switch
   // modello → band stale di Guazza restavano visibili su NWP.
   meteoChart.data.datasets = _buildChartDatasets(canvas, points, p);
@@ -1841,19 +1839,6 @@ document.getElementById('skill-seg')?.addEventListener('click', e => {
   const btn = e.target.closest('.g-skill__seg-btn');
   if (btn) setSkillVar(btn.dataset.var);
 });
-
-// Toggle "Banda CI 80%" (sincronizzato su daily + weekly). Quando cambia,
-// ricostruisco i dataset: `showBands` è letto in `_buildChartDatasets`.
-function _onBandsToggle(e) {
-  showBands = e.target.checked;
-  if (meteoChart) {
-    const td = currentData?.days?.[selectedDayIdx]?.target_date;
-    if (td) updateChartModel(currentData, selectedModel, td);
-  }
-  if (multiDayChart) updateWeeklyChart(currentData, selectedModel);
-}
-document.getElementById('bands-toggle')?.addEventListener('change', _onBandsToggle);
-document.getElementById('bands-toggle-weekly')?.addEventListener('change', _onBandsToggle);
 
 window.addEventListener('popstate', () => loadLocation(getActiveLoc()));
 
