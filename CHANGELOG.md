@@ -8,6 +8,24 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-06-27
+
+Doc release: cleanup di `docs/known_issues.md` per portare le KI storiche
+alla stessa convenzione "risolto (data, versione)" delle altre.
+
+### Documentation
+- **KI-013** (timestamp SIR naive CEST): aggiunto riferimento a D-017
+  (2026-05-30, standardizzazione UTC naive). Workaround iniziale
+  mantenuto come contesto, risoluzione definitiva documentata.
+- **KI-018** (cutover OpenAQ → ARPAT NRT, pulizia righe orfane):
+  verificato `0` righe in `observations` con `source='openaq'` sul DB
+  locale; marcato come risolto (2026-06-27, v0.11.2 — cleanup posticipato
+  a questo release per coerenza con le altre KI).
+- **KI-023, KI-024**: aggiunte date e riferimenti versione agli "Stato"
+  per coerenza con KI-021, KI-022, KI-025.
+
+Nessuna modifica al codice.
+
 ## [0.11.2] - 2026-06-27
 
 Patch release: due bug fix su `_apply_cqr` e `walk_forward_cv` scoperti in

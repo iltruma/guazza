@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-06-27 (Sprint 11 parziale · skill history time series + pagina backtest, v0.11.0 + rimozione GFS v0.11.1 + fix CQR v0.11.2)
+> Aggiornato: 2026-06-27 (Sprint 11 parziale · skill history time series + pagina backtest, v0.11.0 + rimozione GFS v0.11.1 + fix CQR v0.11.2 + cleanup KI v0.11.3)
 
 ## Cosa è stato fatto
 
