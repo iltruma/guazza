@@ -8,6 +8,34 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-20
+
+Refactoring architetturale della pipeline e dei job CLI, post-v0.11.2.
+Nessuna modifica al contract JSON né al modello ML.
+
+### Changed
+- **Pipeline 6h unificata** (`jobs/pipeline.py`): i job separati
+  `guazza-predict`, `guazza-features`, `guazza-skill-history` sono stati
+  assorbiti in un unico CronJob. Passi in sequenza sulla stessa connessione
+  DuckDB: forecasts → features → predict+DLE+JSON → skill-history → monitor.
+  Riduce le connessioni DuckDB da 4 a 1 per ciclo 6h.
+- **Monitor assorbito nella pipeline**: `jobs/monitor.py` rimosso come
+  CronJob autonomo; la copertura ACI viene controllata come passo 5 della
+  pipeline 6h.
+- **QC agganciato post-ingest**: il quality control non è più un job
+  standalone (`guazza-qc`); viene eseguito automaticamente dopo ogni ingest.
+- **Sottocomando `ingest forecasts` rimosso**: i forecast NWP live sono ora
+  il primo passo di `pipeline run`. `ingest` espone solo `historical`,
+  `daily`, `realtime`.
+- **Uniformazione job CLI**: header, opzioni e ping Healthchecks.io
+  allineati su tutti i job tramite `jobs/_common.py`.
+
+### Removed
+- `jobs/predict.py` — assorbito in `pipeline.py`
+- `jobs/features.py` — assorbito in `pipeline.py`
+- `jobs/skill_history.py` — assorbito in `pipeline.py`
+- `jobs/qc.py` — QC ora inline post-ingest
+
 ## [0.11.2] - 2026-06-27
 
 Patch release: due bug fix su `_apply_cqr` e `walk_forward_cv` scoperti in

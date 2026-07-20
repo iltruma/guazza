@@ -70,10 +70,10 @@ guazza/
  │   └── jobs/
  │       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
  │       ├── ingest.py       # Cron: historical / daily / realtime
- │       ├── pipeline.py     # Cron 6h: forecasts → features → predict → skill-history
+ │       ├── pipeline.py     # Cron 6h: forecasts → features → predict → skill-history → monitor
  │       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
  │       ├── skill.py        # Cron settimanale: curva skill MAE per lead → skill.json
- │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 8)
+ │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2
 ├── data/
 │   ├── guazza.duckdb       # Database analitico (non committato)
 │   ├── models/             # Artefatti LightGBM artifacts.json + model-string .txt (non committati)
@@ -351,7 +351,7 @@ uv run mypy src/
 
 | Sorgente | Uso | Accesso |
 |---|---|---|
-| Open-Meteo Forecast + Historical | 6 modelli NWP (ECMWF, ICON-EU, ICON-D2, GFS, AROME, ICON-2I) | API pubblica, no key |
+| Open-Meteo Forecast + Historical | 5 modelli NWP (ECMWF, ICON-EU, ICON-D2, AROME, ICON-2I) | API pubblica, no key |
 | SIR Toscana | Ground truth osservazioni validate, 34 stazioni | Open Data |
 | Netatmo | Osservazioni iperlocali real-time | OAuth2 |
 | ARPAT OpenData NRT | Qualità aria oraria (NO₂, O₃, CO, SO₂, PM10, PM2.5, benzene) | Open Data |

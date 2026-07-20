@@ -1,8 +1,31 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-06-27 (Sprint 11 parziale · skill history time series + pagina backtest, v0.11.0 + rimozione GFS v0.11.1 + fix CQR v0.11.2)
+> Aggiornato: 2026-07-20 (refactor pipeline/jobs post-v0.11.2, v0.12.0)
 
 ## Cosa è stato fatto
+
+### Refactoring pipeline e job CLI (completato — 2026-07-20, v0.12.0)
+
+Pass di consolidamento architetturale post-Sprint 11 parziale. Nessuna modifica
+al contract JSON né al modello ML.
+
+- **Pipeline 6h unificata** (`jobs/pipeline.py`): i job separati `guazza-predict`,
+  `guazza-features`, `guazza-skill-history` sono stati assorbiti in un unico
+  entrypoint. I passi in sequenza sulla stessa connessione DuckDB sono ora:
+  (1) Open-Meteo forecasts, (2) `build_features_daily`, (3) predict+DLE+JSON,
+  (4) skill-history append+dump, (5) monitor copertura ACI. Riduce le connessioni
+  DuckDB da 4+ a 1 per ciclo 6h.
+- **Monitor assorbito come passo 5**: `jobs/monitor.py` non è più un CronJob
+  autonomo; la copertura rolling viene controllata alla fine di ogni run della
+  pipeline.
+- **QC agganciato post-ingest**: il quality control viene eseguito inline dopo
+  ogni ingest (`historical`, `daily`, `realtime`). `jobs/qc.py` rimosso.
+- **`ingest forecasts` rimosso**: i forecast NWP live sono il passo 1 di
+  `pipeline run`. `ingest` espone solo `historical`, `daily`, `realtime`.
+- **Job rimossi**: `jobs/predict.py`, `jobs/features.py`, `jobs/skill_history.py`,
+  `jobs/qc.py` — tutti assorbiti o eliminati.
+- **Uniformazione CLI**: header, opzioni e ping Healthchecks.io allineati via
+  `jobs/_common.py`.
 
 ### Sprint 11 (parte 1) — Skill history time series + pagina "Come ha performato" (completato — 2026-06-27, v0.11.0)
 
@@ -248,7 +271,7 @@ Flag aggiuntivi in `historical` e `daily`:
 - Aggiornati `README.md`, `AGENTS.md`, `config/sources.yaml` per rimuovere ogni riferimento
 
 ## Test
-- **334 test**, tutti verdi
+- Tutti verdi
 - `ruff check` OK, `mypy` OK
 
 ## Prossimi passi (in ordine)
@@ -768,7 +791,7 @@ in D-016. 🟡 La versione multi-anno resta gated sull'accumulo forward (deploy)
 - **Target di deploy**: cluster k3s homelab (`houston`, VM `iss` 192.168.178.3) come namespace k8s dedicato (`guazza`); manifest in `k8s/apps/guazza/` nel repo Houston; ApplicationSet ArgoCD già presente genera l'`Application` automaticamente.
 - **Immagine container**: `ghcr.io/iltruma/guazza:vX.Y.Z` (e `:X.Y.Z`), allineata a `pyproject.toml`. Single-stage `python:3.13-slim` + nginx, install via `uv` (niente builder/wheel); gira come utente non-root (UID 1000). Buildata su push tag `v*.*.*` (CI: test/lint/mypy + buildx). Dettaglio in CHANGELOG Unreleased.
 - **Storage**: PVC 10Gi, `storageClassName: local-path` (k3s su NVMe), `ReadWriteOnce` (DuckDB single-writer). Path `/var/lib/guazza/` con `db/`, `models/`, `parquet/`, `output/`, `logs/`.
-- **Scheduling**: `CronJob` k8s (non crontab sul 3050), `concurrencyPolicy: Forbid` su tutti i writer DuckDB. Schedule sfalsate: realtime `*/15`, daily `0 6 * * *`, forecasts `0 0,6,12,18 * * *`, features `15 1,7,13,19 * * *`, predict `30 1,7,13,19 * * *`, qc `0 4 * * 1`, **monitor `5 9 * * *` (Sprint 9 — copertura ACI + alert drift)**, skill `0 9 * * 0`, historical `0 0 31 2 *` (31 febbraio, lanciabile on-demand via `kubectl create job --from=cronjob/...`).
+- **Scheduling**: `CronJob` k8s (non crontab sul 3050), `concurrencyPolicy: Forbid` su tutti i writer DuckDB. Schedule sfalsate: realtime `*/15`, daily `0 6 * * *`, pipeline (forecasts+features+predict+skill-history+monitor) `30 1,7,13,19 * * *`, skill `0 9 * * 0`, historical `0 0 31 2 *` (31 febbraio, lanciabile on-demand via `kubectl create job --from=cronjob/...`).
 - **Accesso esterno**: Cloudflare Tunnel `homelab` (già operativo, 2 repliche in `cloudflared`) — aggiungere riga in `k8s/apps/cloudflared/configmap.yaml` + CNAME in dashboard per `guazza.paroparo.it` → `http://guazza-web.guazza.svc.cluster.local:80`.
 - **Interno**: `guazza.lab.paroparo.it` (record in Pi-hole) → ingress Traefik su wildcard `*.lab.paroparo.it` (già emesso da cert-manager DNS-01 Cloudflare).
 - **Secret**: 2 SealedSecret nel repo Houston — `netatmo-credentials` (client_id+client_secret) e `healthchecks-url`. Iniettati come env nei pod tramite `envFrom`. Backup R2 rimandato a sprint successivo (oltre lo scope S-A).
