@@ -72,7 +72,6 @@ guazza/
  │       ├── pipeline.py     # Cron 6h: forecasts → features → predict → skill-history
  │       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
  │       ├── skill.py        # Cron settimanale: curva skill MAE per lead → skill.json
- │       ├── skill_history.py # CLI backfill manuale: append / dump
  │       ├── monitor.py      # Cron: coverage ACI 30d + alert drift
  │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 8)
 ├── data/
@@ -184,14 +183,18 @@ uv run python -m guazza.jobs.train eval --db data/guazza.duckdb
 ### Skill history backfill manuale
 
 ```bash
-# Backfill manuale di N giorni (append + dump sono inclusi nella pipeline 6h)
-uv run python -m guazza.jobs.skill_history append --db data/guazza.duckdb --days 30
-uv run python -m guazza.jobs.skill_history dump --db data/guazza.duckdb \
-    --output frontend/data/skill_history.json
+# append + dump sono inclusi automaticamente nella pipeline 6h.
+# Per backfill manuale (es. dopo perdita dati):
+python -c "
+import duckdb
+from guazza.skill_history import append_one, dump_payload, atomic_write_json, DEFAULT_DUMP_PATH
+from datetime import date, timedelta
+con = duckdb.connect('data/guazza.duckdb')
+for i in range(30):
+    append_one(con, date.today() - timedelta(days=i+1))
+atomic_write_json(DEFAULT_DUMP_PATH, dump_payload(con))
+"
 ```
-
-**Schedule k8s proposta**: `15 6 * * *` UTC per `append` (15 min dopo
-`daily` ingest), `30 6 * * *` per `dump`.
 
 ### Opzioni comuni
 
