@@ -12,10 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from loguru import logger
 
 from guazza._logging import setup_logging
-from guazza.jobs._common import DB_OPTION
+from guazza.jobs._common import DB_OPTION, job_run
 from guazza.qc import compute_quality_flags
 from guazza.storage import DuckDBClient
 
@@ -37,11 +36,15 @@ def cmd_run(
         typer.echo("[dry-run] Nessuna scrittura effettuata.")
         return
 
-    with DuckDBClient(db_path=db_path) as db:
-        result = compute_quality_flags(db)
-    total = result.pop("total")
-    breakdown = ", ".join(f"{k}={v}" for k, v in sorted(result.items()))
-    logger.info(f"qc.run: {total} flag totali — {breakdown}")
+    total = 0
+    breakdown = ""
+    with job_run("job_qc_run") as stats:
+        with DuckDBClient(db_path=db_path) as db:
+            result = compute_quality_flags(db)
+        total = result.pop("total")
+        breakdown = ", ".join(f"{k}={v}" for k, v in sorted(result.items()))
+        stats.rows = total
+        stats.summary = breakdown
     typer.echo(f"Flag inseriti: {total}")
     typer.echo(f"Breakdown: {breakdown}")
 

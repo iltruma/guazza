@@ -61,6 +61,11 @@ app = typer.Typer(help="Predizioni ML per Guazza.")
 _MODEL_DIR = Path(os.environ.get("MODEL_DIR", "/var/lib/guazza/models"))
 
 
+@app.callback()
+def _callback() -> None:
+    setup_logging()
+
+
 def _fetch_obs_summary(db: DuckDBClient, location_id: str) -> dict[str, float | None]:
     """Ultima lettura idrometrica e PM10 disponibile per una location."""
     level_row = db.execute("""
@@ -164,8 +169,6 @@ def cmd_run(
     dry_run:    bool = typer.Option(False, "--dry-run", help="Non scrive su disco né in DB"),
 ) -> None:
     """Genera predizioni ML + indicatori DLE per tutte le location (D+0…D+7)."""
-    setup_logging()
-
     with job_run("job_predict") as stats:
         artifacts = load_artifacts(model_dir=model_dir)
         model_version = artifacts.trained_at.strftime("%Y%m%d")

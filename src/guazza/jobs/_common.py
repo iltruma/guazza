@@ -11,13 +11,20 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
-import httpx
-import typer
-from loguru import logger
+from dotenv import load_dotenv
 
-from guazza._logging import log_scrape
-from guazza._paths import DEFAULT_CONFIG_DIR, DEFAULT_DB_PATH, DEFAULT_OUTPUT_DIR
+# Carica .env prima che i moduli guazza leggano le env a import time (es. DB_PATH
+# in guazza._paths). In k8s non ha effetto (le env sono già iniettate dal pod spec).
+load_dotenv(Path(__file__).resolve().parents[4] / ".env")
+
+import httpx  # noqa: E402
+import typer  # noqa: E402
+from loguru import logger  # noqa: E402
+
+from guazza._logging import log_scrape  # noqa: E402
+from guazza._paths import DEFAULT_CONFIG_DIR, DEFAULT_DB_PATH, DEFAULT_OUTPUT_DIR  # noqa: E402
 
 DB_OPTION = typer.Option(DEFAULT_DB_PATH, "--db", help="Path file DuckDB")
 CONFIG_DIR_OPTION = typer.Option(

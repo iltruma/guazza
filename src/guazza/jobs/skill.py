@@ -41,6 +41,11 @@ LEADS = [0, 24, 48, 72, 96, 120, 144, 168]
 MIN_SAMPLES_PER_LEAD = 5
 
 
+@app.callback()
+def _callback() -> None:
+    setup_logging()
+
+
 def _primary_stations(config_dir: Path) -> dict[str, str]:
     data = yaml.safe_load((config_dir / "locations.yaml").read_text())
     return {loc_id: spec["sir_station_id"]
@@ -100,7 +105,6 @@ def run(
     window_start: str = typer.Option("2025-10-15", help="Inizio finestra multi-lead (test)"),
     embargo_days: int = typer.Option(7, help="Giorni di embargo tra train e finestra"),
 ) -> None:
-    setup_logging()
     with job_run("job_skill") as stats:
         stations = _primary_stations(config_dir)
 

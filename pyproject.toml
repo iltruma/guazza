@@ -38,16 +38,17 @@ dev = [
 ]
 
 [project.scripts]
-guazza-ingest    = "guazza.jobs.ingest:app"
-guazza-features  = "guazza.jobs.features:app"
-guazza-train     = "guazza.jobs.train:app"
-guazza-predict   = "guazza.jobs.predict:app"
-guazza-skill     = "guazza.jobs.skill:app"
-guazza-qc        = "guazza.jobs.qc:app"
-guazza-backup    = "guazza.jobs.backup:app"
-guazza-netatmo-daily = "guazza.jobs.netatmo_daily:app"
-guazza-weights   = "guazza.weights:app"
-guazza-storage   = "guazza.storage:app"
+guazza-ingest         = "guazza.jobs.ingest:app"
+guazza-features       = "guazza.jobs.features:app"
+guazza-train          = "guazza.jobs.train:app"
+guazza-predict        = "guazza.jobs.predict:app"
+guazza-skill          = "guazza.jobs.skill:app"
+guazza-skill-history  = "guazza.jobs.skill_history:app"
+guazza-monitor        = "guazza.jobs.monitor:app"
+guazza-qc             = "guazza.jobs.qc:app"
+guazza-backup         = "guazza.jobs.backup:app"
+guazza-weights        = "guazza.weights:app"
+guazza-storage        = "guazza.storage:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/guazza"]

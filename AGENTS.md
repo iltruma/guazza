@@ -136,7 +136,7 @@ L'albero completo delle directory è in `README.md`. Mappa dei moduli (responsab
 - `qc.py` — quality control osservazioni SIR + ARPAT
 - `_logging.py` — setup_logging() (TTY pretty / cron JSON)
 - `netatmo_daily.py` — accumulo Netatmo realtime → daily (forward-looking storico)
-- `jobs/` — entrypoint CLI cron: ingest, features, train, predict, qc, backup, netatmo_daily, skill
+- `jobs/` — entrypoint CLI cron: ingest, features, train, predict, qc, backup, skill, skill_history, monitor
 
 ## Guardrail operativi
 

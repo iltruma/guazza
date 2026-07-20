@@ -1,10 +1,10 @@
 """Entry point cron — ingestion dati Guazza.
 
-Quattro comandi separati con schedulazioni diverse:
+Quattro comandi con schedulazioni diverse:
 
-  historical  — one-shot: backfill completo SIR CSV + Open-Meteo historical (2022→oggi)
-  daily       — cron 1×/giorno: delta di ieri (SIR CSV + Open-Meteo historical)
-  realtime    — cron ogni 15-30 min: SIR actions.php + Netatmo
+  historical  — one-shot: backfill completo SIR CSV + Open-Meteo historical + multilead (2022→oggi)
+  daily       — cron 1×/giorno: delta di ieri (SIR CSV + OM historical lead=0 + OM multilead + Netatmo daily)
+  realtime    — cron ogni 15-30 min: SIR actions.php + Netatmo + ARPAT
   forecasts   — cron ogni 6h: Open-Meteo forecast (7 giorni, tutti i modelli)
 
 Uso:
@@ -28,35 +28,30 @@ from typing import Any
 
 import httpx
 import typer
-from dotenv import load_dotenv
 from loguru import logger
 from tqdm import tqdm
 
-# Carica .env prima di importare i moduli guazza che leggono le env a import time
-# (es. DB_PATH in guazza._paths).
-load_dotenv(Path(__file__).resolve().parents[3] / ".env")
-
-from guazza._logging import log_scrape, setup_logging  # noqa: E402
-from guazza.fetch_arpat import (  # noqa: E402
+from guazza._logging import log_scrape, setup_logging
+from guazza.fetch_arpat import (
     fetch_arpat_all_locations,
     fetch_arpat_bollettino_all_locations,
 )
-from guazza.fetch_netatmo import fetch_netatmo_all_locations  # noqa: E402
-from guazza.fetch_openmeteo import (  # noqa: E402
+from guazza.fetch_netatmo import fetch_netatmo_all_locations
+from guazza.fetch_openmeteo import (
     OM_MODELS,
     fetch_openmeteo_all_locations,
     fetch_openmeteo_historical_batch,
     fetch_openmeteo_multilead_batch,
 )
-from guazza.fetch_sir import (  # noqa: E402
+from guazza.fetch_sir import (
     fetch_sir_bulk_realtime,
     fetch_sir_historical,
     fetch_sir_stations_realtime,
 )
-from guazza.jobs._common import CONFIG_DIR_OPTION, DB_OPTION, job_run  # noqa: E402
-from guazza.netatmo_daily import aggregate_netatmo_daily  # noqa: E402
-from guazza.storage import DuckDBClient  # noqa: E402
-from guazza.weights import load_configs  # noqa: E402
+from guazza.jobs._common import CONFIG_DIR_OPTION, DB_OPTION, job_run
+from guazza.netatmo_daily import aggregate_netatmo_daily
+from guazza.storage import DuckDBClient
+from guazza.weights import load_configs
 
 # ── Costanti ─────────────────────────────────────────────────────────────────
 
@@ -243,9 +238,9 @@ def cmd_historical(
     om_model: list[str] | None = typer.Option(None, "--om-model", help="Limita Open-Meteo a questo modello (ripetibile). Es: --om-model italia_meteo_arpae_icon_2i"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Stampa cosa farebbe senza scrivere"),
 ) -> None:
-    """Backfill completo: SIR CSV + Open-Meteo historical (one-shot, lento).
+    """Backfill completo: SIR CSV + Open-Meteo historical (lead=0) + multilead (lead 24-168h).
 
-    Da eseguire una volta sola per caricare lo storico di training.
+    Da eseguire una volta sola per caricare lo storico di training completo.
     Non schedulare come cron — usa 'daily' per il delta incrementale.
     La qualità aria (ARPAT NRT) non ha storico scaricabile — usa 'realtime'.
 
@@ -336,67 +331,23 @@ def cmd_historical(
                             om_total += db.upsert_forecasts(records)
                 typer.echo(f"Open-Meteo historical: {om_total} record inseriti")
 
+                typer.echo("\n--- Open-Meteo multilead (batch) ---")
+                ml_results = fetch_openmeteo_multilead_batch(
+                    locations=locations,
+                    start_date=start_date,
+                    end_date=om_end_date,
+                )
+                ml_total = 0
+                for model_results in ml_results.values():
+                    for records in model_results.values():
+                        if records:
+                            ml_total += db.upsert_forecasts(records)
+                om_total += ml_total
+                typer.echo(f"Open-Meteo multilead: {ml_total} record inseriti")
+
         stats.rows = sir_total + om_total
         stats.summary = f"SIR:{sir_total} OM:{om_total}"
 
-
-@app.command("multilead")
-def cmd_multilead(
-    db_path: Path = DB_OPTION,
-    config_dir: Path = CONFIG_DIR_OPTION,
-    start_date: str = typer.Option("2022-01-01", "--start-date", help="Inizio intervallo YYYY-MM-DD"),
-    end_date: str = typer.Option("", "--end-date", help="Fine intervallo YYYY-MM-DD (default: oggi-2gg)"),
-    location: list[str] | None = typer.Option(None, "--location", help="Limita a questa location (ripetibile)"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Stampa cosa farebbe senza scrivere"),
-) -> None:
-    """Backfill multi-lead D+1…D+7 da Open-Meteo (variabili *_previous_dayN).
-
-    Una tantum: aggiunge a `forecasts` i lead lunghi (24/48/…/168h) che lo storico
-    best-estimate non contiene, per abilitare il backtest multi-giorno senza deploy.
-    L'orizzonte è model-dependent (ECMWF→D+7, ICON-EU→D+4, ICON-2I→D+2, ICON-D2/AROME→D+1,
-    GFS escluso: non archivia run precedenti). Non tocca le righe lead-0 esistenti.
-
-    Esempi:
-        multilead --location casa_campi --start-date 2025-01-01
-        multilead --start-date 2022-01-01
-    """
-    if not end_date:
-        end_date = (datetime.now(tz=UTC) - timedelta(days=2)).strftime("%Y-%m-%d")
-
-    locations_all, _stations = load_configs(Path(config_dir))
-
-    if location:
-        unknown = set(location) - set(locations_all)
-        if unknown:
-            typer.echo(f"Errore: location sconosciute: {sorted(unknown)}")
-            typer.echo(f"Disponibili: {list(locations_all.keys())}")
-            raise typer.Exit(1)
-        locations = {k: v for k, v in locations_all.items() if k in location}
-    else:
-        locations = locations_all
-
-    typer.echo(f"Multilead backfill: {start_date} → {end_date}")
-    typer.echo(f"Location: {list(locations.keys())}")
-
-    if dry_run:
-        typer.echo("[dry-run] Nessuna scrittura effettuata.")
-        return
-
-    with job_run("job_multilead") as stats:
-        om_total = 0
-        with DuckDBClient(db_path=db_path) as db:
-            db.init_schema()
-            results_all = fetch_openmeteo_multilead_batch(
-                locations=locations,
-                start_date=start_date,
-                end_date=end_date,
-            )
-            for model_results in results_all.values():
-                for records in model_results.values():
-                    if records:
-                        om_total += db.upsert_forecasts(records)
-        stats.rows = om_total
-        stats.summary = f"OM multilead: {om_total} record"
 
 
 @app.command("daily")
@@ -408,12 +359,16 @@ def cmd_daily(
     only_openmeteo: bool = typer.Option(False, "--only-openmeteo", help="Scarica solo Open-Meteo, salta SIR"),
     location: list[str] | None = typer.Option(None, "--location", help="Limita a questa location (ripetibile)"),
     om_model: list[str] | None = typer.Option(None, "--om-model", help="Limita Open-Meteo a questo modello (ripetibile)"),
+    netatmo_all: bool = typer.Option(False, "--netatmo-all", help="Backfill Netatmo daily su tutti i giorni accumulati (invece del solo giorno indicato)"),
+    netatmo_min_samples: int = typer.Option(6, "--netatmo-min-samples", help="Minimo campioni temp_c per aggregazione Netatmo daily"),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
-    """Delta incrementale giornaliero: SIR CSV + Open-Meteo per il giorno indicato.
+    """Delta incrementale giornaliero: SIR CSV + Open-Meteo historical (lead=0) + multilead (lead 24-168h) + Netatmo daily.
 
     Schedulare a ~06:00 UTC (SIR pubblica i dati validati del giorno precedente
     tipicamente entro le 03:00-05:00 UTC).
+
+    Usa --netatmo-all per il backfill iniziale di tutti i giorni Netatmo accumulati.
     """
     if only_sir and only_openmeteo:
         typer.echo("Errore: --only-sir e --only-openmeteo sono mutualmente esclusivi.")
@@ -454,6 +409,7 @@ def cmd_daily(
                 logger.info(f"daily SIR: {sir_total} record")
 
             if run_om:
+                # OM historical: lead=0 (best-estimate retroattivo)
                 results_all = fetch_openmeteo_historical_batch(
                     locations=locations,
                     start_date=date,
@@ -464,12 +420,26 @@ def cmd_daily(
                     for records in model_results.values():
                         if records:
                             om_total += db.upsert_forecasts(records)
-                logger.info(f"daily Open-Meteo: {om_total} record")
+                logger.info(f"daily Open-Meteo historical: {om_total} record")
 
-            # Accumulo Netatmo daily del giorno: aggrega il realtime già in DB
-            # (nessuna rete). Non entra nel training, storico per Sprint 9+.
-            local_day = datetime.strptime(date, "%Y-%m-%d").date()
-            nd = aggregate_netatmo_daily(db, target_day=local_day)
+                # OM multilead: lead 24-168h (cosa i modelli prevedevano per ieri)
+                ml_results = fetch_openmeteo_multilead_batch(
+                    locations=locations,
+                    start_date=date,
+                    end_date=date,
+                )
+                ml_total = 0
+                for model_results in ml_results.values():
+                    for records in model_results.values():
+                        if records:
+                            ml_total += db.upsert_forecasts(records)
+                om_total += ml_total
+                logger.info(f"daily Open-Meteo multilead: {ml_total} record")
+
+            # Aggregazione Netatmo: backfill completo con --netatmo-all,
+            # altrimenti solo il giorno indicato.
+            netatmo_target = None if netatmo_all else datetime.strptime(date, "%Y-%m-%d").date()
+            nd = aggregate_netatmo_daily(db, target_day=netatmo_target, min_samples=netatmo_min_samples)
             logger.info(f"daily Netatmo: {nd['rows']} record")
 
         stats.rows = sir_total + om_total

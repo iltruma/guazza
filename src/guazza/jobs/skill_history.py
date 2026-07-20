@@ -44,6 +44,11 @@ ALL_SOURCES = ["guazza", *NWP_SOURCES]
 DEFAULT_DUMP_PATH = Path("frontend/data/skill_history.json")
 
 
+@app.callback()
+def _callback() -> None:
+    setup_logging()
+
+
 # ── helpers SQL ─────────────────────────────────────────────────────────────
 
 def _sql_guazza_forecast(target_date: date) -> str:
@@ -250,7 +255,6 @@ def append(
     """Calcola forecast (lead 24h) vs actual per ogni location/source/variable
     e fa upsert in `skill_history_daily`. Idempotente.
     """
-    setup_logging()
     with job_run("job_skill_history_append") as stats:
         with DuckDBClient(db_path=db) as client:
             # init_schema è idempotente (IF NOT EXISTS / _ensure_* helpers).
@@ -285,7 +289,6 @@ def dump(
     ),
 ) -> None:
     """Aggrega `skill_history_daily` in un JSON time series per il frontend."""
-    setup_logging()
     with job_run("job_skill_history_dump") as stats:
         con = duckdb.connect(str(db), read_only=True)
         try:

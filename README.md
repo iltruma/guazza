@@ -67,13 +67,13 @@ guazza/
 │   ├── netatmo_daily.py    # Accumulo Netatmo realtime → daily (forward-looking storico)
 │   └── jobs/
 │       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
-│       ├── ingest.py       # Cron: historical / daily / realtime / forecasts / multilead
+│       ├── ingest.py       # Cron: historical / daily / realtime / forecasts
 │       ├── features.py     # CLI: features build / info
 │       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
  │       ├── predict.py      # Cron: predict → DuckDB + DLE + JSON output
  │       ├── skill.py        # Cron: curva skill MAE per lead → skill.json
  │       ├── skill_history.py # Cron: append giornaliero + dump JSON time series
- │       ├── netatmo_daily.py # Cron: aggregazione Netatmo realtime → daily
+ │       ├── monitor.py      # Cron: coverage ACI 30d + alert drift
  │       ├── qc.py           # Cron: qc run / qc report
  │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 8)
 ├── data/
@@ -136,21 +136,17 @@ Vedi `docs/decisions.md` per motivazioni complete.
 ### Ingestion
 
 ```bash
-# Backfill storico one-shot (SIR + Open-Meteo 2022→oggi)
+# Backfill storico one-shot (SIR + Open-Meteo historical lead=0 + multilead lead 24-168h, 2022→oggi)
 uv run python -m guazza.jobs.ingest historical
 
-# Backfill multi-lead D+1…D+7 one-shot (run precedenti via *_previous_dayN, per il backtest)
-uv run python -m guazza.jobs.ingest multilead
-
-# Delta giornaliero — schedulare a 06:00 UTC (include l'accumulo Netatmo daily di ieri)
+# Delta giornaliero — schedulare a 06:00 UTC (SIR + OM historical + OM multilead + Netatmo daily)
 uv run python -m guazza.jobs.ingest daily
+
+# Backfill Netatmo daily su tutti i giorni accumulati (one-shot, prima esecuzione):
+uv run python -m guazza.jobs.ingest daily --netatmo-all
 
 # Realtime SIR + Netatmo — schedulare ogni 15-30 min
 uv run python -m guazza.jobs.ingest realtime
-
-# Accumulo Netatmo realtime → daily (storico forward-looking, non-training).
-# Già incluso in `ingest daily`; standalone per backfill dell'accumulato:
-uv run python -m guazza.jobs.netatmo_daily --all
 
 # Forecast NWP — schedulare ogni 6h (02/08/14/20 UTC)
 uv run python -m guazza.jobs.ingest forecasts

@@ -11,11 +11,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from loguru import logger
 
 from guazza._logging import setup_logging
 from guazza.features import build_features_daily
-from guazza.jobs._common import DB_OPTION
+from guazza.jobs._common import DB_OPTION, job_run
 from guazza.storage import DuckDBClient
 
 app = typer.Typer(help="Feature engineering — tabella features_daily.")
@@ -27,12 +26,23 @@ def _callback() -> None:
 
 
 @app.command("build")
-def cmd_build(db_path: Path = DB_OPTION) -> None:
+def cmd_build(
+    db_path: Path = DB_OPTION,
+    dry_run: bool = typer.Option(False, "--dry-run", help="Conta le righe sorgente senza riscrivere features_daily"),
+) -> None:
     """Costruisce (o ricostruisce) features_daily da forecasts + observations."""
-    with DuckDBClient(db_path=db_path) as db:
-        n = build_features_daily(db)
-    logger.info(f"features.build: {n} righe in features_daily")
-    typer.echo(f"Righe scritte: {n}")
+    if dry_run:
+        with DuckDBClient(db_path=db_path, read_only=True) as db:
+            n_forecasts = db.execute("SELECT COUNT(*) FROM forecasts").fetchone()[0]
+            n_obs = db.execute("SELECT COUNT(*) FROM observations WHERE granularity = 'daily'").fetchone()[0]
+        typer.echo(f"[dry-run] forecasts={n_forecasts} obs_daily={n_obs} — nessuna scrittura.")
+        return
+
+    with job_run("job_features_build") as stats:
+        with DuckDBClient(db_path=db_path) as db:
+            n = build_features_daily(db)
+        stats.rows = n
+        stats.summary = f"{n} righe in features_daily"
 
 
 @app.command("info")
