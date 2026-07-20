@@ -62,7 +62,7 @@ guazza/
 │   ├── models.py           # LightGBM quantile + CQR, train_all(), predict(), predict_frame()
 │   ├── indicators.py       # Decision Logic Engine: evaluate_all(), log_results() (eval via AST)
 │   ├── output.py           # build_signals(), build_signals_today(), dewpoint/apparent_temp, write_location_json()
-│   ├── qc.py               # Quality control osservazioni SIR + ARPAT
+│   ├── qc.py               # Quality control osservazioni SIR + ARPAT (chiamato da ingest)
 │   ├── _logging.py         # setup_logging() + log_scrape() — TTY pretty / cron JSON
 │   ├── netatmo_daily.py    # Accumulo Netatmo realtime → daily (forward-looking storico)
 │   └── jobs/
@@ -74,7 +74,6 @@ guazza/
  │       ├── skill.py        # Cron: curva skill MAE per lead → skill.json
  │       ├── skill_history.py # Cron: append giornaliero + dump JSON time series
  │       ├── monitor.py      # Cron: coverage ACI 30d + alert drift
- │       ├── qc.py           # Cron: qc run / qc report
  │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 8)
 ├── data/
 │   ├── guazza.duckdb       # Database analitico (non committato)

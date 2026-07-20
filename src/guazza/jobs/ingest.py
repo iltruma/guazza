@@ -50,6 +50,7 @@ from guazza.fetch_sir import (
 )
 from guazza.jobs._common import CONFIG_DIR_OPTION, DB_OPTION, job_run
 from guazza.netatmo_daily import aggregate_netatmo_daily
+from guazza.qc import compute_quality_flags
 from guazza.storage import DuckDBClient
 from guazza.weights import load_configs
 
@@ -345,6 +346,9 @@ def cmd_historical(
                 om_total += ml_total
                 typer.echo(f"Open-Meteo multilead: {ml_total} record inseriti")
 
+            qc = compute_quality_flags(db)
+            typer.echo(f"QC: {qc['total']} flag ({', '.join(f'{k}={v}' for k, v in qc.items() if k != 'total')})")
+
         stats.rows = sir_total + om_total
         stats.summary = f"SIR:{sir_total} OM:{om_total}"
 
@@ -442,6 +446,9 @@ def cmd_daily(
             nd = aggregate_netatmo_daily(db, target_day=netatmo_target, min_samples=netatmo_min_samples)
             logger.info(f"daily Netatmo: {nd['rows']} record")
 
+            qc = compute_quality_flags(db)
+            logger.info(f"daily QC: {qc['total']} flag")
+
         stats.rows = sir_total + om_total
         stats.summary = f"SIR:{sir_total} OM:{om_total}"
 
@@ -512,6 +519,9 @@ def cmd_realtime(
             if boll_records:
                 aq_total += db.upsert_sir_observations(boll_records)
             logger.info(f"realtime ARPAT: {aq_total} record ({len(boll_records)} bollettino PM10/PM2.5)")
+
+            qc = compute_quality_flags(db)
+            logger.info(f"realtime QC: {qc['total']} flag")
 
         stats.rows = sir_total + netatmo_total + aq_total
         stats.summary = f"SIR:{sir_total} Netatmo:{netatmo_total} ARPAT:{aq_total}"

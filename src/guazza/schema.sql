@@ -267,4 +267,10 @@ JOIN station_weights sw
     ON o.station_id = sw.station_id
 WHERE o.source = 'sir_toscana'
   AND o.granularity = 'daily'
+  AND NOT EXISTS (
+      SELECT 1 FROM quality_flags qf
+      WHERE qf.station_id = o.station_id
+        AND qf.ts = o.ts
+        AND qf.granularity = o.granularity
+  )
 GROUP BY sw.location_id, o.ts::DATE;

@@ -133,10 +133,10 @@ L'albero completo delle directory è in `README.md`. Mappa dei moduli (responsab
 - `models.py` — LightGBM quantile + CQR, train_all(), predict()
 - `indicators.py` — Decision Logic Engine, evaluate_all(), log_results()
 - `output.py` — build_signals(), compute_coverage_30d(), write_location_json()
-- `qc.py` — quality control osservazioni SIR + ARPAT
+- `qc.py` — quality control osservazioni SIR + ARPAT (chiamato da ingest post-upsert)
 - `_logging.py` — setup_logging() (TTY pretty / cron JSON)
 - `netatmo_daily.py` — accumulo Netatmo realtime → daily (forward-looking storico)
-- `jobs/` — entrypoint CLI cron: ingest, features, train, predict, qc, backup, skill, skill_history, monitor
+- `jobs/` — entrypoint CLI cron: ingest, features, train, predict, backup, skill, skill_history, monitor
 
 ## Guardrail operativi
 
