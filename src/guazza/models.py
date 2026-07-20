@@ -383,7 +383,7 @@ def load_artifacts(model_dir: Path | None = None) -> TrainingArtifacts:
         # Suggerimenti per l'utente quando gli artefatti mancano al path di default.
         # In produzione k8s il path è /var/lib/guazza/models; in locale è data/models.
         hint = ""
-        if str(model_dir) == "/var/lib/guazza/models":
+        if model_dir == _DEFAULT_MODEL_DIR:
             alt = Path("data/models") / "artifacts.json"
             if alt.exists():
                 hint = (

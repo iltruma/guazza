@@ -1,4 +1,4 @@
-"""Test per jobs/monitor.py — coverage_30d + alert drift."""
+"""Test per monitor.py — coverage_30d + alert drift."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from guazza.jobs.monitor import _compute_coverage
+from guazza.monitor import compute_coverage
 from guazza.storage import DuckDBClient
 
 
@@ -18,7 +18,7 @@ def db(tmp_path: Path) -> DuckDBClient:
     client.init_schema()
     client.ensure_aci_schema()
     # predictions con tmin/tmax/precip_obs (alcune coperte, altre no)
-    today = date(2026, 6, 1)
+    today = date.today() - timedelta(days=20)
     rows = []
     for i in range(50):
         ts_date = today + timedelta(days=i)
@@ -53,8 +53,8 @@ def db(tmp_path: Path) -> DuckDBClient:
 
 
 def test_compute_coverage_returns_per_target_bucket(db: DuckDBClient) -> None:
-    """_compute_coverage deve restituire una riga per (target, bucket) con n_obs, cov_80, cov_90."""
-    results = _compute_coverage(db)
+    """compute_coverage deve restituire una riga per (target, bucket) con n_obs, cov_80, cov_90."""
+    results = compute_coverage(db)
     assert len(results) > 0
     for r in results:
         assert r.n_obs > 0
@@ -67,7 +67,7 @@ def test_compute_coverage_returns_per_target_bucket(db: DuckDBClient) -> None:
 
 def test_compute_coverage_includes_precip(db: DuckDBClient) -> None:
     """Tutti i 3 target devono essere rappresentati."""
-    results = _compute_coverage(db)
+    results = compute_coverage(db)
     targets = {r.target for r in results}
     assert "tmin_c" in targets
     assert "tmax_c" in targets
@@ -76,7 +76,7 @@ def test_compute_coverage_includes_precip(db: DuckDBClient) -> None:
 
 def test_compute_coverage_alerts_on_drift(db: DuckDBClient) -> None:
     """Drift > DRIFT_TOLERANCE_PP (0.05) deve emergere come drift_80/drift_90 non-nulli."""
-    results = _compute_coverage(db)
+    results = compute_coverage(db)
     for r in results:
         assert -1.0 <= r.drift_80 <= 0.2
         assert -1.0 <= r.drift_90 <= 0.1
@@ -88,15 +88,15 @@ def test_compute_coverage_no_data_returns_empty(tmp_path: Path) -> None:
     client.__enter__()
     client.init_schema()
     client.ensure_aci_schema()
-    assert _compute_coverage(client) == []
+    assert compute_coverage(client) == []
     client.__exit__(None, None, None)
 
 
 def test_compute_coverage_window_30_days(db: DuckDBClient) -> None:
     """Solo predictions con ts_valid entro 30gg vengono considerate."""
     # Aggiungo una prediction vecchia (oltre 30gg) e una recente
-    old_date = date(2026, 1, 1)
-    recent_date = date(2026, 6, 25)
+    old_date = date.today() - timedelta(days=60)
+    recent_date = date.today()
     old_ts = datetime(old_date.year, old_date.month, old_date.day)
     recent_ts = datetime(recent_date.year, recent_date.month, recent_date.day)
     rows = [
@@ -125,7 +125,7 @@ def test_compute_coverage_window_30_days(db: DuckDBClient) -> None:
         )
     """, rows)
 
-    results = _compute_coverage(db)
+    results = compute_coverage(db)
     # Il vecchio NON dovrebbe essere contato (oltre 30gg).
     # Verifica che n_obs di tmin_c sia solo le righe recenti (50 del base + 1 loc_new).
     for r in results:

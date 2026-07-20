@@ -823,6 +823,7 @@ def test_load_artifacts_suggests_local_data_models(monkeypatch, tmp_path: Path) 
     fake_local.mkdir(parents=True)
     (fake_local / "artifacts.json").write_text("{}")
 
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(models, "_DEFAULT_MODEL_DIR", fake_prod)
     with pytest.raises(FileNotFoundError, match="--model-dir data/models"):
         models.load_artifacts(fake_prod)

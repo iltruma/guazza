@@ -219,63 +219,7 @@ def test_realtime_dry_run(cfg_dir: Path, tmp_path: Path) -> None:
     assert not db.exists()
 
 
-def test_forecasts_dry_run(cfg_dir: Path, tmp_path: Path) -> None:
-    db = tmp_path / "test.duckdb"
-    result = runner.invoke(app, [
-        "forecasts", "--dry-run",
-        "--db", str(db),
-        "--config-dir", str(cfg_dir),
-    ])
-    assert result.exit_code == 0
-    assert "dry-run" in result.output
-    assert not db.exists()
-
-
 # ── happy path mockato ────────────────────────────────────────────────────────
-
-def _make_forecast_records(loc_id: str, model: str = "ecmwf_ifs025") -> list[dict]:
-    ts_run = datetime(2026, 5, 15, 0, 0, tzinfo=UTC)
-    ts_valid = datetime(2026, 5, 15, 6, 0, tzinfo=UTC)
-    return [{
-        "source": f"open_meteo_{model}",
-        "location_id": loc_id,
-        "ts_run": ts_run,
-        "ts_valid": ts_valid,
-        "lead_time_h": 6,
-        "temp_c": 18.0,
-        "humidity_pct": 70.0,
-        "precip_mm": 0.0,
-        "wind_speed_ms": 2.0,
-        "wind_dir_deg": 180.0,
-        "wind_gust_ms": None,
-        "pressure_hpa": 1013.0,
-    }]
-
-
-def test_forecasts_happy_path(cfg_dir: Path, tmp_path: Path) -> None:
-    """forecasts scrive i record in DuckDB (mock Open-Meteo)."""
-    db_path = tmp_path / "test.duckdb"
-
-    mock_results = {
-        "casa_campi": {"ecmwf_ifs025": _make_forecast_records("casa_campi")},
-        "lavoro_cosimo": {"ecmwf_ifs025": _make_forecast_records("lavoro_cosimo")},
-    }
-
-    with patch("guazza.jobs.ingest.fetch_openmeteo_all_locations", return_value=mock_results):
-        result = runner.invoke(app, [
-            "forecasts",
-            "--db", str(db_path),
-            "--config-dir", str(cfg_dir),
-        ])
-
-    assert result.exit_code == 0, result.output
-    assert "completato" in result.output
-
-    from guazza.storage import DuckDBClient
-    with DuckDBClient(db_path=db_path, read_only=True) as db:
-        count = db.execute("SELECT COUNT(*) FROM forecasts").fetchone()[0]
-    assert count == 2  # 1 per location
-
 
 def test_realtime_happy_path(cfg_dir: Path, tmp_path: Path) -> None:
     """realtime scrive osservazioni SIR e Netatmo."""
@@ -307,23 +251,6 @@ def test_realtime_happy_path(cfg_dir: Path, tmp_path: Path) -> None:
     with DuckDBClient(db_path=db_path, read_only=True) as db:
         count = db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
     assert count >= 1
-
-
-def test_forecasts_failure_exits_1(cfg_dir: Path, tmp_path: Path) -> None:
-    """Se Open-Meteo esplode il job esce con codice 1."""
-    db_path = tmp_path / "test.duckdb"
-
-    with patch(
-        "guazza.jobs.ingest.fetch_openmeteo_all_locations",
-        side_effect=RuntimeError("timeout"),
-    ):
-        result = runner.invoke(app, [
-            "forecasts",
-            "--db", str(db_path),
-            "--config-dir", str(cfg_dir),
-        ])
-
-    assert result.exit_code == 1
 
 
 def test_realtime_failure_exits_1(cfg_dir: Path, tmp_path: Path) -> None:

@@ -1,4 +1,4 @@
-"""Test per jobs.skill_history — append giornaliero e dump JSON per il frontend.
+"""Test per skill_history — append giornaliero e dump JSON per il frontend.
 
 Logica testata in isolamento (no DB), coprendo:
 - Costruzione delle righe (forecast vs actual) da DataFrame mockati
@@ -16,14 +16,14 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from guazza.jobs.skill_history import (
+from guazza.skill_history import (
     ALL_SOURCES,
     LEAD_H,
     NWP_SOURCES,
     VARS,
-    _atomic_write_json,
     _collect_rows,
-    _dump_payload,
+    atomic_write_json,
+    dump_payload,
 )
 
 # ── fixtures: query SQL mockate in DataFrame ────────────────────────────────
@@ -178,7 +178,7 @@ def test_dump_payload_structure() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         con = _seed_db(Path(tmp))
         try:
-            payload = _dump_payload(con)
+            payload = dump_payload(con)
         finally:
             con.close()
 
@@ -214,7 +214,7 @@ def test_dump_payload_handles_empty_table() -> None:
             )
         """)
         try:
-            payload = _dump_payload(con)
+            payload = dump_payload(con)
         finally:
             con.close()
 
@@ -229,40 +229,36 @@ def test_dump_payload_handles_empty_table() -> None:
 def test_atomic_write_replaces_existing(tmp_path: Path) -> None:
     """Scrive il JSON in tmp e poi lo sposta sul path finale (no file parziale)."""
     out = tmp_path / "out.json"
-    _atomic_write_json(out, {"a": 1})
+    atomic_write_json(out, {"a": 1})
     assert json.loads(out.read_text()) == {"a": 1}
     # Nessun .tmp residuo
     assert not (tmp_path / "out.json.tmp").exists()
     # Riscrittura: il contenuto è sostituito, non appendi
-    _atomic_write_json(out, {"a": 2})
+    atomic_write_json(out, {"a": 2})
     assert json.loads(out.read_text()) == {"a": 2}
 
 
 def test_atomic_write_creates_parent_dirs(tmp_path: Path) -> None:
     out = tmp_path / "nested" / "deep" / "out.json"
-    _atomic_write_json(out, {"x": True})
+    atomic_write_json(out, {"x": True})
     assert out.exists()
 
 
-# ── smoke: il modulo è importabile e CLI ha i comandi giusti ───────────────
+# ── smoke: il modulo è importabile e ha le funzioni usate dalla pipeline ───
 
 
-def test_typer_app_has_both_commands() -> None:
-    import guazza.jobs.skill_history as mod
-    # typer single-command: i comandi sono decorati e diventano oggetti TyperCommand.
-    # Verifica solo che esistano e siano richiamabili come CLI.
-    assert hasattr(mod, "append")
-    assert hasattr(mod, "dump")
-    # I nomi nei comandi CLI derivano dal nome della funzione (typer li prende
-    # dal primo argomento, in assenza di `name=` esplicito).
-    # Verifica integrando: le funzioni accettano i parametri CLI attesi.
+def test_public_functions_match_pipeline_usage() -> None:
+    import guazza.skill_history as mod
+
+    assert hasattr(mod, "append_one")
+    assert hasattr(mod, "dump_payload")
+    assert hasattr(mod, "atomic_write_json")
+
     import inspect
-    for fn in (mod.append, mod.dump):
+    for fn in (mod.append_one, mod.dump_payload):
         sig = inspect.signature(fn)
-        # typer wrappa con functools.wraps: i parametri della funzione originale
-        # devono essere preservati (db, day/dump, days/output).
         params = list(sig.parameters.keys())
-        assert "db" in params, f"manca --db in {fn.__name__}: {params}"
+        assert params[0] == "con", f"manca connessione DuckDB in {fn.__name__}: {params}"
 
 
 if __name__ == "__main__":
