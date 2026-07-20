@@ -72,12 +72,6 @@ class DuckDBClient:
             return self._conn.execute(query, params)
         return self._conn.execute(query)
 
-    def executemany(self, query: str, params: list[list[Any]]) -> None:
-        """Esegui la stessa query su una lista di parametri (batch insert)."""
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-        self._conn.executemany(query, params)
-
     def register_df(self, name: str, df: pd.DataFrame) -> None:
         """Espone un DataFrame come relazione virtuale (path Arrow, senza staging table)."""
         if self._conn is None:

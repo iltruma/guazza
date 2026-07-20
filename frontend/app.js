@@ -177,11 +177,6 @@ function isNightAt(locMeta, now) {
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
-function fmtDateShort(isoDate) {
-  const [y, m, d] = isoDate.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
-}
-
 function fmtDayLabel(isoDate) {
   const [y, m, d] = isoDate.split('-').map(Number);
   const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
@@ -208,12 +203,7 @@ function fmtDayShort(isoDate) {
   return wd.charAt(0).toUpperCase() + wd.slice(1);
 }
 
-function fmtDateTime(iso) {
-  return new Date(iso).toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
-
 function fmtTemp(v)   { return v != null ? `${v.toFixed(1)}°` : '—'; }
-function fmtPrecip(v) { return v != null ? `${v.toFixed(1)} mm` : '—'; }
 function fmtWind(v)   { return v != null ? `${(v * 3.6).toFixed(0)} km/h` : '—'; }
 
 function windDirLabel(deg) {

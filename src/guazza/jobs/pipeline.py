@@ -17,7 +17,7 @@ Uso:
 from __future__ import annotations
 
 import os
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -29,13 +29,12 @@ from guazza._logging import setup_logging
 from guazza.features import build_features_daily
 from guazza.fetch_openmeteo import fetch_openmeteo_all_locations
 from guazza.indicators import evaluate_all, load_indicators, log_results
-from guazza.jobs._common import CONFIG_DIR_OPTION, DB_OPTION, OUTPUT_DIR_OPTION, job_run, ping_healthchecks
-from guazza.monitor import check_and_log, compute_coverage
-from guazza.skill_history import (
-    DEFAULT_DUMP_PATH,
-    append_one,
-    atomic_write_json,
-    dump_payload,
+from guazza.jobs._common import (
+    CONFIG_DIR_OPTION,
+    DB_OPTION,
+    OUTPUT_DIR_OPTION,
+    job_run,
+    ping_healthchecks,
 )
 from guazza.models import (
     LEAD_BUCKETS,
@@ -47,6 +46,7 @@ from guazza.models import (
     load_artifacts,
     predict_frame,
 )
+from guazza.monitor import check_and_log, compute_coverage
 from guazza.output import (
     build_signals,
     build_signals_today,
@@ -57,6 +57,12 @@ from guazza.output import (
     get_daily_weather_code,
     get_nwp_model_comparison,
     write_location_json,
+)
+from guazza.skill_history import (
+    DEFAULT_DUMP_PATH,
+    append_one,
+    atomic_write_json,
+    dump_payload,
 )
 from guazza.storage import DuckDBClient
 from guazza.weights import load_configs
