@@ -29,7 +29,8 @@ from guazza._logging import setup_logging
 from guazza.features import build_features_daily
 from guazza.fetch_openmeteo import fetch_openmeteo_all_locations
 from guazza.indicators import evaluate_all, load_indicators, log_results
-from guazza.jobs._common import CONFIG_DIR_OPTION, DB_OPTION, OUTPUT_DIR_OPTION, job_run
+from guazza.jobs._common import CONFIG_DIR_OPTION, DB_OPTION, OUTPUT_DIR_OPTION, job_run, ping_healthchecks
+from guazza.monitor import check_and_log, compute_coverage
 from guazza.skill_history import (
     DEFAULT_DUMP_PATH,
     append_one,
@@ -335,6 +336,16 @@ def cmd_run(
                 payload = dump_payload(db._conn)
                 atomic_write_json(skill_output, payload)
                 logger.info(f"pipeline skill-history dump: {skill_output}")
+
+            # ── 5. Monitor coverage ACI ──────────────────────────────────────
+            coverage_results = compute_coverage(db)
+            if not coverage_results:
+                logger.warning("pipeline monitor: nessuna prediction con actual negli ultimi 30gg")
+            else:
+                n_alerts = check_and_log(coverage_results)
+                if n_alerts > 0 and not dry_run:
+                    ping_healthchecks("/fail")
+                    logger.warning(f"pipeline monitor: drift su {n_alerts} combinazioni — healthchecks /fail")
 
         stats.rows = len(json_paths)
         n_sh_str = str(n_sh) if not dry_run else "dry"

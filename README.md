@@ -65,14 +65,14 @@ guazza/
 │   ├── qc.py               # Quality control osservazioni SIR + ARPAT (chiamato da ingest)
 │   ├── _logging.py         # setup_logging() + log_scrape() — TTY pretty / cron JSON
 │   ├── netatmo_daily.py    # Accumulo Netatmo realtime → daily (forward-looking storico)
- │   ├── skill_history.py    # Skill history: append_one(), dump_payload() (usato da pipeline)
+ │   ├── skill_history.py    # append_one(), dump_payload(), atomic_write_json() (usato da pipeline)
+ │   ├── monitor.py          # compute_coverage(), check_and_log() (usato da pipeline)
  │   └── jobs/
  │       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
  │       ├── ingest.py       # Cron: historical / daily / realtime
  │       ├── pipeline.py     # Cron 6h: forecasts → features → predict → skill-history
  │       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
  │       ├── skill.py        # Cron settimanale: curva skill MAE per lead → skill.json
- │       ├── monitor.py      # Cron: coverage ACI 30d + alert drift
  │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 8)
 ├── data/
 │   ├── guazza.duckdb       # Database analitico (non committato)

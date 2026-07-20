@@ -137,7 +137,8 @@ L'albero completo delle directory è in `README.md`. Mappa dei moduli (responsab
 - `_logging.py` — setup_logging() (TTY pretty / cron JSON)
 - `netatmo_daily.py` — accumulo Netatmo realtime → daily (forward-looking storico)
 - `skill_history.py` — append_one(), dump_payload(), atomic_write_json() (usato da pipeline)
-- `jobs/` — entrypoint CLI cron: ingest, pipeline, train, skill, monitor, backup
+- `monitor.py` — compute_coverage(), check_and_log() (usato da pipeline)
+- `jobs/` — entrypoint CLI cron: ingest, pipeline, train, skill, backup
 
 ## Guardrail operativi
 
