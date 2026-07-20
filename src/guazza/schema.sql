@@ -223,6 +223,21 @@ CREATE TABLE IF NOT EXISTS upstream_ring_station (
     PRIMARY KEY (station_id, location_id)
 );
 
+-- ── Adaptive Conformal Inference — state persistente ─────────────────────
+-- Una riga per (target, lead_bucket). Aggiornata dal job predict a ogni run.
+-- Cold start: assente (AdaptiveConformalizer parte da prior fisso).
+CREATE TABLE IF NOT EXISTS aci_state (
+    target       VARCHAR   NOT NULL,
+    lead_bucket  VARCHAR   NOT NULL,
+    alpha_t_80   DOUBLE    NOT NULL,
+    alpha_t_90   DOUBLE    NOT NULL,
+    n_updates    BIGINT    NOT NULL,
+    err_sum_80   BIGINT    NOT NULL,
+    err_sum_90   BIGINT    NOT NULL,
+    updated_at   TIMESTAMP NOT NULL,
+    PRIMARY KEY (target, lead_bucket)
+);
+
 -- ── Log Decision Logic Engine ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS indicator_log (
     ts           TIMESTAMP NOT NULL,

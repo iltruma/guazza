@@ -12,44 +12,42 @@ from guazza.storage import DuckDBClient
 
 
 @pytest.fixture
-def db(tmp_path: Path) -> DuckDBClient:
+def db(tmp_path: Path) -> DuckDBClient:  # type: ignore[misc]
     client = DuckDBClient(db_path=tmp_path / "test.duckdb")
-    client.__enter__()
-    client.init_schema()
-    client.ensure_aci_schema()
-    # predictions con tmin/tmax/precip_obs (alcune coperte, altre no)
-    today = date.today() - timedelta(days=20)
-    rows = []
-    for i in range(50):
-        ts_date = today + timedelta(days=i)
-        ts = datetime(ts_date.year, ts_date.month, ts_date.day)  # ts_valid è TIMESTAMP
-        actual_tmin = 5.0 + i * 0.1
-        # model_version VARCHAR, location_id VARCHAR, ts_valid TIMESTAMP, lead_time_h BIGINT
-        rows.append((
-            "20260601",  # model_version
-            f"loc_{i % 3}",  # location_id
-            ts,  # ts_valid TIMESTAMP
-            0,  # lead_time_h
-            4.0, 4.5, 5.0, 5.5, 6.0, 4.5, 5.5, 4.0, 6.0, actual_tmin,
-            14.0, 14.5, 15.0, 15.5, 16.0, 14.5, 15.5, 14.0, 16.0, 15.0,
-            0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 0.5, 0.0, 1.0, 0.2,
-        ))
-    client._conn.executemany("""
-        INSERT INTO predictions (
-            model_version, location_id, ts_valid, lead_time_h,
-            tmin_p05, tmin_p10, tmin_p50, tmin_p90, tmin_p95,
-            tmin_ci80_lo, tmin_ci80_hi, tmin_ci90_lo, tmin_ci90_hi,
-            tmax_p05, tmax_p10, tmax_p50, tmax_p90, tmax_p95,
-            tmax_ci80_lo, tmax_ci80_hi, tmax_ci90_lo, tmax_ci90_hi,
-            precip_p05, precip_p10, precip_p50, precip_p90, precip_p95,
-            precip_ci80_lo, precip_ci80_hi, precip_ci90_lo, precip_ci90_hi,
-            tmin_obs, tmax_obs, precip_obs
-        ) VALUES (
-            ?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,
-            ?,?,?,?,?, ?,?,?,?, ?,?,?
-        )
-    """, rows)
-    return client
+    with client:
+        client.init_schema()
+        # predictions con tmin/tmax/precip_obs (alcune coperte, altre no)
+        today = date.today() - timedelta(days=20)
+        rows = []
+        for i in range(50):
+            ts_date = today + timedelta(days=i)
+            ts = datetime(ts_date.year, ts_date.month, ts_date.day)
+            actual_tmin = 5.0 + i * 0.1
+            rows.append((
+                "20260601",
+                f"loc_{i % 3}",
+                ts,
+                0,
+                4.0, 4.5, 5.0, 5.5, 6.0, 4.5, 5.5, 4.0, 6.0, actual_tmin,
+                14.0, 14.5, 15.0, 15.5, 16.0, 14.5, 15.5, 14.0, 16.0, 15.0,
+                0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 0.5, 0.0, 1.0, 0.2,
+            ))
+        client._conn.executemany("""
+            INSERT INTO predictions (
+                model_version, location_id, ts_valid, lead_time_h,
+                tmin_p05, tmin_p10, tmin_p50, tmin_p90, tmin_p95,
+                tmin_ci80_lo, tmin_ci80_hi, tmin_ci90_lo, tmin_ci90_hi,
+                tmax_p05, tmax_p10, tmax_p50, tmax_p90, tmax_p95,
+                tmax_ci80_lo, tmax_ci80_hi, tmax_ci90_lo, tmax_ci90_hi,
+                precip_p05, precip_p10, precip_p50, precip_p90, precip_p95,
+                precip_ci80_lo, precip_ci80_hi, precip_ci90_lo, precip_ci90_hi,
+                tmin_obs, tmax_obs, precip_obs
+            ) VALUES (
+                ?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,
+                ?,?,?,?,?, ?,?,?,?, ?,?,?
+            )
+        """, rows)
+        yield client
 
 
 def test_compute_coverage_returns_per_target_bucket(db: DuckDBClient) -> None:
@@ -84,12 +82,9 @@ def test_compute_coverage_alerts_on_drift(db: DuckDBClient) -> None:
 
 def test_compute_coverage_no_data_returns_empty(tmp_path: Path) -> None:
     """DB senza predictions con actual → lista vuota."""
-    client = DuckDBClient(db_path=tmp_path / "test_empty.duckdb")
-    client.__enter__()
-    client.init_schema()
-    client.ensure_aci_schema()
-    assert compute_coverage(client) == []
-    client.__exit__(None, None, None)
+    with DuckDBClient(db_path=tmp_path / "test_empty.duckdb") as client:
+        client.init_schema()
+        assert compute_coverage(client) == []
 
 
 def test_compute_coverage_window_30_days(db: DuckDBClient) -> None:

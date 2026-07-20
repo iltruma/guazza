@@ -161,9 +161,6 @@ def cmd_run(
 
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
-            db.ensure_predictions_schema()
-            db.ensure_benchmark_schema()
-            db.ensure_aci_schema()
 
             # ── 1. Forecasts ────────────────────────────────────────────────
             if not dry_run:

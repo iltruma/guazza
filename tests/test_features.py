@@ -3,20 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 
 from guazza.features import build_features_daily
 from guazza.storage import DuckDBClient
-
-
-@pytest.fixture
-def db(tmp_path: Path) -> DuckDBClient:
-    client = DuckDBClient(db_path=tmp_path / "test.duckdb")
-    client.__enter__()
-    client.init_schema()
-    return client
 
 
 def _populate(db: DuckDBClient, n_days: int = 10) -> None:

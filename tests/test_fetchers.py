@@ -327,14 +327,6 @@ def test_fetch_netatmo_location_valid_pass() -> None:
     assert all(sd.qc_pass for sd in valid)
 
 
-@pytest.fixture
-def seeded_db(tmp_path: Path) -> Path:
-    db_path = tmp_path / "test.duckdb"
-    with DuckDBClient(db_path=db_path) as db:
-        db.init_schema()
-    return db_path
-
-
 def _make_station(mac: str, temp: float, qc: bool = True) -> _StationData:
     return _StationData(
         mac=mac,

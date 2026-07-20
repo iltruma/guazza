@@ -10,11 +10,6 @@ import pytest
 from guazza.storage import DuckDBClient
 
 
-@pytest.fixture
-def tmp_db(tmp_path: Path) -> Path:
-    return tmp_path / "test_guazza.duckdb"
-
-
 def test_init_schema(tmp_db: Path) -> None:
     with DuckDBClient(db_path=tmp_db) as db:
         db.init_schema()
@@ -387,20 +382,6 @@ def test_upsert_forecasts_weather_code_null(tmp_db: Path) -> None:
     assert row[0] is None
 
 
-def test_ensure_forecast_columns_idempotent(tmp_db: Path) -> None:
-    """_ensure_forecast_columns chiamata più volte non solleva eccezioni."""
-    with DuckDBClient(db_path=tmp_db) as db:
-        db.init_schema()
-        db._ensure_forecast_columns()   # seconda chiamata — deve essere no-op
-        col_info = db.execute(
-            "SELECT column_name, data_type FROM information_schema.columns "
-            "WHERE table_name = 'forecasts' AND column_name = 'weather_code'"
-        ).fetchall()
-
-    assert len(col_info) == 1
-    assert col_info[0][1].upper() == "INTEGER"
-
-
 def test_backfill_prediction_obs_shared_station(tmp_db: Path) -> None:
     """Una stazione condivisa, taggata in observations con un'altra location, deve
     comunque popolare i *_obs della location target via station_weights (no più
@@ -408,7 +389,6 @@ def test_backfill_prediction_obs_shared_station(tmp_db: Path) -> None:
     target_date = datetime(2026, 5, 1)
     with DuckDBClient(db_path=tmp_db) as db:
         db.init_schema()
-        db.ensure_predictions_schema()
 
         db.upsert_predictions([{
             "model_version": "test", "location_id": "casa_nicco",
@@ -535,25 +515,3 @@ def test_backfill_benchmark_obs_idempotent(tmp_db: Path) -> None:
         db.backfill_benchmark_obs()
         second = db.backfill_benchmark_obs()
     assert second == 0
-
-
-def test_ensure_benchmark_schema_migration(tmp_db: Path) -> None:
-    """Vecchio schema (colonna provider/temp_c) viene ricreato con il nuovo."""
-    with DuckDBClient(db_path=tmp_db) as db:
-        db.init_schema()
-        # Simula vecchio schema: drop + ricrea con colonne obsolete
-        db.execute("DROP TABLE benchmark_forecasts")
-        db.execute("""
-            CREATE TABLE benchmark_forecasts (
-                provider VARCHAR NOT NULL,
-                location_id VARCHAR NOT NULL,
-                ts_run TIMESTAMP NOT NULL,
-                ts_valid TIMESTAMP NOT NULL,
-                temp_c DOUBLE,
-                PRIMARY KEY (provider, location_id, ts_run, ts_valid)
-            )
-        """)
-        db.ensure_benchmark_schema()
-        # Deve avere la nuova colonna tmin_obs
-        row = db.execute("SELECT tmin_obs FROM benchmark_forecasts LIMIT 0").fetchone()
-    assert row is None  # query ok, tabella vuota

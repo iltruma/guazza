@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -88,12 +89,11 @@ def fast_lgbm(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def db(tmp_path: Path) -> DuckDBClient:
-    client = DuckDBClient(db_path=tmp_path / "test.duckdb")
-    client.__enter__()
-    client.init_schema()
-    client.execute(_CREATE_FEATURES_DAILY)
-    return client
+def db(tmp_path: Path) -> Generator[DuckDBClient]:
+    with DuckDBClient(db_path=tmp_path / "test.duckdb") as client:
+        client.init_schema()
+        client.execute(_CREATE_FEATURES_DAILY)
+        yield client
 
 
 def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) -> None:
@@ -728,88 +728,76 @@ def test_apply_aci_correction_clamps_min_factor() -> None:
     assert (hi80 - lo80) >= 4.0
     assert (hi80 - lo80) <= 4.0  # clamp esatto a MIN
 
-
 def test_get_aci_pair_cold_start(tmp_path: Path) -> None:
     """get_aci_pair senza state in DB deve restituire ACI freschi con alpha_t == alpha_target."""
     from guazza.models import get_aci_pair
 
-    db = _make_clean_db(tmp_path)
-    aci_80, aci_90 = get_aci_pair(db, "tmin_c", "0-6h")
+    with DuckDBClient(db_path=tmp_path / "test.duckdb") as db:
+        db.init_schema()
+        aci_80, aci_90 = get_aci_pair(db, "tmin_c", "0-6h")
     assert aci_80.alpha_t == 0.20
     assert aci_90.alpha_t == 0.10
     assert aci_80.n_updates == 0
-    db.__exit__(None, None, None)
-
-
-def _make_clean_db(path: Path) -> DuckDBClient:
-    """Helper: DB pulito con schema ACI."""
-    client = DuckDBClient(db_path=path / "test.duckdb")
-    client.__enter__()
-    client.init_schema()
-    client.ensure_aci_schema()
-    return client
 
 
 def test_get_aci_pair_returns_warm_or_cold(tmp_path: Path) -> None:
     """get_aci_pair restituisce (aci_80, aci_90) coerenti con state DB o fresh."""
     from guazza.models import get_aci_pair
 
-    db = _make_clean_db(tmp_path)
-    # Cold start: nessuna state in DB
-    aci_80, aci_90 = get_aci_pair(db, "tmin_c", "0-6h")
-    assert aci_80.alpha_t == 0.20
-    assert aci_90.alpha_t == 0.10
-    assert aci_80.n_updates == 0
+    with DuckDBClient(db_path=tmp_path / "test.duckdb") as db:
+        db.init_schema()
+        # Cold start: nessuna state in DB
+        aci_80, aci_90 = get_aci_pair(db, "tmin_c", "0-6h")
+        assert aci_80.alpha_t == 0.20
+        assert aci_90.alpha_t == 0.10
+        assert aci_80.n_updates == 0
 
-    # Scrivi state e rileggi
-    db.upsert_aci_state("tmin_c", "0-6h",
-                        alpha_t_80=0.15, alpha_t_90=0.07,
-                        n_updates=50, err_sum_80=10, err_sum_90=5)
-    aci_80, aci_90 = get_aci_pair(db, "tmin_c", "0-6h")
-    assert aci_80.alpha_t == 0.15
-    assert aci_80.n_updates == 50
-    assert aci_80._err_sum == 10
-    assert aci_90.alpha_t == 0.07
-    assert aci_90._err_sum == 5
-
-    db.__exit__(None, None, None)
+        # Scrivi state e rileggi
+        db.upsert_aci_state("tmin_c", "0-6h",
+                            alpha_t_80=0.15, alpha_t_90=0.07,
+                            n_updates=50, err_sum_80=10, err_sum_90=5)
+        aci_80, aci_90 = get_aci_pair(db, "tmin_c", "0-6h")
+        assert aci_80.alpha_t == 0.15
+        assert aci_80.n_updates == 50
+        assert aci_80._err_sum == 10
+        assert aci_90.alpha_t == 0.07
+        assert aci_90._err_sum == 5
 
 
 def test_aci_state_persists_via_duckdb(tmp_path: Path) -> None:
     """upsert_aci_state + get_aci_state roundtrip in DuckDB."""
-    db = _make_clean_db(tmp_path)
+    with DuckDBClient(db_path=tmp_path / "test.duckdb") as db:
+        db.init_schema()
 
-    # Cold: assente
-    assert db.get_aci_state("tmin_c", "0-6h") is None
+        # Cold: assente
+        assert db.get_aci_state("tmin_c", "0-6h") is None
 
-    # Scrivi
-    db.upsert_aci_state("tmin_c", "0-6h",
-                        alpha_t_80=0.18, alpha_t_90=0.09,
-                        n_updates=100, err_sum_80=20, err_sum_90=10)
+        # Scrivi
+        db.upsert_aci_state("tmin_c", "0-6h",
+                            alpha_t_80=0.18, alpha_t_90=0.09,
+                            n_updates=100, err_sum_80=20, err_sum_90=10)
 
-    # Rileggi
-    state = db.get_aci_state("tmin_c", "0-6h")
-    assert state is not None
-    assert state["alpha_t_80"] == 0.18
-    assert state["alpha_t_90"] == 0.09
-    assert state["n_updates"] == 100
-    assert state["err_sum_80"] == 20
-    assert state["err_sum_90"] == 10
+        # Rileggi
+        state = db.get_aci_state("tmin_c", "0-6h")
+        assert state is not None
+        assert state["alpha_t_80"] == 0.18
+        assert state["alpha_t_90"] == 0.09
+        assert state["n_updates"] == 100
+        assert state["err_sum_80"] == 20
+        assert state["err_sum_90"] == 10
 
-    # Update (idempotente): sovrascrive
-    db.upsert_aci_state("tmin_c", "0-6h",
-                        alpha_t_80=0.16, alpha_t_90=0.08,
-                        n_updates=200, err_sum_80=40, err_sum_90=20)
-    state2 = db.get_aci_state("tmin_c", "0-6h")
-    assert state2 is not None
-    assert state2["alpha_t_80"] == 0.16
-    assert state2["n_updates"] == 200
+        # Update (idempotente): sovrascrive
+        db.upsert_aci_state("tmin_c", "0-6h",
+                            alpha_t_80=0.16, alpha_t_90=0.08,
+                            n_updates=200, err_sum_80=40, err_sum_90=20)
+        state2 = db.get_aci_state("tmin_c", "0-6h")
+        assert state2 is not None
+        assert state2["alpha_t_80"] == 0.16
+        assert state2["n_updates"] == 200
 
-    # Bucket diverso: indipendente
-    state_other = db.get_aci_state("tmin_c", "24-48h")
-    assert state_other is None
-
-    db.__exit__(None, None, None)
+        # Bucket diverso: indipendente
+        state_other = db.get_aci_state("tmin_c", "24-48h")
+        assert state_other is None
 
 
 def test_load_artifacts_suggests_local_data_models(monkeypatch, tmp_path: Path) -> None:

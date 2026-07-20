@@ -20,15 +20,6 @@ from guazza.indicators import (
 )
 from guazza.storage import DuckDBClient
 
-
-@pytest.fixture
-def seeded_db(tmp_path: Path) -> Path:
-    db_path = tmp_path / "test.duckdb"
-    with DuckDBClient(db_path=db_path) as db:
-        db.init_schema()
-    return db_path
-
-
 _CFG_PANNI = {
     "label": "Panni",
     "horizon_h": 8,

@@ -13,19 +13,6 @@ from guazza.weights import (
     refresh_station_weights,
 )
 
-
-@pytest.fixture
-def tmp_db(tmp_path: Path) -> Path:
-    return tmp_path / "test.duckdb"
-
-
-@pytest.fixture
-def seeded_db(tmp_db: Path) -> Path:
-    with DuckDBClient(db_path=tmp_db) as db:
-        db.init_schema()
-    return tmp_db
-
-
 _LOC = {
     "test_loc": {
         "label": "Test Location",

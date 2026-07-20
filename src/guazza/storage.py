@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -83,30 +84,6 @@ class DuckDBClient:
         if self._conn is None:
             raise RuntimeError("DuckDBClient non è nel context manager.")
         self._conn.unregister(name)
-
-    def ensure_benchmark_schema(self) -> None:
-        """Ricrea benchmark_forecasts se lo schema è obsoleto (pre-v0.6, manca tmin_obs)."""
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-        try:
-            self._conn.execute("SELECT tmin_obs FROM benchmark_forecasts LIMIT 0")
-        except duckdb.Error:
-            self._conn.execute("DROP TABLE IF EXISTS benchmark_forecasts")
-            sql = _SCHEMA_SQL.read_text()
-            self._conn.execute(sql)
-            logger.info("benchmark_forecasts: schema migrato alla versione corrente (v0.6)")
-
-    def ensure_predictions_schema(self) -> None:
-        """Ricrea predictions se lo schema è obsoleto (pre-v0.5, manca tmin_p05)."""
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-        try:
-            self._conn.execute("SELECT tmin_p05 FROM predictions LIMIT 0")
-        except duckdb.Error:
-            self._conn.execute("DROP TABLE IF EXISTS predictions")
-            sql = _SCHEMA_SQL.read_text()
-            self._conn.execute(sql)
-            logger.info("predictions: schema migrato alla versione corrente (v0.5)")
 
     def upsert_predictions(self, records: list[dict[str, Any]]) -> int:
         """UPSERT batch per predictions ML.
@@ -267,29 +244,6 @@ class DuckDBClient:
 
     # ── ACI state (Adaptive Conformal Inference, Sprint 9) ───────────────────
 
-    def ensure_aci_schema(self) -> None:
-        """Crea tabella aci_state per persistere lo state ACI tra restart.
-
-        Una riga per (target, lead_bucket): alpha corrente (80% e 90%), n_updates,
-        err_rate, updated_at. Idempotente (CREATE IF NOT EXISTS).
-        """
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS aci_state (
-                target       VARCHAR  NOT NULL,
-                lead_bucket  VARCHAR  NOT NULL,
-                alpha_t_80   DOUBLE   NOT NULL,
-                alpha_t_90   DOUBLE   NOT NULL,
-                n_updates    BIGINT   NOT NULL,
-                err_sum_80   BIGINT   NOT NULL,
-                err_sum_90   BIGINT   NOT NULL,
-                updated_at   TIMESTAMP NOT NULL,
-                PRIMARY KEY (target, lead_bucket)
-            )
-        """)
-        logger.debug("aci_state: schema pronto")
-
     def get_aci_state(self, target: str, lead_bucket: str) -> dict[str, Any] | None:
         """Carica state ACI per (target, lead_bucket). None se assente (cold start)."""
         if self._conn is None:
@@ -343,56 +297,23 @@ class DuckDBClient:
         if not _SCHEMA_SQL.exists():
             raise FileNotFoundError(f"Schema SQL non trovato: {_SCHEMA_SQL}")
         sql = _SCHEMA_SQL.read_text()
-        # Eseguiamo lo script intero: DuckDB accetta più statement separati da ";"
-        # in una singola execute(). Split manuale su ";" è fragile con MACRO e commenti.
+        # DuckDB accetta più statement separati da ";" in una singola execute().
+        # Split manuale su ";" è fragile con MACRO e commenti.
         if self._conn is None:
             raise RuntimeError("DuckDBClient non è nel context manager.")
         self._conn.execute(sql)
-        self._ensure_aq_columns()
-        self._ensure_forecast_columns()
-        self._ensure_cumday_column()
         logger.info("Schema applicato")
 
-    def _ensure_aq_columns(self) -> None:
-        """Aggiunge colonne AQ a observations se mancanti (migrazione idempotente)."""
-        for col, dtype in [
-            ("co_mgm3",      "DOUBLE"),
-            ("benzene_ugm3", "DOUBLE"),
-            ("so2_ugm3",     "DOUBLE"),
-        ]:
-            self.execute(
-                f"ALTER TABLE observations ADD COLUMN IF NOT EXISTS {col} {dtype}"
-            )
-
-    def _ensure_forecast_columns(self) -> None:
-        """Aggiunge colonne a forecasts se mancanti (migrazione idempotente)."""
-        self.execute(
-            "ALTER TABLE forecasts ADD COLUMN IF NOT EXISTS weather_code INTEGER"
-        )
-
-    def _ensure_cumday_column(self) -> None:
-        """Aggiunge precip_cumday_mm a observations se mancante (migrazione idempotente)."""
-        self.execute(
-            "ALTER TABLE observations ADD COLUMN IF NOT EXISTS precip_cumday_mm DOUBLE"
-        )
-
     def verify_schema(self) -> bool:
-        """Verifica che le tabelle attese esistano nel database."""
-        expected_tables = {
-            "locations",
-            "observations",
-            "forecasts",
-            "predictions",
-            "benchmark_forecasts",
-            "alerts",
-            "station_weights",
-            "netatmo_fetch_log",
-            "indicator_log",
-            "quality_flags",
+        """Verifica che tutte le tabelle di schema.sql esistano nel database."""
+        sql = _SCHEMA_SQL.read_text()
+        expected = {
+            m.group(1)
+            for m in re.finditer(r"CREATE TABLE IF NOT EXISTS (\w+)", sql)
         }
         result = self.execute("SHOW TABLES").fetchall()
         existing = {row[0] for row in result}
-        missing = expected_tables - existing
+        missing = expected - existing
         if missing:
             logger.error(f"Tabelle mancanti: {missing}")
             return False

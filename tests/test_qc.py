@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from pathlib import Path
-
-import pytest
 
 from guazza.qc import (
     NO2_HIGH_UGM3,
@@ -17,14 +14,6 @@ from guazza.qc import (
     compute_quality_flags,
 )
 from guazza.storage import DuckDBClient
-
-
-@pytest.fixture
-def db(tmp_path: Path) -> DuckDBClient:
-    client = DuckDBClient(db_path=tmp_path / "test.duckdb")
-    client.__enter__()
-    client.init_schema()
-    return client
 
 
 def _insert_obs(

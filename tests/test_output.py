@@ -33,15 +33,6 @@ from guazza.storage import DuckDBClient
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def seeded_db(tmp_path: Path) -> Path:
-    db_path = tmp_path / "test.duckdb"
-    with DuckDBClient(db_path=db_path) as db:
-        db.init_schema()
-        db.ensure_predictions_schema()
-    return db_path
-
-
-@pytest.fixture
 def sample_pred() -> dict:
     return {
         "tmin_c": {

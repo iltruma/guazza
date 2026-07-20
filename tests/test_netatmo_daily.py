@@ -12,11 +12,6 @@ from guazza.netatmo_daily import aggregate_netatmo_daily
 from guazza.storage import DuckDBClient
 
 
-@pytest.fixture
-def tmp_db(tmp_path: Path) -> Path:
-    return tmp_path / "test_guazza.duckdb"
-
-
 def _rt(ts: datetime, temp_c: float, humidity_pct: float | None = None) -> dict[str, Any]:
     """Un campione Netatmo realtime (ts UTC naive, come nel DB)."""
     return {
