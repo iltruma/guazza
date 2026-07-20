@@ -1,11 +1,12 @@
 """Entry point cron — ingestion dati Guazza.
 
-Quattro comandi con schedulazioni diverse:
+Tre comandi:
 
   historical  — one-shot: backfill completo SIR CSV + Open-Meteo historical + multilead (2022→oggi)
   daily       — cron 1×/giorno: delta di ieri (SIR CSV + OM historical lead=0 + OM multilead + Netatmo daily)
   realtime    — cron ogni 15-30 min: SIR actions.php + Netatmo + ARPAT
-  forecasts   — cron ogni 6h: Open-Meteo forecast (7 giorni, tutti i modelli)
+
+I forecast NWP live e la pipeline ML sono in `guazza-pipeline`.
 
 Uso:
     uv run python -m guazza.jobs.ingest historical [--start-date 2022-01-01]
@@ -39,7 +40,6 @@ from guazza.fetch_arpat import (
 from guazza.fetch_netatmo import fetch_netatmo_all_locations
 from guazza.fetch_openmeteo import (
     OM_MODELS,
-    fetch_openmeteo_all_locations,
     fetch_openmeteo_historical_batch,
     fetch_openmeteo_multilead_batch,
 )
@@ -525,43 +525,6 @@ def cmd_realtime(
 
         stats.rows = sir_total + netatmo_total + aq_total
         stats.summary = f"SIR:{sir_total} Netatmo:{netatmo_total} ARPAT:{aq_total}"
-
-
-@app.command("forecasts")
-def cmd_forecasts(
-    db_path: Path = DB_OPTION,
-    config_dir: Path = CONFIG_DIR_OPTION,
-    forecast_days: int = typer.Option(7, "--days", help="Giorni di forecast (1-16)"),
-    dry_run: bool = typer.Option(False, "--dry-run"),
-) -> None:
-    """Forecast NWP: Open-Meteo per tutti i modelli e tutte le location.
-
-    Schedulare ogni 6 ore (allineato ai run ECMWF: 00/06/12/18 UTC + lag ~2h).
-    Suggerito: 02:00, 08:00, 14:00, 20:00 UTC.
-    """
-    locations, _ = load_configs(Path(config_dir))
-
-    if dry_run:
-        typer.echo("[dry-run] Nessuna scrittura effettuata.")
-        return
-
-    with job_run("job_forecasts") as stats:
-        total = 0
-        with DuckDBClient(db_path=db_path) as db:
-            db.init_schema()
-
-            all_results = fetch_openmeteo_all_locations(
-                locations=locations,
-                forecast_days=forecast_days,
-            )
-
-            for model_results in all_results.values():
-                for records in model_results.values():
-                    if records:
-                        total += db.upsert_forecasts(records)
-
-        stats.rows = total
-        stats.summary = f"{total} record inseriti"
 
 
 if __name__ == "__main__":

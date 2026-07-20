@@ -65,14 +65,14 @@ guazza/
 │   ├── qc.py               # Quality control osservazioni SIR + ARPAT (chiamato da ingest)
 │   ├── _logging.py         # setup_logging() + log_scrape() — TTY pretty / cron JSON
 │   ├── netatmo_daily.py    # Accumulo Netatmo realtime → daily (forward-looking storico)
-│   └── jobs/
-│       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
-│       ├── ingest.py       # Cron: historical / daily / realtime / forecasts
-│       ├── features.py     # CLI: features build / info
-│       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
- │       ├── predict.py      # Cron: predict → DuckDB + DLE + JSON output
- │       ├── skill.py        # Cron: curva skill MAE per lead → skill.json
- │       ├── skill_history.py # Cron: append giornaliero + dump JSON time series
+ │   ├── skill_history.py    # Skill history: append_one(), dump_payload() (usato da pipeline)
+ │   └── jobs/
+ │       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
+ │       ├── ingest.py       # Cron: historical / daily / realtime
+ │       ├── pipeline.py     # Cron 6h: forecasts → features → predict → skill-history
+ │       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
+ │       ├── skill.py        # Cron settimanale: curva skill MAE per lead → skill.json
+ │       ├── skill_history.py # CLI backfill manuale: append / dump
  │       ├── monitor.py      # Cron: coverage ACI 30d + alert drift
  │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2 (Sprint 8)
 ├── data/
@@ -146,36 +146,17 @@ uv run python -m guazza.jobs.ingest daily --netatmo-all
 
 # Realtime SIR + Netatmo — schedulare ogni 15-30 min
 uv run python -m guazza.jobs.ingest realtime
-
-# Forecast NWP — schedulare ogni 6h (02/08/14/20 UTC)
-uv run python -m guazza.jobs.ingest forecasts
 ```
 
-### Feature engineering + training
+### Pipeline 6h (forecasts → features → predict → skill-history)
 
 ```bash
-# Ricostruisce features_daily (da eseguire dopo ogni ingest)
-uv run python -m guazza.jobs.features build
-
-# Pesi stazioni + ring upstream pluvio
-uv run python -m guazza.weights refresh
-
-# Training LightGBM + CQR (one-shot o dopo backfill significativi)
-uv run python -m guazza.jobs.train run --db data/guazza.duckdb --model-dir data/models
-
-# Walk-forward CV con metriche
-uv run python -m guazza.jobs.train eval --db data/guazza.duckdb
-```
-
-### Predizioni + indicatori
-
-```bash
-# Refresh condizioni realtime (necessario per il campo `current` nel JSON)
-uv run python -m guazza.jobs.ingest realtime
-
-# Genera predizioni quantile + DLE + JSON (schedulare ogni 6h dopo il job forecasts)
-uv run python -m guazza.jobs.predict --db data/guazza.duckdb \
+# Pipeline completa ogni 6h (schedulare a 02/08/14/20 UTC)
+uv run python -m guazza.jobs.pipeline run --db data/guazza.duckdb \
     --model-dir data/models --output-dir data/output
+
+# Dry-run: mostra cosa farebbe senza scrivere
+uv run python -m guazza.jobs.pipeline run --dry-run
 ```
 
 Output: `data/output/{location_id}.json` con CI80/CI90 per tmin/tmax/precip,
@@ -184,27 +165,30 @@ condizioni realtime aggregate (`current` con dewpoint e temperatura percepita),
 qualità aria ARPAT OpenData NRT (`air_quality`), profili orari NWP con vento, e confronto
 modelli con data ultimo run.
 
-> **Nota locale**: prima di `predict` eseguire `ingest realtime` per avere
+> **Nota locale**: prima della pipeline eseguire `ingest realtime` per avere
 > il campo `current` popolato. In produzione il cron ogni 30 min lo mantiene fresco.
 
-### Skill history (time series forecast vs actual)
+### Training (on-demand o mensile)
 
 ```bash
-# Append giornaliero (default: ieri). Calcola forecast lead 24h vs actual
-# per ogni location × source × variable e fa upsert in skill_history_daily.
-uv run python -m guazza.jobs.skill_history append --db data/guazza.duckdb
+# Pesi stazioni + ring upstream pluvio
+uv run python -m guazza.weights refresh
 
-# Backfill manuale di N giorni (utile al deploy o per ricerche)
+# Training LightGBM + CQR
+uv run python -m guazza.jobs.train run --db data/guazza.duckdb --model-dir data/models
+
+# Walk-forward CV con metriche
+uv run python -m guazza.jobs.train eval --db data/guazza.duckdb
+```
+
+### Skill history backfill manuale
+
+```bash
+# Backfill manuale di N giorni (append + dump sono inclusi nella pipeline 6h)
 uv run python -m guazza.jobs.skill_history append --db data/guazza.duckdb --days 30
-
-# Genera il JSON time series per il frontend (affidabilita.html, sezione
-# "Come ha performato"). Scrittura atomica su frontend/data/skill_history.json.
 uv run python -m guazza.jobs.skill_history dump --db data/guazza.duckdb \
     --output frontend/data/skill_history.json
 ```
-
-Output: `frontend/data/skill_history.json` con time series per (location,
-variable) allineate per data, valori per ogni source (Guazza + 5-6 NWP).
 
 **Schedule k8s proposta**: `15 6 * * *` UTC per `append` (15 min dopo
 `daily` ingest), `30 6 * * *` per `dump`.
