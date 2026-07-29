@@ -89,31 +89,33 @@ Non è un indicatore DLE di per sé, ma abilita derivati futuri (scottatura, esp
 - Verifica free tier: 6 location × 24h × 2 API = ~8.6k chiamate/mese, rientra nel credito free
 - Specie polline rilevanti per Toscana da coprire: graminacee, parietaria, cipresso, olivo, quercia
 
-### P10 — Temporale nei prossimi 30-60 min (nowcast breve)
+### P10 — Temporale nei prossimi 30-60 min (nowcast Blitzortung)
 
-L'utente vuole "temporale in arrivo" con ETA. Il candidato naturale era il nowcast
-radar, ma l'API pubblica RainViewer è solo metadato (lista frame + path PNG) — il dato
-vero è nei tile binari. **Parsing tile scartato** (fragile, bandwidth, complessità).
+**Decisione**: Blitzortung (fulmini real-time free) come fonte scelta per il nowcast
+"temporale in arrivo". Mantiene l'architettura attuale (5 NWP Open-Meteo + obs SIR/Netatmo
++ ML LightGBM) intatta per forecast e realtime; Blitzortung aggiunge solo il segnale
+anticipatorio mancante (precursore canonico del temporale, 30-60 min prima della cella).
 
-Alternative realistiche valutate:
+**Alternative scartate e perché**:
+- **Parsing tile PNG di RainViewer**: fragile, bandwidth, complessità
+- **Tomorrow.io Free Plan**: vendor lock-in, validazione NASA limitata a CONUS, incoerente
+  con l'architettura "5 NWP + obs + ML" (sostituirebbe il modello proprietario interno).
+  Resta opzione per usi non-core futuri (P3 fallback vento, campo AQ)
+- **Heuristic realtime** (∆p Netatmo, salto vento SIR, spike RH): orizzonte 0-15 min,
+  troppo tardi per "30-60 min"
 
-| Opzione | Pro | Contro | Costo |
-|---|---|---|---|
-| **Blitzortung** (fulmini real-time) | Precursore canonico del temporale (fulmini precedono la cella di 30-60 min), copertura EU ottima, JSON pulito, **no key** per basse frequenze | Solo temporali con fulmini, non pioggia generica | Free |
-| **Tomorrow.io Free Plan** (forecast 1-min, JSON semplice) | Nowcast completo (rain + storm) 6h ahead, copre anche pioggia non temporalesca | Vendor lock-in, rate limit 500 calls/giorno | **Free** (no carta richiesta) — sufficiente per 6 location check ogni 30 min (~288 calls/giorno) |
-| **Heuristic realtime** (∆p Netatmo, salto vento SIR, spike RH) | Zero dipendenze nuove | Orizzonte 0-15 min, **troppo tardi** per 30-60 min | Free |
+**Implementazione**:
+- API: `https://data.blitzortung.org/Data/Protected/lightning.json` (free, no auth per
+  query basse; rate limit ~1 query/5s)
+- Strategia: strikes ultimi 30-60 min nel raggio di 50km dalla location; se presenti,
+  ETA = distanza del più vicino / velocità tipica (~40 km/h)
+- Output JSON: `"storm_approaching": {"eta_min": 25, "intensity": "light"|"moderate"|"heavy"}`
+  in `current`
+- Indicatore DLE opzionale (stile "panni") con semaforo allerta
 
-**Raccomandazione**: Blitzortung come fonte primaria per "temporale nei prossimi 30-60 min".
-Per pioggia generica (non temporalesca) il nowcast a 30-60 min richiede parsing tile o
-API commerciale — entrambi scartati. Il focus è quindi ristretto ai temporali, che è
-anche l'uso più utile operativamente ("anticipa se devo chiudere balcone / garage").
-
-API: `https://data.blitzortung.org/Data/Protected/lightning.json` (free, no auth per query
-basse; rate limit ~1 query/5s). Strategia: strikes ultimi 30-60 min nel raggio di 50km
-dalla location; se presenti, ETA = distanza del più vicino / velocità tipica (~40 km/h).
-
-Output JSON: `"storm_approaching": {"eta_min": 25, "intensity": "light"|"moderate"|"heavy"}`
-in `current`. Indicatore DLE opzionale (stile "panni") con semaforo allerta.
+**Limitazione accettata**: Blitzortung copre solo temporali con fulmini, non pioggia
+generica. Per pioggia nei prossimi 30-60 min senza temporale non c'è alternativa
+accettabile libera. Se il caso d'uso si amplia, riaprire la discussione.
 
 ## Roadmap sprint
 
