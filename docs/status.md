@@ -89,21 +89,31 @@ Non è un indicatore DLE di per sé, ma abilita derivati futuri (scottatura, esp
 - Verifica free tier: 6 location × 24h × 2 API = ~8.6k chiamate/mese, rientra nel credito free
 - Specie polline rilevanti per Toscana da coprire: graminacee, parietaria, cipresso, olivo, quercia
 
-### P10 — Temporale nei prossimi 30-60 min (nowcast breve, da RainViewer)
+### P10 — Temporale nei prossimi 30-60 min (nowcast breve)
 
-- Segnale dedicato: "sta arrivando un temporale" con orario stimato di arrivo (ETA)
-- Fonte: **RainViewer nowcast overlay** (già integrato per il radar frontend in `frontend/app.js`,
-  va solo esposto come dato JSON calcolato lato backend)
-- Implementazione: leggere i frame nowcast dall'API `https://api.rainviewer.com/public/weather-maps.json`
-  (~30-60 min di forecast per estrapolazione del moto delle celle), calcolare sovrapposizione
-  col bbox della location, stimare `eta_min` e `intensity` (light/moderate/heavy)
-- Output JSON: campo in `current` o `days[0]`, es. `"storm_approaching": {"eta_min": 25, "intensity": "moderate"}`
-- Visualizzazione: badge nel hero + (opzionale) indicatore DLE stile "panni" con semaforo allerta
-- **Differente da Sprint 10** (nowcasting orario 6-12 mesi di dati): questo è nowcasting breve,
-  fattibile subito perché usa un'API già funzionante e senza dipendenza da storico
-- **Sostituisce la mia precedente idea "pressione in caduta"** (3h, indiretto): il nowcast
-  radar è diretto e orizzonte 30-60 min, nettamente più utile
-- Dipendenza: solo RainViewer (già in `config/sources.yaml`, free, no key)
+L'utente vuole "temporale in arrivo" con ETA. Il candidato naturale era il nowcast
+radar, ma l'API pubblica RainViewer è solo metadato (lista frame + path PNG) — il dato
+vero è nei tile binari. **Parsing tile scartato** (fragile, bandwidth, complessità).
+
+Alternative realistiche valutate:
+
+| Opzione | Pro | Contro | Costo |
+|---|---|---|---|
+| **Blitzortung** (fulmini real-time, free) | Precursore canonico del temporale (fulmini precedono la cella di 30-60 min), copertura EU ottima, JSON pulito, **no key** per bassa frequenza | Solo temporali con fulmini, non pioggia generica | Free, registrazione opzionale per alta frequenza |
+| **Tomorrow.io minutely** (forecast 1-min, paid) | Nowcast completo (rain + storm) 6h ahead, JSON semplice | Vendor lock-in, costo mensile | ~$20-50/mese |
+| **Heuristic realtime** (∆p Netatmo, salto vento SIR, spike RH) | Zero dipendenze nuove | Orizzonte 0-15 min, **troppo tardi** per 30-60 min | Free |
+
+**Raccomandazione**: Blitzortung come fonte primaria per "temporale nei prossimi 30-60 min".
+Per pioggia generica (non temporalesca) il nowcast a 30-60 min richiede parsing tile o
+API commerciale — entrambi scartati. Il focus è quindi ristretto ai temporali, che è
+anche l'uso più utile operativamente ("anticipa se devo chiudere balcone / garage").
+
+API: `https://data.blitzortung.org/Data/Protected/lightning.json` (free, no auth per query
+basse; rate limit ~1 query/5s). Strategia: strikes ultimi 30-60 min nel raggio di 50km
+dalla location; se presenti, ETA = distanza del più vicino / velocità tipica (~40 km/h).
+
+Output JSON: `"storm_approaching": {"eta_min": 25, "intensity": "light"|"moderate"|"heavy"}`
+in `current`. Indicatore DLE opzionale (stile "panni") con semaforo allerta.
 
 ## Roadmap sprint
 
