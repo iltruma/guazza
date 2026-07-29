@@ -53,10 +53,11 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 | Backup | Cloudflare R2 (10GB free) | Egress gratis, free tier |
 | ML core | LightGBM quantile | Gold standard dati tabulari, no GPU |
 | CI calibrazione | CQR (Romano 2019) | Garanzia copertura marginale |
-| Esposizione | Cloudflare Tunnel (cloudflared) | Nessun IP pubblico, no port forwarding, SSL automatico |
+| Esposizione pubblica | Tailscale Funnel | HTTPS terminato da Tailscale, no port forwarding, no IP pubblico; richiede `tailscale` sull'host e dominio (custom o `*.ts.net`) puntato al nodo |
+| Accesso tailnet / admin | Tailscale (già installato) | SSH, gestione, e servizi interni `*.lab.paroparo.it` via Traefik su k3s |
 | Deploy | CI su GitHub Actions (pubblica); CD nel homelab (es. namespace k8s) | CI clean-room + badge; il deploy non vincola l'app |
 | Frontend | HTML + CSS custom + Chart.js + Leaflet + Nginx | Statico, CSS custom (no framework), librerie e font via CDN jsDelivr |
-| DNS/CDN/WAF | Cloudflare | Gratis |
+| DNS pubblico | Cloudflare (solo zona DNS) | Gestione dominio `guazza.it`; niente proxy/WAF/CDN. CNAME pubblico punta al nodo Tailscale Funnel |
 | Monitoring | Healthchecks.io + UptimeRobot | Free tier, dead-man switch |
 | Retry scraper | tenacity | Exponential backoff, standard |
 | Logging | loguru | JSON strutturato |

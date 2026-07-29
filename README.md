@@ -6,7 +6,7 @@ Previsioni meteo iper-locali per 6 microclimi toscani. Sistema operativo persona
 
 **Tesi**: i modelli numerici pubblici (ECMWF, ICON-EU, app commerciali) sbagliano sistematicamente sui microclimi specifici generati da orografia, fondi valle e isole di calore. Questo progetto lo dimostra empiricamente e produce un sistema che fa misurabilmente meglio.
 
-**Costo infrastruttura**: ~€2/mese (dominio). Server: Dell Optiplex Micro 3050 locale, esposto via Cloudflare Tunnel.
+**Costo infrastruttura**: ~€2/mese (dominio). Server: Dell Optiplex Micro 3050 locale, esposto via Tailscale Funnel (DNS Cloudflare per `guazza.it`).
 
 ---
 
@@ -106,7 +106,7 @@ guazza/
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
 | Sprint 6 | Frontend HTML+JS+Chart.js, layout a 3 sezioni | ✅ Completato |
 | Sprint 7 | Raffinamenti logiche, radar RainViewer, redesign frontend v2 (CSS custom) | ✅ Completato |
-| Sprint 8 | Deploy su Optiplex locale + Cloudflare Tunnel, k3s/ArgoCD, immagine container | 🟡 In corso (S-A: Dockerfile + CI) |
+| Sprint 8 | Deploy su Optiplex locale + Tailscale Funnel, k3s/ArgoCD, immagine container | 🟡 In corso (S-A: Dockerfile + CI) |
 | Sprint 9 | Adaptive Conformal Inference + monitor copertura 30d | ✅ Completato (v0.10.0) |
 | Sprint 10 | Calibrazione soglie DLE post-deploy | — |
 | Sprint 11 | Case study / pubblicazione + skill history time series | 🟡 In corso (skill history fatto, v0.11.0; GFS rimosso, v0.11.1; fix CQR, v0.11.2) |
@@ -121,8 +121,9 @@ guazza/
 - **Storage**: DuckDB (colonnare, file singolo) + R2 backup
 - **ML**: LightGBM quantile regression + CQR calibration
 - **Frontend**: HTML+JS vanilla + CSS custom (no framework) + Chart.js + Leaflet + Twemoji + suncalc; font Geist + JetBrains Mono (CDN, statico)
-- **Esposizione**: Cloudflare Tunnel (`cloudflared`) — nessun IP pubblico, SSL automatico
-- **DNS/CDN/WAF**: Cloudflare (gratis)
+- **Esposizione pubblica**: Tailscale Funnel — HTTPS terminato da Tailscale, no port forwarding, no IP pubblico
+- **DNS pubblico**: Cloudflare (solo zona DNS per `guazza.it`); WAF/CDN rimossi dallo stack
+- **Accesso tailnet / admin**: Tailscale + Traefik su k3s (`guazza.lab.paroparo.it` per via interna)
 - **Monitoring**: Healthchecks.io + UptimeRobot (free tier)
 
 Vedi `docs/decisions.md` per motivazioni complete.

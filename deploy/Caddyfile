@@ -1,6 +1,7 @@
 # Guazza — Caddy configuration
 # Alternativa a Nginx: Caddy gestisce SSL automatico via Let's Encrypt.
-# Scegliere UNO tra Caddy e Nginx (non entrambi sulla porta 443).
+# Con Tailscale Funnel attivo SSL è terminato a monte e Caddy può servire solo HTTP
+# (rimuovere i blocchi TLS o servire in chiaro sulla porta locale).
 #
 # Attivazione:
 #   sudo apt install caddy

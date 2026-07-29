@@ -61,15 +61,15 @@ si accumula solo in avanti dall'avvio in produzione (Sprint 8+).
 ### P6 — Deploy Sprint 8 in corso
 
 - Manifest k8s in `k8s/apps/guazza/` su repo Houston
-- `guazza.paroparo.it` → da configurare: CNAME Cloudflare + riga in `cloudflared/configmap.yaml`
-- `guazza.lab.paroparo.it` → ingress Traefik (wildcard `*.lab.paroparo.it` già emesso)
+- `guazza.it` → DNS Cloudflare (solo zona): CNAME pubblico a `<node>.<tailnet>.ts.net` con HTTPS provisioning Tailscale (`tailscale set --https=guazza.it` sul nodo). `cloudflared` rimosso dallo stack.
+- `guazza.lab.paroparo.it` → resta su Traefik (wildcard `*.lab.paroparo.it` già emesso); routing tailnet indipendente da quello pubblico
 - SealedSecret `netatmo-credentials` e `healthchecks-url` già nel repo Houston
 
 ## Roadmap sprint
 
 | Sprint | Stato | Contenuto |
 |---|---|---|
-| 8 | 🔄 in corso | Deploy homelab (k3s, ArgoCD, PVC, Cloudflare Tunnel) |
+| 8 | 🔄 in corso | Deploy homelab (k3s, ArgoCD, PVC, Tailscale Funnel) |
 | 9 | 🔜 | Calibrazione soglie DLE (30-60gg `indicator_log` in produzione) |
 | 10 | 🔜 | Nowcasting orario (richiede 6-12 mesi di `realtime` in produzione) |
 | 11 | 🔜 | Case study / pubblicazione (repo pubblico, articolo) |
