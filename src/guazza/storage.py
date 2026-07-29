@@ -1,6 +1,6 @@
 """DuckDB client con lock file per scritture serializzate.
 
-Workaround KI001: DuckDB ammette un solo writer alla volta.
+Workaround KI-001: DuckDB ammette un solo writer alla volta.
 Usiamo fcntl.flock() su un lock file per serializzare le aperture in write mode.
 In read-only mode il lock non è necessario.
 

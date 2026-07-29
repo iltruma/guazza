@@ -113,7 +113,7 @@ Se ERA5 appare come input dinamico a un modello: **è un bug**.
 
 ## Sorgenti dati
 
-- **Open-Meteo Forecast + Historical Forecast API** — 6 modelli NWP: ECMWF IFS, ICON-EU, ICON-D2 (2.2km), GFS 0.25°, AROME France, ICON-2I (2.2km, assimila osservazioni italiane). `ecmwf_aifs025` rimosso: restituisce null su tutte le variabili.
+- **Open-Meteo Forecast + Historical Forecast API** — 5 modelli NWP: ECMWF IFS, ICON-EU, ICON-D2 (2.2km), AROME France, ICON-2I (2.2km, assimila osservazioni italiane). `ecmwf_aifs025` rimosso: restituisce null su tutte le variabili; GFS rimosso in v0.11.1.
 - **SIR Toscana** — storici osservativi validati. 34 stazioni: 21 operative, 13 upstream pluvio (ring features)
 - **ARPAT** — qualità aria (NO2, O3, CO, SO2 orari NRT; PM10, PM2.5, benzene giornalieri da bollettini)
 - **RainViewer** — radar precipitazioni (solo frontend, Sprint 7)

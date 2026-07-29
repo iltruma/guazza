@@ -31,7 +31,6 @@ data/
 *.duckdb
 *.duckdb.*
 *.parquet
-nwp_raw/
 models/
 logs/
 *.log
@@ -51,7 +50,6 @@ frontend/data
 .opencode/
 opencode.json
 .claude/
-.claudeignore
 .agents/
 .impeccable/
 

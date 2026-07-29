@@ -12,7 +12,6 @@ Uso:
     uv run python -m guazza.jobs.ingest historical [--start-date 2022-01-01]
     uv run python -m guazza.jobs.ingest daily
     uv run python -m guazza.jobs.ingest realtime
-    uv run python -m guazza.jobs.ingest forecasts
 
 Variabili d'ambiente:
     DB_PATH           — path file DuckDB (default: /var/lib/guazza/guazza.duckdb)

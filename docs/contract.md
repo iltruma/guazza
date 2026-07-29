@@ -112,8 +112,8 @@ Misura retrospettiva MAE Guazza vs consensus NWP per orizzonte D+0…D+7, contro
 
 ## `skill_history.json` — time series forecast vs actual (file globale)
 
-File separato `frontend/data/skill_history.json`, **uno solo**: generato dal job
-`guazza.jobs.skill_history` (`jobs/skill_history.py`). Misura **per ogni giorno
+File separato `frontend/data/skill_history.json`, **uno solo**: generato come
+passo 4 della `pipeline.py` (6h). Misura **per ogni giorno
 passato** come hanno performato i vari modelli sul forecast emesso a D-1 (lead
 24h) per D, rispetto al valore osservato. Popolamento incrementale (append
 giornaliero, idempotente).
@@ -164,9 +164,9 @@ giornaliero, idempotente).
 - **Forecast NWP**: aggregazione daily di `forecasts` orari con lead 23-25h
   (`MIN(temp_c) AS tmin_c, MAX(temp_c) AS tmax_c, SUM(precip_mm) AS precip_mm`).
   Stessa logica del CTE `daily_nwp` in `features.py` ma per singolo source.
-- **NWP senza dati**: GFS ha ~6.7% di record orari con `temp_c` NULL nel DB
-  (KI-025), quindi GFS è praticamente assente dal backtest. Il frontend nasconde
-  i NWP che hanno tutti valori null nella finestra corrente.
+- **NWP senza dati**: GFS rimosso dal setup in v0.11.1 (KI-025); le righe
+  storiche restano in `forecasts` come dati morti ma innocui. Il frontend
+  nasconde i NWP con tutti valori null nella finestra corrente.
 - **Job**:
   - `append [--day YYYY-MM-DD | --days N]` (default: ieri): ~21 righe × N
     location × N giorni. Idempotente (PK composta + ON CONFLICT DO UPDATE).

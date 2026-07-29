@@ -323,16 +323,13 @@ uv run python -m guazza.jobs.ingest historical
 # 5. Pesi stazioni + ring upstream
 uv run python -m guazza.weights refresh
 
-# 6. Feature engineering
-uv run python -m guazza.jobs.features build
-
-# 7. Training modello
+# 6. Training modello
 uv run python -m guazza.jobs.train run
 
-# 8. Prima previsione
-uv run python -m guazza.jobs.predict
+# 7. Prima pipeline (include feature build, predict, DLE+JSON, monitor)
+uv run python -m guazza.jobs.pipeline run
 
-# 9. Installa crontab sul server locale
+# 8. Installa crontab sul server locale
 crontab deploy/crontab.template
 ```
 
