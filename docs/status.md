@@ -81,6 +81,14 @@ Non è un indicatore DLE di per sé, ma abilita derivati futuri (scottatura, esp
   dot/pill nel frontend con verdict + rule_matched come gli 8 indicatori esistenti
 - Dipendenza: solo dati già presenti (T+RH realtime). Nessuna fonte esterna fragile
 
+### P9 — Prerequisiti Sprint 12 (Google AQ + Pollen API)
+
+- Account Google Cloud con billing attivato (free tier $200/mese, opzionale alert soglia)
+- Air Quality API + Pollen API abilitate nel progetto GCP
+- API key in env var `GOOGLE_AQ_API_KEY` + SealedSecret su Houston
+- Verifica free tier: 6 location × 24h × 2 API = ~8.6k chiamate/mese, rientra nel credito free
+- Specie polline rilevanti per Toscana da coprire: graminacee, parietaria, cipresso, olivo, quercia
+
 ## Roadmap sprint
 
 | Sprint | Stato | Contenuto |
@@ -89,6 +97,7 @@ Non è un indicatore DLE di per sé, ma abilita derivati futuri (scottatura, esp
 | 9 | 🔜 | Calibrazione soglie DLE (30-60gg `indicator_log` in produzione) |
 | 10 | 🔜 | Nowcasting orario (richiede 6-12 mesi di `realtime` in produzione) |
 | 11 | 🔜 | Case study / pubblicazione (repo pubblico, articolo) |
+| 12 | 🔜 | Google Air Quality + Pollen API (hourly) — drop ARPAT, aggiunge sezione polline |
 
 ## Note tecniche operative
 
