@@ -99,8 +99,8 @@ Alternative realistiche valutate:
 
 | Opzione | Pro | Contro | Costo |
 |---|---|---|---|
-| **Blitzortung** (fulmini real-time, free) | Precursore canonico del temporale (fulmini precedono la cella di 30-60 min), copertura EU ottima, JSON pulito, **no key** per bassa frequenza | Solo temporali con fulmini, non pioggia generica | Free, registrazione opzionale per alta frequenza |
-| **Tomorrow.io minutely** (forecast 1-min, paid) | Nowcast completo (rain + storm) 6h ahead, JSON semplice | Vendor lock-in, costo mensile | ~$20-50/mese |
+| **Blitzortung** (fulmini real-time) | Precursore canonico del temporale (fulmini precedono la cella di 30-60 min), copertura EU ottima, JSON pulito, **no key** per basse frequenze | Solo temporali con fulmini, non pioggia generica | Free |
+| **Tomorrow.io Free Plan** (forecast 1-min, JSON semplice) | Nowcast completo (rain + storm) 6h ahead, copre anche pioggia non temporalesca | Vendor lock-in, rate limit 500 calls/giorno | **Free** (no carta richiesta) — sufficiente per 6 location check ogni 30 min (~288 calls/giorno) |
 | **Heuristic realtime** (∆p Netatmo, salto vento SIR, spike RH) | Zero dipendenze nuove | Orizzonte 0-15 min, **troppo tardi** per 30-60 min | Free |
 
 **Raccomandazione**: Blitzortung come fonte primaria per "temporale nei prossimi 30-60 min".
