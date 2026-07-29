@@ -44,9 +44,20 @@ Si risolve automaticamente dopo ~30 giorni di operatività. Nessuna azione richi
 
 ### P3 — Vento in `current` quasi sempre null
 
-Le stazioni Netatmo base non riportano il vento; solo alcune SIR lo misurano in realtime.
-`current.wind_speed_ms` è null sulla maggior parte delle location.
-Candidato Sprint 9+ (nowcasting orario usa SIR realtime).
+SIR è **già letto** in `get_current_conditions` (output.py:540) per le 6 location,
+e le stazioni `anemo` configurate in `locations.yaml` hanno tutte l'anemometro
+(verificato in `stations.yaml`: TOS01001225/15/05, TOS11000516, ecc.). Tuttavia
+`current.wind_speed_ms` è spesso null perché:
+- le obs realtime SIR di vento non arrivano sempre (latenza/qualità del dato
+  realtime di actions.php)
+- il fallback a NWP esiste ma è troppo grezzo: `if row is None or row[3] is None`
+  (output.py:577) — fallback SOLO se TUTTE le obs mancano, non se manca solo il vento
+
+**Fix proposto**: fallback per singola variabile in `get_current_conditions`. Se
+dopo il blend SIR+Netatmo una variabile (es. vento) è null, fallback a NWP per
+quella variabile specifica. Modifica locale a `output.py` (~30 righe) + test in
+`tests/test_output.py`. Da fare prima di Sprint 9 perché è bloccante per
+qualsiasi indicatore realtime che usa il vento (P? pressione_in_caduta, ecc.).
 
 ### P4 — `affidabilita.html` come pagina dedicata
 
