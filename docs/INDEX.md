@@ -18,6 +18,5 @@
 
 ## Note
 
-- `docs/archive/` e `docs/learnings/` — non auto-caricare.
-- I file in `.claude/` (hook, sessions, completions del token-optimizer) sono esclusi dal
-  `.claudeignore` e dal `.gitignore`: tooling locale, non documentazione canonica.
+- I file in `.claude/` (hook, sessions, completions del token-optimizer) sono esclusi
+  dal `.gitignore`: tooling locale, non documentazione canonica.

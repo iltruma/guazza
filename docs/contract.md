@@ -6,8 +6,8 @@ mai valori puntuali nudi") è in `AGENTS.md`.
 File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni run di
 `predict`). Struttura multi-giorno: ogni file contiene la striscia `days` da D+0 a D+7.
 
-> **Nota**: `data/` è escluso dal `.claudeignore`, quindi questi file non sono leggibili
-> via Read/Grep. Per ispezionare un output reale usare Bash (`jq`/`cat`).
+> **Nota**: `data/` non è leggibile via Read/Grep. Per ispezionare un output reale usare
+> Bash (`jq`/`cat`).
 
 ```json
 {

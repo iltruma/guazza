@@ -1,1 +1,1 @@
-/home/cosimo/guazza/AGENTS.md
+AGENTS.md

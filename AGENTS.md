@@ -165,7 +165,7 @@ Attendo conferma prima di procedere.
 ### 🟢 Zona verde — procedere autonomamente
 
 - Scrivere/modificare codice in `src/`, `tests/`
-- Leggere qualsiasi file di codice/config/docs (i dati pesanti e i segreti sono esclusi dal `.claudeignore` — per ispezionarli usare Bash)
+- Leggere qualsiasi file di codice/config/docs
 - Eseguire pytest, ruff, mypy
 - Scrivere/aggiornare `docs/`
 - `git add <file specifici>` + `git commit` (mai `git push`)
@@ -178,19 +178,6 @@ Quando uno script va in errore:
 3. Aspettare istruzioni
 
 Non fare reverse engineering autonomo su API o sistemi esterni quando uno script fallisce.
-
-## .claudeignore
-
-Il repo ha un `.claudeignore` che tiene fuori dal contesto di Claude i blob pesanti
-(`data/`, `*.duckdb`, `models/`, `*.parquet`), gli artefatti rigenerabili e i segreti.
-Replica il `.gitignore` con tre differenze intenzionali:
-
-- **`.env.example` resta leggibile** (`!.env.example`) — i segreti veri (`.env`) no
-- **`.git/` e `uv.lock` esclusi** — leggibili da git ma solo rumore per il modello
-- per il resto i due file vanno tenuti allineati: a ogni modifica del `.gitignore`, verificare il `.claudeignore`
-
-Conseguenza: i file in `data/` (output JSON, DuckDB) **non** sono leggibili via Read/Grep.
-Per ispezionarli usare Bash (`jq`/`cat`).
 
 ## Regole di commit
 
