@@ -89,6 +89,22 @@ Non è un indicatore DLE di per sé, ma abilita derivati futuri (scottatura, esp
 - Verifica free tier: 6 location × 24h × 2 API = ~8.6k chiamate/mese, rientra nel credito free
 - Specie polline rilevanti per Toscana da coprire: graminacee, parietaria, cipresso, olivo, quercia
 
+### P10 — Temporale nei prossimi 30-60 min (nowcast breve, da RainViewer)
+
+- Segnale dedicato: "sta arrivando un temporale" con orario stimato di arrivo (ETA)
+- Fonte: **RainViewer nowcast overlay** (già integrato per il radar frontend in `frontend/app.js`,
+  va solo esposto come dato JSON calcolato lato backend)
+- Implementazione: leggere i frame nowcast dall'API `https://api.rainviewer.com/public/weather-maps.json`
+  (~30-60 min di forecast per estrapolazione del moto delle celle), calcolare sovrapposizione
+  col bbox della location, stimare `eta_min` e `intensity` (light/moderate/heavy)
+- Output JSON: campo in `current` o `days[0]`, es. `"storm_approaching": {"eta_min": 25, "intensity": "moderate"}`
+- Visualizzazione: badge nel hero + (opzionale) indicatore DLE stile "panni" con semaforo allerta
+- **Differente da Sprint 10** (nowcasting orario 6-12 mesi di dati): questo è nowcasting breve,
+  fattibile subito perché usa un'API già funzionante e senza dipendenza da storico
+- **Sostituisce la mia precedente idea "pressione in caduta"** (3h, indiretto): il nowcast
+  radar è diretto e orizzonte 30-60 min, nettamente più utile
+- Dipendenza: solo RainViewer (già in `config/sources.yaml`, free, no key)
+
 ## Roadmap sprint
 
 | Sprint | Stato | Contenuto |
