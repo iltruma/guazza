@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-07-20 (v0.12.0)
+> Aggiornato: 2026-07-29 (v0.12.0)
 > Storico sprint → `CHANGELOG.md`
 
 ## Stato
@@ -64,6 +64,22 @@ si accumula solo in avanti dall'avvio in produzione (Sprint 8+).
 - `guazza.it` → DNS Cloudflare (solo zona): CNAME pubblico a `<node>.<tailnet>.ts.net` con HTTPS provisioning Tailscale (`tailscale set --https=guazza.it` sul nodo). `cloudflared` rimosso dallo stack.
 - `guazza.lab.paroparo.it` → resta su Traefik (wildcard `*.lab.paroparo.it` già emesso); routing tailnet indipendente da quello pubblico
 - SealedSecret `netatmo-credentials` e `healthchecks-url` già nel repo Houston
+
+### P7 — UV index come dato (NWP)
+
+Aggiungere `uv_index` (e opzionalmente `uv_index_clear_sky`) per ogni ora/modello NWP. Campo
+già standard nell'Open-Meteo Forecast API → ingestion + schema + features senza nuove dipendenze.
+Esporre in JSON `hourly[]` e `current` (valore realtime dal modello a lead breve).
+Non è un indicatore DLE di per sé, ma abilita derivati futuri (scottatura, esposizione prolungata).
+
+### P8 — Heat index + ondata di calore come indicatore DLE (stile "panni")
+
+- **Heat index istantaneo**: T + RH (SIR/Netatmo realtime, abbondanti) → Steadman o Rothfusz
+- **Ondata di calore**: ≥3gg consecutivi con Tmax > 35°C (soglia Protezione Civile) oppure
+  heat index notturno > 23°C (notti tropicali)
+- Nuova entry in `config/indicators.yaml` + logica in `indicators.py` (AST interpreter) +
+  dot/pill nel frontend con verdict + rule_matched come gli 8 indicatori esistenti
+- Dipendenza: solo dati già presenti (T+RH realtime). Nessuna fonte esterna fragile
 
 ## Roadmap sprint
 
