@@ -117,6 +117,40 @@ anticipatorio mancante (precursore canonico del temporale, 30-60 min prima della
 generica. Per pioggia nei prossimi 30-60 min senza temporale non c'è alternativa
 accettabile libera. Se il caso d'uso si amplia, riaprire la discussione.
 
+### P11 — Allerte meteo Protezione Civile (da allertameteo.app)
+
+- **Decisione**: allertameteo.app (community, free, no key) come fonte scelta per le allerte
+  meteo ufficiali. Mantiene l'architettura "5 NWP + obs + ML" intatta; aggiunge solo
+  il segnale "allerta" che non esiste oggi nel prodotto
+- **Cosa fornisce**: allerte per oggi e domani su 4 livelli (verde/giallo/arancione/rosso),
+  per 3 tipologie di rischio: idraulico, temporali, idrogeologico
+- **API**: `https://www.allertameteo.app/api/alert/{codice_istat_comune}` — JSON, free,
+  no auth, no rate limit. Endpoint metadata: `/api/regioni`, `/api/province`, `/api/comuni`,
+  `/api/zone`. Storico: `/api/storico/download`
+- **Sorgente dati**: i bollettini sono sincronizzati dal repo ufficiale `pcm-dpc/IT-alert-Hub`
+  e dai Centri Funzionali regionali, qualità alta; servizio terze parti senza SLA
+- **Prerequisito**: codici ISTAT comuni per le 6 location in `config/locations.yaml`
+  (es. Scandicci 048041, Prato 100005, Firenze 048017, Sesto Fiorentino 048043 — da verificare)
+- **Output JSON** (nuovo campo in `current`):
+  ```json
+  "alert": {
+    "today": {"level": "giallo", "risks": {"idraulico": "...", "temporali": "...", "idrogeologico": "..."}},
+    "tomorrow": {"level": "arancione", "risks": {...}},
+    "source": "allertameteo.app",
+    "bulletin_date": "2026-07-29",
+    "bulletin_time": "14:32"
+  }
+  ```
+- **Indicatore DLE opzionale** (stile "panni"): semaforo 4 colori basato sul livello
+  massimo fra oggi/domani, con verdict testuale ("Stai in casa" per arancione+, ecc.)
+- **Schedule**: 1 fetch ogni 6h è sufficiente (bollettino emesso 1 volta/giorno, con
+  aggiornamenti durante eventi). Schedulabile in coda alla `pipeline 6h`
+- **Rischio accettato**: allertameteo.app è singolo developer, niente SLA. **Fallback**:
+  DPC repo GitHub `pcm-dpc/DPC-Bollettini-Criticita-Idrogeologica-Idraulica` (PDF/ZIP
+  ufficiale, serve parser) — da implementare solo se allertameteo.app sparisce
+- **Complementare a P10**: P10 (Blitzortung) = nowcast breve fulmini; P11 (allertameteo)
+  = allerte ufficiali 24-48h ahead. Insieme coprono "sta arrivando" + "è previsto"
+
 ## Roadmap sprint
 
 | Sprint | Stato | Contenuto |
