@@ -19,9 +19,6 @@ uv.lock
 *.duckdb.lock
 *.duckdb.wal
 
-# Parquet raw
-nwp_raw/
-
 # Output analisi esplorative (dataset/grafici rigenerabili)
 analysis/out/
 
@@ -51,9 +48,6 @@ frontend/data
 .coverage
 htmlcov/
 .pytest_cache/
-
-# Jupyter
-.ipynb_checkpoints/
 
 # opencode
 .opencode/
