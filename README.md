@@ -82,7 +82,7 @@ guazza/
 ├── Dockerfile              # Single-stage python:3.13-slim + uv + nginx (k8s)
 ├── .dockerignore           # Esclude .venv/, data/, tests/, ...
 ├── .github/workflows/ci.yml # CI su push tag v*.*.* → ghcr.io/iltruma/guazza
-├── deploy/                 # nginx.conf (host-path), nginx-k8s.conf (k8s), Caddyfile, crontab template
+├── deploy/                 # nginx-k8s.conf (k8s, in-container), crontab template
 ├── tests/
 ├── DESIGN.md               # Design system frontend (palette Carbone+Iris, tipografia, componenti)
 ├── PRODUCT.md              # Product brief (utenti, scopo, principi di design)

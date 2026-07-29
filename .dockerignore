@@ -61,6 +61,4 @@ DESIGN.md
 PRODUCT.md
 
 # Script di deploy host-path (non usati nel container)
-deploy/Caddyfile
 deploy/crontab.template
-deploy/nginx.conf
