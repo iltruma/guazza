@@ -27,26 +27,21 @@ DB_PATH=/var/lib/guazza/guazza.duckdb
 # ── Ogni 15 min: realtime (SIR actions.php + Netatmo) ─────────────────────────
 # SIR aggiorna ogni ~15 min, Netatmo ogni ~10 min.
 # Offset :02 per evitare il minuto esatto (carico infrastruttura)
+# Include QC inline (post-ingest automatico dal refactor v0.12.0).
 2,17,32,47 * * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.ingest realtime >> /var/log/guazza/realtime.jsonl 2>&1
 
-# ── Ogni 6 ore: forecast NWP (Open-Meteo multi-modello) ──────────────────────
+# ── Ogni 6 ore: pipeline completa (forecasts → features → predict → monitor) ──
 # Allineato ai run ECMWF (00/06/12/18 UTC) + lag ~2h per disponibilità dati.
+# Include in un'unica connessione DuckDB: forecast NWP, feature build,
+# predict + DLE + JSON, skill-history, monitor ACI. Sostituisce i tre job
+# separati (ingest forecasts, qc, monitor) rimossi nel refactor v0.12.0.
 # Esecuzione a 02:10, 08:10, 14:10, 20:10 UTC.
-10 2,8,14,20 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.ingest forecasts >> /var/log/guazza/forecasts.jsonl 2>&1
-
-# ── Ogni giorno alle 07:00 UTC: quality control (dopo che daily ha completato) ──────
-# Ricontrolla flag su osservazioni SIR realtime + ARPAT + precip recenti
-0 7 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.qc run >> /var/log/guazza/qc.jsonl 2>&1
+10 2,8,14,20 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.pipeline run >> /var/log/guazza/pipeline.jsonl 2>&1
 
 # ── Ogni giorno alle 06:00 UTC: delta giornaliero (SIR CSV + Open-Meteo ieri) ─
 # SIR pubblica i dati validati del giorno precedente entro le 03:00-05:00 UTC.
+# Include QC inline (post-ingest automatico dal refactor v0.12.0).
 0 6 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.ingest daily >> /var/log/guazza/daily.jsonl 2>&1
-
-# ── Ogni giorno alle 09:00 UTC: monitor copertura ACI + alert drift (Sprint 9) ─
-# Calcola coverage_30d per (target, lead_bucket) e ping /fail su Healthchecks
-# se drift > 5pp dal target. Richiede che le obs del giorno prima siano state
-# backfillate (daily 06:00 le ha rese disponibili).
-5 9 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.monitor run >> /var/log/guazza/monitor.jsonl 2>&1
 
 # ── FUTURI (decommentare quando implementati) ─────────────────────────────────
 
