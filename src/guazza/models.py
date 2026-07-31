@@ -281,7 +281,7 @@ def train_all(
 
     df = load_features(db)
     if df.empty:
-        raise ValueError("features_daily è vuota. Esegui prima: features build")
+        raise ValueError("features_daily è vuota. Popolala con ingest + train run")
 
     max_date = df["target_date"].max()
     cal_cutoff = pd.Timestamp(max_date) - pd.Timedelta(days=cal_days)

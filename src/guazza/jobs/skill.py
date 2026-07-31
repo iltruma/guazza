@@ -13,7 +13,7 @@ Metodologia (identica a `analysis/backtest_multilead.py`, qui resa job idempoten
 Finestra limitata dall'archivio `previous_dayN` (~ott 2025 → oggi): è una finestra di
 mesi, non lifetime — il frontend lo dichiara esplicitamente.
 
-Cron: settimanale, dopo ingest multilead + features build. Read-only sul DB.
+Cron: settimanale, dopo ingest multilead + train run. Read-only sul DB.
 """
 
 from __future__ import annotations
