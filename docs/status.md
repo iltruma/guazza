@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-07-29 (v0.12.0)
+> Aggiornato: 2026-07-31 (v0.12.0)
 > Storico sprint → `CHANGELOG.md`
 
 ## Stato
@@ -25,16 +25,6 @@
 | Schema DB | `schema.sql` unico source of truth (13 tabelle + vista `obs_weighted_daily`) |
 
 ## Punti aperti 🟡
-
-### P1 — Retrain post-GFS (azione utente, se non già fatto)
-
-Dopo v0.11.1 (rimozione GFS), il modello ha 25 feature NWP invece di 30.
-Il retrain con le feature corrette migliora leggermente lo skill (GFS era rumore).
-
-```bash
-uv run guazza-train features build  # oppure guazza-pipeline --dry-run se forecasts ok
-uv run guazza-train train run
-```
 
 ### P2 — ACI in cold start
 
