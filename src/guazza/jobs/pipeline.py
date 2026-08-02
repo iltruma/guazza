@@ -65,7 +65,7 @@ from guazza.skill_history import (
     dump_payload,
 )
 from guazza.storage import DuckDBClient
-from guazza.weights import load_configs
+from guazza.weights import load_configs, refresh_station_weights, refresh_upstream_rings
 
 app = typer.Typer(help="Pipeline 6h: forecasts → features → predict → skill-history.")
 
@@ -157,10 +157,18 @@ def cmd_run(
 ) -> None:
     """Pipeline 6h: forecasts → features → predict → skill-history append + dump."""
     with job_run("job_pipeline") as stats:
-        locations, _ = load_configs(config_dir)
+        locations, stations = load_configs(config_dir)
 
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
+
+            # ── 0. Pesi stazione→location (prerequisito features/predict) ────
+            # Ricalcolati da config ad ogni run: idempotente (DELETE+INSERT),
+            # costo ~0 (nessun fetch esterno). Elimina il refresh manuale
+            # richiesto su DB nuovo o dopo modifiche a locations/stations.yaml.
+            if not dry_run:
+                refresh_station_weights(db, locations, stations)
+                refresh_upstream_rings(db, locations, stations)
 
             # ── 1. Forecasts ────────────────────────────────────────────────
             if not dry_run:
