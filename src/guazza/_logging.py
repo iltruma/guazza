@@ -33,7 +33,6 @@ def log_scrape(scraper: str, status: str, rows: int | None = None, detail: str =
     """Emette un log JSON strutturato per ogni run scraper/job.
 
     Formato: {"scraper": ..., "status": "ok|fail", "ts": ..., "rows": N}
-    Compatibile con CLAUDE.md §Logging (scraper fragili).
     """
     payload: dict[str, Any] = {
         "scraper": scraper,

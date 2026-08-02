@@ -118,23 +118,14 @@ ricreazione del DB in staging + test che passano.
 
 ## D-007 — Stack blindato (no orchestration layer)
 
-**Contesto**: vedi AGENTS.md sezione "Anti-pattern".
+**Scelta**: i job sono CLI Python idempotenti invocabili da qualsiasi scheduler
+(cron, k8s CronJob, systemd). L'invariante è che l'app resti **orchestrator-agnostic**:
+il *target di deploy* è libero (cron in LXC o namespace k8s sono entrambi legittimi),
+ma vietato è **accoppiare la logica applicativa** a un orchestratore (Prefect/Dagster/
+Airflow/Celery) o esporre l'app come PaaS.
 
-**Motivazione sintetica**: progetto single-node, 1 utente, hardware locale già disponibile (Dell Optiplex Micro 3050), costo infrastruttura ≈ €0.
-Ogni layer aggiuntivo (Prefect, Docker, FastAPI 24/7) aggiunge:
-- superficie di failure
-- complessità di debug
-- costo operativo
-
-**Scelta**: i job sono CLI Python idempotenti (`guazza-ingest`, `guazza-predict`, …)
-invocabili da qualsiasi scheduler. L'invariante blindato è che l'app resti
-**orchestrator-agnostic** — non che si usi per forza `cron`.
-
-Il *target di deploy* è libero (il 3050 è un host NixOS baremetal multi-servizio): cron in una
-LXC oppure namespace k8s con CronJob e DB in PVC sono entrambi legittimi. Vietato è
-**accoppiare la logica applicativa** a un orchestratore (Prefect/Dagster/Airflow/Celery)
-o esporre l'app come PaaS — quello reintroduce superficie di failure e complessità di
-debug nel codice. Vedi "Invariante deploy" in AGENTS.md per i vincoli tecnici DuckDB su k8s.
+**Riferimento canonico**: `AGENTS.md` §"Stack blindato" (tabella completa) +
+§"Anti-pattern" + §"Invariante deploy". Questa voce conserva solo il riassunto.
 
 ---
 
@@ -529,3 +520,100 @@ a D, per ogni modello. Time series pura, non aggregata.
 **Limitazione**: la PK include `lead_h` (oggi fisso a 24h) per future
 estensioni multi-lead (es. confrontare forecast D+0 vs D+3 nel tempo).
 Per ora il JSON espone solo lead 24h.
+
+---
+
+## D-021 — Nowcast temporale 30-60 min via Blitzortung
+
+**Contesto**: il sistema attuale (4 NWP + obs + ML) copre bene forecast
+orarie/giornaliere e realtime, ma manca un segnale anticipatorio per
+"sta arrivando un temporale nei prossimi 30-60 min". Le celle convettive
+si formano su scale che i NWP a 9km non risolvono in tempo.
+
+**Decisione**: Blitzortung (fulmini real-time free) come fonte scelta per
+il nowcast "temporale in arrivo". Mantiene l'architettura attuale intatta
+per forecast e realtime; Blitzortung aggiunge solo il segnale anticipatorio
+mancante (precursore canonico del temporale, 30-60 min prima della cella).
+
+**Alternative scartate e perché**:
+- **Parsing tile PNG di RainViewer**: fragile, bandwidth, complessità
+- **Tomorrow.io Free Plan**: vendor lock-in, validazione NASA limitata a CONUS,
+  incoerente con l'architettura "4 NWP + obs + ML" (sostituirebbe il modello
+  proprietario interno). Resta opzione per usi non-core futuri (fallback vento
+  o altri parametri opzionali)
+- **Heuristic realtime** (∆p Netatmo, salto vento SIR, spike RH): orizzonte
+  0-15 min, troppo tardi per "30-60 min"
+
+**Implementazione prevista**:
+- API: `https://data.blitzortung.org/Data/Protected/lightning.json` (free, no
+  auth per query basse; rate limit ~1 query/5s)
+- Strategia: strikes ultimi 30-60 min nel raggio di 50km dalla location; se
+  presenti, ETA = distanza del più vicino / velocità tipica (~40 km/h)
+- Output JSON: `"storm_approaching": {"eta_min": 25, "intensity": "light"|"moderate"|"heavy"}`
+  in `current`
+- Indicatore DLE opzionale (stile "panni") con semaforo allerta
+
+**Limitazione accettata**: Blitzortung copre solo temporali con fulmini, non
+pioggia generica. Per pioggia nei prossimi 30-60 min senza temporale non c'è
+alternativa accettabile libera. Se il caso d'uso si amplia, riaprire la
+discussione.
+
+**Stato**: accettata, da implementare (coda `status.md` §D-021).
+
+---
+
+## D-022 — Allerte meteo Protezione Civile via allertameteo.app
+
+**Contesto**: il sistema segnala rischi meteo operativi (panni, motorino,
+gelata), ma non le **allerte ufficiali** della Protezione Civile. L'utente
+deve consultare un sito esterno per sapere se oggi/domani c'è un'allerta
+arancione sul suo comune.
+
+**Decisione**: allertameteo.app (community, free, no key) come fonte scelta
+per le allerte meteo ufficiali. Mantiene l'architettura "4 NWP + obs + ML"
+intatta; aggiunge solo il segnale "allerta" che non esiste oggi nel prodotto.
+
+**Cosa fornisce**: allerte per oggi e domani su 4 livelli (verde/giallo/
+arancione/rosso), per 3 tipologie di rischio: idraulico, temporali,
+idrogeologico.
+
+**API**: `https://www.allertameteo.app/api/alert/{codice_istat_comune}` —
+JSON, free, no auth, no rate limit. Endpoint metadata: `/api/regioni`,
+`/api/province`, `/api/comuni`, `/api/zone`. Storico: `/api/storico/download`.
+
+**Sorgente dati**: i bollettini sono sincronizzati dal repo ufficiale
+`pcm-dpc/IT-alert-Hub` e dai Centri Funzionali regionali, qualità alta;
+servizio terze parti senza SLA.
+
+**Prerequisito**: codici ISTAT comuni per le 6 location in
+`config/locations.yaml` (es. Scandicci 048041, Prato 100005, Firenze 048017,
+Sesto Fiorentino 048043 — da verificare).
+
+**Output JSON** (nuovo campo in `current`):
+```json
+"alert": {
+  "today": {"level": "giallo", "risks": {"idraulico": "...", "temporali": "...", "idrogeologico": "..."}},
+  "tomorrow": {"level": "arancione", "risks": {...}},
+  "source": "allertameteo.app",
+  "bulletin_date": "2026-07-29",
+  "bulletin_time": "14:32"
+}
+```
+
+**Indicatore DLE opzionale** (stile "panni"): semaforo 4 colori basato sul
+livello massimo fra oggi/domani, con verdict testuale ("Stai in casa" per
+arancione+, ecc.).
+
+**Schedule**: 1 fetch ogni 6h è sufficiente (bollettino emesso 1 volta/giorno,
+con aggiornamenti durante eventi). Schedulabile in coda alla `pipeline 6h`.
+
+**Rischio accettato**: allertameteo.app è singolo developer, niente SLA.
+**Fallback**: DPC repo GitHub
+`pcm-dpc/DPC-Bollettini-Criticita-Idrogeologica-Idraulica` (PDF/ZIP ufficiale,
+serve parser) — da implementare solo se allertameteo.app sparisce.
+
+**Complementare a D-021**: D-021 (Blitzortung) = nowcast breve fulmini;
+D-022 (allertameteo) = allerte ufficiali 24-48h ahead. Insieme coprono
+"sta arrivando" + "è previsto".
+
+**Stato**: accettata, da implementare (coda `status.md` §D-022).
