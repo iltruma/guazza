@@ -786,6 +786,16 @@ def test_current_conditions_returns_data(seeded_db: Path) -> None:
     assert result["wind_speed_ms"] == pytest.approx(1.2)
     # Vento dal blend stazioni → provenance realtime
     assert result["wind_speed_source"] == "realtime"
+    # sources per-variabile: tutte le variabili obs dal blend, pressure/weather null
+    sources = result["sources"]
+    assert sources["temp_c"] == "realtime"
+    assert sources["humidity_pct"] == "realtime"
+    assert sources["precip_mm"] == "realtime"
+    assert sources["wind_speed_ms"] == "realtime"
+    assert sources["wind_dir_deg"] is None
+    assert sources["pressure_hpa"] is None
+    assert sources["weather_code"] is None
+    assert result["wind_speed_source"] == sources["wind_speed_ms"]  # alias coerente
 
 
 def test_current_conditions_wind_fallback_per_variable(seeded_db: Path) -> None:
@@ -825,6 +835,16 @@ def test_current_conditions_wind_fallback_per_variable(seeded_db: Path) -> None:
     # vento dal fallback NWP, provenance esplicita
     assert result["wind_speed_ms"] == pytest.approx(4.5)
     assert result["wind_speed_source"] == "nwp"
+    # sources coerente: temp realtime, vento NWP, variabili mancanti null
+    sources = result["sources"]
+    assert sources["temp_c"] == "realtime"
+    assert sources["humidity_pct"] == "realtime"
+    assert sources["precip_mm"] is None
+    assert sources["wind_speed_ms"] == "nwp"
+    assert sources["wind_dir_deg"] is None
+    assert sources["pressure_hpa"] is None
+    assert sources["weather_code"] is None
+    assert result["wind_speed_source"] == sources["wind_speed_ms"]  # alias coerente
 
 
 def _seed_arpat_weight(
@@ -964,6 +984,8 @@ def test_current_conditions_shared_station_wind(seeded_db: Path) -> None:
     assert result["wind_speed_ms"] == pytest.approx(3.4)
     # Vento dal blend stazioni (via station_weights) → provenance realtime
     assert result["wind_speed_source"] == "realtime"
+    assert result["sources"]["wind_speed_ms"] == "realtime"
+    assert result["sources"]["temp_c"] == "realtime"
 
 
 def test_current_conditions_weighted_blend(seeded_db: Path) -> None:
@@ -1019,6 +1041,12 @@ def test_current_conditions_netatmo_blend(seeded_db: Path) -> None:
     assert result["ts_sir"] is None
     # Nessun anemometro tra le obs Netatmo e nessun forecast NWP → vento assente
     assert result["wind_speed_source"] is None
+    # sources: temp realtime, vento assente, pressure/weather assenti
+    sources = result["sources"]
+    assert sources["temp_c"] == "realtime"
+    assert sources["wind_speed_ms"] is None
+    assert sources["pressure_hpa"] is None
+    assert sources["weather_code"] is None
 
 
 def test_current_conditions_excludes_netatmo_qc_fail(seeded_db: Path) -> None:
@@ -1159,6 +1187,10 @@ def test_current_conditions_pressure_from_forecasts(seeded_db: Path) -> None:
 
     assert result is not None
     assert result["pressure_hpa"] == pytest.approx(1018.5, abs=0.5)
+    # pressure è sempre NWP quando valorizzata
+    assert result["sources"]["pressure_hpa"] == "nwp"
+    # temp dal blend stazioni (obs realtime)
+    assert result["sources"]["temp_c"] == "realtime"
 
 
 def test_current_conditions_fallback_nwp(seeded_db: Path) -> None:
@@ -1187,6 +1219,11 @@ def test_current_conditions_fallback_nwp(seeded_db: Path) -> None:
     assert result["wind_speed_ms"] == pytest.approx(3.0)
     # Nessuna obs: tutte le variabili (vento incluso) dal NWP
     assert result["wind_speed_source"] == "nwp"
+    # sources coerente: ogni variabile valorizzata è "nwp" nel ramo tutto-NWP
+    for key in ("temp_c", "humidity_pct", "precip_mm", "wind_speed_ms", "wind_dir_deg"):
+        assert result["sources"][key] in ("nwp", None), key
+    assert result["sources"]["wind_speed_ms"] == "nwp"
+    assert result["sources"]["temp_c"] == "nwp"
 
 
 # ── get_nwp_models_hourly ─────────────────────────────────────────────────────
@@ -1488,6 +1525,8 @@ def test_current_conditions_weather_code_from_forecasts(seeded_db: Path) -> None
     assert result is not None
     assert result["weather_code"] == 3
     assert isinstance(result["weather_code"], int)
+    # weather_code è sempre NWP quando valorizzato
+    assert result["sources"]["weather_code"] == "nwp"
 
 
 # ── write_location_json — weather_code propagation ────────────────────────────

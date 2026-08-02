@@ -386,6 +386,15 @@ function renderHeaderMeta(generatedAt) {
 
 // ── Hero ──────────────────────────────────────────────────────────────────────
 
+// Asterisco accessibile per i valori della hero quando la fonte è NWP.
+// `sources` è `current.sources` (field → "realtime"|"nwp"|null); se assente, nessun marker.
+function heroSourceMark(sources, field, humanField) {
+  if (sources?.[field] !== 'nwp') return '';
+  const tip   = `${humanField} da modello NWP — osservazione in tempo reale non disponibile.`;
+  const label = `Valore di ${humanField.toLowerCase()} stimato dal modello meteorologico; osservazione in tempo reale non disponibile.`;
+  return `<button class="g-hero__stat-mark" type="button" data-tip="${escHtml(tip)}" aria-label="${escHtml(label)}">*</button>`;
+}
+
 function renderHero(data) {
   const current  = data.current;
   const todayDay = data.days.find(d => isToday(d.target_date));
@@ -405,6 +414,15 @@ function renderHero(data) {
     animateCounter(tempEl, mainTemp, v => `${v.toFixed(1)}°`);
   } else {
     tempEl.textContent = '—';
+  }
+  // Marker provenance NWP sulla temperatura: sibling dentro .g-hero__temp-row
+  // (non tocca #hero-temp né animateCounter, che opera su textContent).
+  const tempRow = tempEl?.parentElement;
+  tempRow?.querySelectorAll('.g-hero__stat-mark').forEach(m => m.remove());
+  const tempMarkHtml = heroSourceMark(current?.sources, 'temp_c', 'Temperatura');
+  if (tempMarkHtml && tempRow) {
+    tempRow.insertAdjacentHTML('beforeend', tempMarkHtml);
+    _wireChipTooltip(tempRow, '.g-hero__stat-mark');
   }
 
   // Condizione live: weather_code WMO da current (NWP ora più vicina a now) con
@@ -458,24 +476,19 @@ function renderHero(data) {
 function renderHeroStatsInline(current) {
   const el = document.getElementById('hero-stats');
   if (!el) return;
+  const sources = current?.sources;
   const windDir = windDirLabel(current?.wind_dir_deg);
-  // `wind_speed_source === "nwp"` → il valore reale non era disponibile e si è usato il modello: lo segnaliamo con un asterisco accessibile.
-  const windMark = current?.wind_speed_source === 'nwp' ? {
-    glyph: '*',
-    tip:   'Vento da modello NWP — osservazione in tempo reale non disponibile.',
-    label: 'Valore di vento stimato dal modello meteorologico; osservazione in tempo reale non disponibile.',
-  } : null;
   const stats = [
-    { icon: '💨', lbl: 'Vento',     val: current?.wind_speed_ms != null ? `${fmtWind(current.wind_speed_ms)}${windDir ? ` ${windDir.label}` : ''}` : '—', mark: windMark },
-    { icon: '💧', lbl: 'Umidità',   val: current?.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%` : '—' },
-    { icon: '🌧️', lbl: 'Pioggia',   val: current?.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm` : '—' },
-    { icon: '🌡️', lbl: 'Pressione', val: current?.pressure_hpa  != null ? `${current.pressure_hpa.toFixed(0)} hPa` : '—' },
+    { icon: '💨', lbl: 'Vento',     field: 'wind_speed_ms', val: current?.wind_speed_ms != null ? `${fmtWind(current.wind_speed_ms)}${windDir ? ` ${windDir.label}` : ''}` : '—' },
+    { icon: '💧', lbl: 'Umidità',   field: 'humidity_pct',  val: current?.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%` : '—' },
+    { icon: '🌧️', lbl: 'Pioggia',   field: 'precip_mm',     val: current?.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm` : '—' },
+    { icon: '🌡️', lbl: 'Pressione', field: 'pressure_hpa', val: current?.pressure_hpa  != null ? `${current.pressure_hpa.toFixed(0)} hPa` : '—' },
   ];
   el.innerHTML = stats.map(s => `
     <div class="g-hero__stat">
       <span class="g-hero__stat-icon">${s.icon}</span>
       <span class="g-hero__stat-lbl">${s.lbl}</span>
-      <span class="g-hero__stat-val">${escHtml(s.val)}${s.mark ? `<button class="g-hero__stat-mark" type="button" data-tip="${escHtml(s.mark.tip)}" aria-label="${escHtml(s.mark.label)}">${s.mark.glyph}</button>` : ''}</span>
+      <span class="g-hero__stat-val">${escHtml(s.val)}${heroSourceMark(sources, s.field, s.lbl)}</span>
     </div>`).join('');
   _wireChipTooltip(el, '.g-hero__stat-mark');
   twemoji.parse(el, TWEMOJI_OPTS);

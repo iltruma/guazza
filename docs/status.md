@@ -35,12 +35,15 @@ Si risolve automaticamente dopo ~30 giorni di operatività. Nessuna azione richi
 ### P3 — ✅ Risolto (2026-08-02) — Vento in `current` quasi sempre null
 
 Fallback **per-variabile** in `get_current_conditions` (output.py): se il blend
-SIR/Netatmo ha osservazioni valide ma manca il vento (anemometro assente o dato
-realtime non arrivato), la singola variabile viene ripiegata sulla media NWP
-dell'ora più vicina a now, senza buttare le osservazioni valide. Nuovo campo
-`current.wind_speed_source` (`"realtime"` | `"nwp"` | `null`) documentato in
-`docs/contract.md`; il frontend mostra un asterisco accanto al vento quando la
-fonte è il modello. Fix in `output.py` + `frontend/`, test in `tests/test_output.py`.
+SIR/Netatmo ha osservazioni valide ma manca una variabile (es. vento, anemometro
+assente o dato realtime non arrivato), la singola variabile viene ripiegata sulla
+media NWP dell'ora più vicina a now, senza buttare le osservazioni valide. Nuovo
+oggetto `current.sources` con provenance per ogni valore mostrato
+(`"realtime"` | `"nwp"` | `null`; `pressure_hpa`/`weather_code` sempre `"nwp"`)
+documentato in `docs/contract.md`; `current.wind_speed_source` resta come alias
+retrocompatibile. Il frontend mostra un asterisco accanto a ogni valore della
+hero (temp, umidità, pioggia, pressione, vento) quando la fonte è il modello.
+Fix in `output.py` + `frontend/`, test in `tests/test_output.py`.
 
 ### P4 — `affidabilita.html` come pagina dedicata
 

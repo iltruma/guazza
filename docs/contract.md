@@ -24,7 +24,14 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
               "wind_speed_source": "realtime" | "nwp" | null,
               "dewpoint_c": float, "feels_like_c": float,
               "pressure_hpa": float | null,
-              "weather_code": int | null},
+              "weather_code": int | null,
+              "sources": {"temp_c": "realtime"|"nwp"|null,
+                          "humidity_pct": "realtime"|"nwp"|null,
+                          "precip_mm": "realtime"|"nwp"|null,
+                          "wind_speed_ms": "realtime"|"nwp"|null,
+                          "wind_dir_deg": "realtime"|"nwp"|null,
+                          "pressure_hpa": "realtime"|"nwp"|null,
+                          "weather_code": "realtime"|"nwp"|null}},
   "air_quality": {"pm10_ugm3": float | null, "pm25_ugm3": float | null,
                   "no2_ugm3": float | null, "o3_ugm3": float | null,
                   "co_mgm3": float | null, "benzene_ugm3": float | null,
@@ -69,7 +76,8 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 - `coverage_empirical_30d`: rolling 30 giorni predictions vs obs. `null` se < 10 campioni → dashboard mostra "calibrazione in corso".
 - `current` e `air_quality` sono `null` se non ci sono osservazioni recenti (rispettivamente realtime meteo e ARPAT).
 - `current.ts` è il timestamp più recente del blend (UTC, suffisso `Z`); `ts_sir` è il MIN tra le stazioni SIR (freshness onesta del dato osservativo), `ts_netatmo` il MAX dei moduli Netatmo. Entrambi `null` se la sorgente non contribuisce (es. fallback NWP, o location senza SIR realtime).
-- `current.wind_speed_source`: provenienza della velocità del vento mostrata — `"realtime"` se da osservazioni SIR/Netatmo realtime, `"nwp"` se la variabile è stata ripiegata sul forecast NWP (fix P3: obs valide ma senza anemometro o dato realtime non arrivato), `null` se il vento manca del tutto. Il frontend usa il valore per segnalare visivamente i dati non osservativi.
+- `current.sources`: provenance per-variabile dei valori raw in `current` — `"realtime"` se la singola variabile viene dal blend SIR/Netatmo, `"nwp"` se è stata ripiegata sul forecast NWP (fallback per-variabile, fix P3), `null` se il valore è assente. `pressure_hpa` e `weather_code` sono sempre `"nwp"` quando valorizzati (oggi arrivano solo da forecasts). `dewpoint_c`/`feels_like_c` sono derivati e non hanno marker.
+- `current.wind_speed_source`: alias retrocompatibile di `sources["wind_speed_ms"]` — provenienza della velocità del vento mostrata: `"realtime"` se da osservazioni SIR/Netatmo realtime, `"nwp"` se ripiegata sul forecast NWP (fix P3: obs valide ma senza anemometro o dato realtime non arrivato), `null` se il vento manca del tutto. Il frontend usa il valore per segnalare visivamente i dati non osservativi.
 - `current.pressure_hpa` è la pressione di superficie da Open-Meteo (non SIR) — può essere `null` se non ci sono dati NWP recenti.
 - `current.weather_code` è il codice WMO modale (moda tra modelli NWP nell'ora più vicina a now) — può essere `null` se non ci sono dati NWP recenti.
 - `days[].weather_code` è il codice WMO modale giornaliero (moda su 24h × N modelli, ultimo run per fonte) — `null` se assente.

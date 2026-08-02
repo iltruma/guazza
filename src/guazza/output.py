@@ -514,16 +514,17 @@ def get_current_conditions(
     variabili (es. temp presente ma vento null — stazione senza anemometro o
     dato realtime non arrivato), le variabili mancanti vengono riempite con la
     media NWP dell'ora più vicina a now, senza buttare le osservazioni valide.
-    `wind_speed_source` dichiara la provenienza del vento nel risultato:
-    "realtime" (blend stazioni), "nwp" (fallback) o null (vento assente).
+    `sources` dichiara la provenienza per-variabile dei valori raw:
+    "realtime" (blend stazioni), "nwp" (fallback) o null (assente);
+    `wind_speed_source` è un alias retrocompatibile di sources["wind_speed_ms"].
     Se invece non c'è nessuna osservazione utile, tutte le variabili vengono
     dal NWP come prima (ts_sir/ts_netatmo null).
 
     Returns:
         {ts, ts_sir, ts_netatmo, temp_c, humidity_pct, precip_mm, wind_speed_ms,
          wind_dir_deg, dewpoint_c, feels_like_c, pressure_hpa, weather_code,
-         wind_speed_source} oppure None se non ci sono né osservazioni recenti
-        né forecast disponibili.
+         wind_speed_source, sources} oppure None se non ci sono né osservazioni
+        recenti né forecast disponibili.
     """
     # Media pesata: SIR pesato via station_weights (JOIN su station_id, non
     # location_id — la riga obs è taggata con una sola location arbitraria),
@@ -650,11 +651,24 @@ def get_current_conditions(
     if temp_c is None:
         return None
 
-    # Provenance del vento per il frontend: "realtime" se dal blend stazioni,
-    # "nwp" se riempito dal forecast, null se il vento manca del tutto.
-    wind_speed_source: str | None = None
-    if wind_speed_ms is not None:
-        wind_speed_source = "realtime" if has_obs and b_wind is not None else "nwp"
+    # Provenance per-variabile per il frontend: "realtime" se la variabile
+    # viene dal blend stazioni, "nwp" se è stata riempita dal forecast NWP
+    # (fallback per-variabile), null se è assente. `wind_speed_source` resta
+    # come alias retrocompatibile di sources["wind_speed_ms"].
+    def _source(b_val: Any, final_val: Any) -> str | None:
+        """Provenance di una variabile osservativa: blend stazioni o NWP."""
+        if final_val is None:
+            return None
+        return "realtime" if b_val is not None else "nwp"
+
+    sources: dict[str, str | None] = {
+        "temp_c":        _source(b_temp, temp_c),
+        "humidity_pct":  _source(b_hum, humidity_pct),
+        "precip_mm":     _source(b_precip, precip_mm),
+        "wind_speed_ms": _source(b_wind, wind_speed_ms),
+        "wind_dir_deg":  _source(b_wdir, wind_dir_deg),
+    }
+    wind_speed_source = sources["wind_speed_ms"]
 
     if not has_obs:
         logger.debug(f"[{location_id}] current da fallback NWP (nessuna obs realtime)")
@@ -689,6 +703,11 @@ def get_current_conditions(
         [int(r[0]) for r in wc_rows if r[0] is not None]
     )
 
+    # pressure_hpa e weather_code sono sempre NWP quando valorizzati:
+    # oggi arrivano solo dalla tabella forecasts, mai dal blend stazioni.
+    sources["pressure_hpa"] = "nwp" if pressure_hpa is not None else None
+    sources["weather_code"] = "nwp" if current_weather_code is not None else None
+
     t    = float(temp_c)
     rh   = float(humidity_pct) if humidity_pct is not None else None
     ws  = float(wind_speed_ms) if wind_speed_ms is not None else None
@@ -711,6 +730,7 @@ def get_current_conditions(
         "feels_like_c":  apparent,
         "pressure_hpa":  float(pressure_hpa) if pressure_hpa is not None else None,
         "weather_code":  current_weather_code,
+        "sources":       sources,
     }
 
 

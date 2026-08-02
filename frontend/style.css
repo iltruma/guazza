@@ -533,6 +533,15 @@ img.emoji {
 }
 .g-hero__stat-mark:hover { color: var(--text-2); }
 
+/* Contesto temperatura grande: l'asterisco è sibling dentro .g-hero__temp-row (flex).
+   Size fissa (non eredita il clamp(3.5–5rem) del numero) e posizionamento superscript via align-self. */
+.g-hero__temp-row .g-hero__stat-mark {
+  align-self: flex-start;
+  margin-left: -4px;
+  margin-top: 0.35rem;
+  font-size: 1rem;
+}
+
 /* Sun/moon strip — below DLE indicators, secondary context */
 .g-hero__sun {
   display: flex;
