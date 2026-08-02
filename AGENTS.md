@@ -146,8 +146,9 @@ staging selettivo, atomicità). Override e aggiunte specifiche di questo progett
 - **Tipi aggiuntivi** oltre a quelli globali: `test`, `config`.
 - **Non committare** dati grezzi (`*.parquet`, `*.db`) e output temporanei, oltre a quanto
   già vietato globalmente.
-- **Conferma obbligatoria**: non committare mai in autonomia, aspettare sempre conferma
-  esplicita dell'utente.
+- **Commit**: l'agente può committare dopo aver proposto (messaggio + stat). Nessuna
+  attesa di conferma esplicita per il commit stesso.
+- **Push**: mai dall'agente.
 
 ## Procedure di sync (matrice evento → write primario)
 
