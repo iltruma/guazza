@@ -8,6 +8,22 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Changed
+- **Restructured `docs/status.md` come cockpit**: rimosse roadmap sprint
+  (unica fonte: `CHANGELOG.md`), rimosse note tecniche operative duplicate
+  (già in `decisions.md`/`known_issues.md`/codice), rimosso blocco metriche
+  skill (canonica in `D-016`).
+- **P9 → D-021** (nowcast Blitzortung) e **P10 → D-022** (allerte
+  allertameteo.app) promossi a decisioni in `docs/decisions.md`. Status tiene
+  solo stub `→ D-021` / `→ D-022`.
+- **P4 chiuso**: `affidabilita.html` esiste già come pagina dedicata.
+- **P6 chiuso**: la migrazione k3s è completata (Sprint 8, v0.12.2); il
+  riferimento era un P fantasma (numerazione non auditabile).
+
+### Fixed
+- Rimossi riferimenti morti: `(P6)` in `AGENTS.md` e `README.md`,
+  "Aperto 3/4" in `config/indicators.yaml`.
+
 ## [0.13.0] - 2026-08-02
 
 ### Removed

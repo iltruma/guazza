@@ -1,7 +1,6 @@
 # Guazza — Decision Logic Engine — configurazione indicatori
 #
 # Soglie: BEST-GUESS iniziali, DA CALIBRARE nei primi 30-60 giorni di operatività.
-# Vedi docs/status.md "Aperto 3" e "Aperto 4".
 # Modifica soglie senza toccare codice: il DLE carica questo file a runtime.
 #
 # costs.fn:  costo falso negativo — dici "ok" quando è rischioso (segnale mancato)
