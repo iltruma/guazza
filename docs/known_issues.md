@@ -5,25 +5,6 @@
 
 ---
 
-## KI-021 — Qualità aria: serve `weights refresh` (stazioni ARPAT risolte via station_weights)
-
-**Severità**: media (config-step obbligatorio per nuove location)
-**Stato**: risolto in codice; richiede `weights refresh` dopo modifiche al config ARPAT
-
-`get_current_air_quality` risolve le stazioni ARPAT via JOIN `station_weights`
-(`source='arpat'`), **non** via `observations.location_id`. Motivo: la PK di
-`observations` è `(source, station_id, ts, granularity)` — non include
-`location_id`. Una stazione ARPAT condivisa tra più location (es. FI-MOSSE usata
-da casa_nicco e casa_cercina) viene riscritta in upsert con un solo `location_id`
-arbitrario (l'ultimo ingest vince). La query precedente, filtrando su
-`obs.location_id`, perdeva l'AQ per la location "perdente" ed era una race tra
-location vicine.
-
-**Conseguenza operativa**: dopo aver aggiunto/modificato `arpat_stations` in
-`locations.yaml`, eseguire `weights refresh` — popola i pesi `source='arpat'` in
-`station_weights`. Senza, `air_quality` è `null` per tutte le location (la JOIN
-non trova pesi). È lo stesso meccanismo già usato dal SIR (vedi `get_current_conditions`).
-
 ## KI-022 — Target di training corrotto: `obs_weighted` joinava anche su `location_id`
 
 **Severità**: alta (target ML errato per le stazioni condivise — scoperto 2026-06-05)
@@ -377,7 +358,7 @@ dal browser (corretto).
 
 **Risoluzione definitiva** (D-017, 2026-05-30): standardizzazione in **UTC naive**
 per tutte le osservazioni nel DB. SIR realtime/bulk convertono CEST→UTC
-(`-1h`), ARPAT NRT (hourly) converte locale→UTC, Netatmo invariato.
+(`-1h`), Netatmo invariato.
 `get_current_conditions` ora formatta con suffisso `Z` (`%Y-%m-%dT%H:%M:%SZ`)
 e il frontend lo interpreta come UTC esplicito. Niente più workaround,
 tutto coerente con la convenzione UTC.

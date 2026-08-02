@@ -122,9 +122,9 @@ Quattro livelli di carbone, un accento iris, cinque segnali semantici.
 - **Iris** (`#6B7FD4`): l'unico colore saturato del sistema. Usato esclusivamente per elementi che comunicano stato attivo o dati vivi: tab selezionato, pulse dot LIVE, CI bar range 80%, mediana CI bar, radar sonar ring, slider radar, lead badge `+Nh`. Il suo background tint è `rgba(107,127,212,0.10)`, il suo bordo semitrasparente è `rgba(107,127,212,0.35)`.
 
 ### Semantic
-- **Verde Operativo** (`#34D399`): segnale "sicuro, procedi". Esclusivo nei pill indicatore DLE, valori qualità aria fascia bassa, dot strip card verde. Background tint `rgba(52,211,153,0.10)`, bordo `rgba(52,211,153,0.22)`.
-- **Giallo Cautela** (`#FBBF24`): segnale intermedio. Solo nei pill DLE, AQ, dot strip card giallo.
-- **Rosso Allerta** (`#F87171`): segnale critico. Pill DLE, valori AQ alti, error state, delta NWP wet. Background `rgba(248,113,113,0.10)`.
+- **Verde Operativo** (`#34D399`): segnale "sicuro, procedi". Esclusivo nei pill indicatore DLE, dot strip card verde. Background tint `rgba(52,211,153,0.10)`, bordo `rgba(52,211,153,0.22)`.
+- **Giallo Cautela** (`#FBBF24`): segnale intermedio. Solo nei pill DLE, dot strip card giallo.
+- **Rosso Allerta** (`#F87171`): segnale critico. Pill DLE, error state, delta NWP wet. Background `rgba(248,113,113,0.10)`.
 - **Warm** (`#F97316`): delta temperatura positivo nella NWP table, classe `g-metric__value--warm` sul Tmax bento. Background `rgba(249,115,22,0.08)`.
 - **Cold** (`#60A5FA`): delta temperatura negativo nella NWP table, classe `g-metric__value--cool` sul Tmin bento. Background `rgba(96,165,250,0.08)`.
 
@@ -144,7 +144,7 @@ Quattro livelli di carbone, un accento iris, cinque segnali semantici.
 
 **The Carbone Progression Rule.** I quattro livelli si usano in ordine stretto: surface-0 → surface-1 → surface-2 → surface-3. Non saltare livelli. Non inventare un quinto senza aggiornare la scala.
 
-**The Semantic Separation Rule.** I colori warm/cold esistono solo per i delta di temperatura NWP e i valori Tmax/Tmin nel bento. Verde/giallo/rosso esistono solo per i segnali DLE e AQ. L'iris esiste solo per lo stato attivo. Nessuna contaminazione tra ruoli.
+**The Semantic Separation Rule.** I colori warm/cold esistono solo per i delta di temperatura NWP e i valori Tmax/Tmin nel bento. Verde/giallo/rosso esistono solo per i segnali DLE. L'iris esiste solo per lo stato attivo. Nessuna contaminazione tra ruoli.
 
 ### Chart series
 
@@ -233,7 +233,7 @@ Il grain overlay sul body (`opacity: 0.022`, `mix-blend-mode: overlay`) rompe la
 - Background `rgba(107,127,212,0.10)`, bordo `rgba(107,127,212,0.35)`, testo accent
 - Indica l'orizzonte di previsione selezionato
 
-### Collapsible Panels (Radar, AQ)
+### Collapsible Panels (Radar)
 - **Shape:** 16px (`--r-xl`), overflow hidden
 - **Header hover:** `rgba(255,255,255,0.02)`
 - **Chevron:** Rotazione 180° su `details[open]`, `var(--dur-base)` ease-out
@@ -258,7 +258,7 @@ Il grain overlay sul body (`opacity: 0.022`, `mix-blend-mode: overlay`) rompe la
 - **Don't** usare `border-left` o `border-right` colorato come accent. Le uniche linee accent sono orizzontali.
 - **Don't** usare gradient text (`background-clip: text`).
 - **Don't** usare warm/cold per elementi non-temperatura e non-delta-NWP.
-- **Don't** usare verde/giallo/rosso fuori dai pill DLE, AQ, e dot strip. Sono segnali operativi riservati.
+- **Don't** usare verde/giallo/rosso fuori dai pill DLE e dot strip. Sono segnali operativi riservati.
 - **Don't** aggiungere un quinto livello di superficie senza aggiornare la scala `--surface-*`.
 - **Don't** usare Geist per valori numerici tabellari.
 - **Don't** colorare elementi neutri con l'iris. Se è accent, è perché quel dato è vivo o quello stato è attivo.

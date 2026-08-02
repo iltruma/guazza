@@ -43,9 +43,8 @@ DB_PATH=/tmp/guazza_test.duckdb uv run python -m guazza.storage verify-schema
 guazza/
 ├── config/
 │   ├── locations.yaml      # 6 location con stazioni SIR e upstream_pluvio_stations
-│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio ring); stazioni ARPAT qualità aria in locations.yaml (arpat_stations)
+│   ├── stations.yaml       # 34 stazioni SIR (21 operative + 13 upstream pluvio ring)
 │   ├── indicators.yaml     # 8 indicatori DLE con soglie e costi asimmetrici
-│   ├── arpat_levels.yaml   # Scale qualità aria D.Lgs.155/2010
 │   └── sources.yaml        # Endpoint sorgenti dati e stato
 ├── src/guazza/
 │   ├── schema.sql          # Schema DuckDB — unica source of truth (+ vista obs_weighted_daily)
@@ -55,14 +54,13 @@ guazza/
 │   ├── fetch_sir.py        # SIR storico CSV + realtime JSON + bulk
 │   ├── fetch_openmeteo.py  # Open-Meteo forecast / historical / multi-lead (4 modelli)
 │   ├── fetch_netatmo.py    # Netatmo realtime + QC (range, cross, vs SIR)
-│   ├── fetch_arpat.py      # ARPAT qualità aria NRT + bollettino PM10/PM2.5
 │   ├── _paths.py           # Path di default da env (DB_PATH, CONFIG_DIR, OUTPUT_DIR)
 │   ├── weights.py          # Pesi stazione→location, ring upstream pluvio
 │   ├── features.py         # build_features_daily() — 50 feature, tabella materializzata
 │   ├── models.py           # LightGBM quantile + CQR, train_all(), predict(), predict_frame()
 │   ├── indicators.py       # Decision Logic Engine: evaluate_all(), log_results() (eval via AST)
 │   ├── output.py           # build_signals(), build_signals_today(), dewpoint/apparent_temp, write_location_json()
-│   ├── qc.py               # Quality control osservazioni SIR + ARPAT (chiamato da ingest)
+│   ├── qc.py               # Quality control osservazioni SIR (chiamato da ingest)
 │   ├── _logging.py         # setup_logging() + log_scrape() — TTY pretty / cron JSON
 │   ├── netatmo_daily.py    # Accumulo Netatmo realtime → daily (forward-looking storico)
  │   ├── skill_history.py    # append_one(), dump_payload(), atomic_write_json() (usato da pipeline)
@@ -100,7 +98,7 @@ guazza/
 |---|---|---|
 | Sprint 0 | Ricognizione sorgenti, config stazioni, struttura repo | ✅ Completato |
 | Sprint 1 | Ingestion SIR + Netatmo + Open-Meteo + ARPAT, schema DuckDB, job cron | ✅ Completato |
-| Sprint 2 | Backfill SIR pre-2022, quality control (SIR + ARPAT), flag qualità | ✅ Completato |
+| Sprint 2 | Backfill SIR pre-2022, quality control (SIR), flag qualità | ✅ Completato |
 | Sprint 3 | Feature engineering, 50 feature, ring upstream pluvio | ✅ Completato |
 | Sprint 4 | LightGBM quantile + CQR, skill +25% vs NWP su temperatura | ✅ Completato |
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
@@ -162,7 +160,7 @@ uv run python -m guazza.jobs.pipeline run --dry-run
 Output: `data/output/{location_id}.json` con CI80/CI90 per tmin/tmax/precip,
 8 indicatori semaforo (panni, motorino, gelata, ...), `coverage_empirical_30d`,
 condizioni realtime aggregate (`current` con dewpoint e temperatura percepita),
-qualità aria ARPAT OpenData NRT (`air_quality`), profili orari NWP con vento, e confronto
+profili orari NWP con vento, e confronto
 modelli con data ultimo run.
 
 > **Nota locale**: prima della pipeline eseguire `ingest realtime` per avere
@@ -274,7 +272,7 @@ cd frontend && python3 -m http.server 8080
 
 | Sezione | Contenuto |
 |---|---|
-| **A — Condizioni attuali** | Temperatura grande, icona meteo, temperatura percepita (Steadman), punto di rugiada (Magnus), grid stats: vento (velocità + direzione), umidità, precipitazione, pressione (hPa + indicatore alta/bassa), alba/tramonto (SunCalc), fase lunare; card qualità aria ARPAT (PM10, PM2.5, NO₂, O₃, CO, benzene, SO₂); indicatori DLE calcolati su obs realtime |
+| **A — Condizioni attuali** | Temperatura grande, icona meteo, temperatura percepita (Steadman), punto di rugiada (Magnus), grid stats: vento (velocità + direzione), umidità, precipitazione, pressione (hPa + indicatore alta/bassa), alba/tramonto (SunCalc), fase lunare; indicatori DLE calcolati su obs realtime |
 | **Radar precipitazioni** | Mappa Leaflet con overlay RainViewer: ultimi ~60min osservati + nowcast +60min (se attivo); timeline animata, pausa di default, zoom custom |
 | **B — Previsioni giornaliere** | Striscia card D+0…D+7 con icona/Tmax/Tmin/precip/indicator-dots; clic espande CI bar 80/90% + 8 indicatori + tabella NWP con data ultimo run |
 | **C — Grafico multi-giorno** | Chart.js: temperatura, umidità, precipitazioni, vento — switch Guazza ML ↔ 4 modelli NWP, crosshair verticale |
@@ -294,7 +292,6 @@ frontend/
 ```
 {location_id, generated_at, coverage_empirical_30d,
  current: {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg, dewpoint_c, feels_like_c, pressure_hpa},
- air_quality: {pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3, co_mgm3, benzene_ugm3, so2_ugm3},
  nwp_models_hourly: [{source, label, data: [{ts, temp_c, humidity_pct, precip_mm, wind_speed_ms}]}],
  days: [{target_date, lead_time_h,
          forecasts: {tmin_c, tmax_c, precip_mm} ciascuno con p50+CI80+CI90,
@@ -352,7 +349,6 @@ uv run mypy src/
 | Open-Meteo Forecast + Historical | 4 modelli NWP (ECMWF, ICON-EU, AROME, ICON-2I) | API pubblica, no key |
 | SIR Toscana | Ground truth osservazioni validate, 34 stazioni | Open Data |
 | Netatmo | Osservazioni iperlocali real-time | OAuth2 |
-| ARPAT OpenData NRT | Qualità aria oraria (NO₂, O₃, CO, SO₂, PM10, PM2.5, benzene) | Open Data |
 | RainViewer | Radar precipitazioni (solo frontend) | API pubblica, no key |
 
 Per la lista completa con endpoint e stato: `config/sources.yaml`.

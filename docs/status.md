@@ -17,7 +17,7 @@
 | Componente | Stato |
 |---|---|
 | Pipeline 6h | `guazza-pipeline` — forecasts → features → predict+DLE+JSON → skill-history → monitor |
-| Ingest | `guazza-ingest historical/daily/realtime` (SIR + Open-Meteo + Netatmo + ARPAT) |
+| Ingest | `guazza-ingest historical/daily/realtime` (SIR + Open-Meteo + Netatmo) |
 | Modello | LightGBM quantile + CQR + ACI (AdaptiveConformalizer, Gibbs & Candès 2021) |
 | NWP | 4 modelli: ECMWF IFS, ICON-EU, AROME France, ICON-2I |
 | Location | 6: casa_campi, lavoro_cosimo, lavoro_madda, casa_cesto, casa_nicco, casa_cercina |
@@ -42,16 +42,6 @@ Oggi la sezione "Quanto è affidabile" è embeddata nello SPA per-location.
 `previous_dayN` Open-Meteo parte da ~nov 2025. La versione rigorosa multi-stagione
 si accumula solo in avanti dall'avvio in produzione (Sprint 8+).
 
-### P6 — Deploy Sprint 8 completato (2026-08-02)
-
-- Manifest k8s in `k8s/apps/guazza/` su repo astra (GitOps Flux + SOPS/age, niente ArgoCD/SealedSecret)
-- `guazza.lab.paroparo.it` → Traefik (wildcard `*.lab.paroparo.it` già emessa); routing tailnet attivo
-- CronJob k8s: `guazza-realtime` (15min), `guazza-pipeline` (6h), `guazza-daily` (06:00 UTC) — `concurrencyPolicy: Forbid` (DuckDB single-writer), PVC `local-path` RWO
-- Secrets SOPS: `netatmo-credentials`, `healthchecks-url` (in `k8s/apps/guazza/`)
-- `config/` bundle nell'immagine (v0.12.1+), `CONFIG_DIR=/app/config`
-- Immagine `ghcr.io/iltruma/guazza:v0.12.2` (fix nginx non-root: chown `/var/log/nginx`)
-- `guazza.it` → DNS Cloudflare (solo zona): CNAME a `<node>.<tailnet>.ts.net` con HTTPS provisioning Tailscale (`tailscale set --https=guazza.it`). **Da riportare su nebula** (spostamento Funnel)
-
 ### P7 — UV index come dato (NWP)
 
 Aggiungere `uv_index` (e opzionalmente `uv_index_clear_sky`) per ogni ora/modello NWP. Campo
@@ -68,15 +58,7 @@ Non è un indicatore DLE di per sé, ma abilita derivati futuri (scottatura, esp
   dot/pill nel frontend con verdict + rule_matched come gli 8 indicatori esistenti
 - Dipendenza: solo dati già presenti (T+RH realtime). Nessuna fonte esterna fragile
 
-### P9 — Prerequisiti Sprint 12 (Google AQ + Pollen API)
-
-- Account Google Cloud con billing attivato (free tier $200/mese, opzionale alert soglia)
-- Air Quality API + Pollen API abilitate nel progetto GCP
-- API key in env var `GOOGLE_AQ_API_KEY` + Secret SOPS su astra (`k8s/apps/guazza/`)
-- Verifica free tier: 6 location × 24h × 2 API = ~8.6k chiamate/mese, rientra nel credito free
-- Specie polline rilevanti per Toscana da coprire: graminacee, parietaria, cipresso, olivo, quercia
-
-### P10 — Temporale nei prossimi 30-60 min (nowcast Blitzortung)
+### P9 — Temporale nei prossimi 30-60 min (nowcast Blitzortung)
 
 **Decisione**: Blitzortung (fulmini real-time free) come fonte scelta per il nowcast
 "temporale in arrivo". Mantiene l'architettura attuale (4 NWP Open-Meteo + obs SIR/Netatmo
@@ -87,7 +69,7 @@ anticipatorio mancante (precursore canonico del temporale, 30-60 min prima della
 - **Parsing tile PNG di RainViewer**: fragile, bandwidth, complessità
 - **Tomorrow.io Free Plan**: vendor lock-in, validazione NASA limitata a CONUS, incoerente
   con l'architettura "4 NWP + obs + ML" (sostituirebbe il modello proprietario interno).
-  Resta opzione per usi non-core futuri (P3 fallback vento, campo AQ)
+  Resta opzione per usi non-core futuri (fallback vento o altri parametri opzionali)
 - **Heuristic realtime** (∆p Netatmo, salto vento SIR, spike RH): orizzonte 0-15 min,
   troppo tardi per "30-60 min"
 
@@ -104,7 +86,7 @@ anticipatorio mancante (precursore canonico del temporale, 30-60 min prima della
 generica. Per pioggia nei prossimi 30-60 min senza temporale non c'è alternativa
 accettabile libera. Se il caso d'uso si amplia, riaprire la discussione.
 
-### P11 — Allerte meteo Protezione Civile (da allertameteo.app)
+### P10 — Allerte meteo Protezione Civile (da allertameteo.app)
 
 - **Decisione**: allertameteo.app (community, free, no key) come fonte scelta per le allerte
   meteo ufficiali. Mantiene l'architettura "4 NWP + obs + ML" intatta; aggiunge solo
@@ -135,7 +117,7 @@ accettabile libera. Se il caso d'uso si amplia, riaprire la discussione.
 - **Rischio accettato**: allertameteo.app è singolo developer, niente SLA. **Fallback**:
   DPC repo GitHub `pcm-dpc/DPC-Bollettini-Criticita-Idrogeologica-Idraulica` (PDF/ZIP
   ufficiale, serve parser) — da implementare solo se allertameteo.app sparisce
-- **Complementare a P10**: P10 (Blitzortung) = nowcast breve fulmini; P11 (allertameteo)
+- **Complementare a P9**: P9 (Blitzortung) = nowcast breve fulmini; P10 (allertameteo)
   = allerte ufficiali 24-48h ahead. Insieme coprono "sta arrivando" + "è previsto"
 
 ## Roadmap sprint
@@ -146,7 +128,7 @@ accettabile libera. Se il caso d'uso si amplia, riaprire la discussione.
 | 9 | 🔜 | Calibrazione soglie DLE (30-60gg `indicator_log` in produzione) |
 | 10 | 🔜 | Nowcasting orario (richiede 6-12 mesi di `realtime` in produzione) |
 | 11 | 🔜 | Case study / pubblicazione (repo pubblico, articolo) |
-| 12 | 🔜 | Google Air Quality + Pollen API (hourly) — drop ARPAT, aggiunge sezione polline |
+| 12 | 🔜 | Google Air Quality + Pollen API (hourly) — aggiunge sezione polline |
 
 ## Note tecniche operative
 

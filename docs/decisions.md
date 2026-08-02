@@ -404,12 +404,12 @@ case study come onestà sul limite ("dove il NWP è già buono, non miglioriamo"
 
 **Data**: 2026-05-30
 
-**Contesto**: la tabella `observations` mescolava tre convenzioni diverse:
-SIR realtime (CET naive, UTC+1 fisso), ARPAT NRT (locale CEST naive), Netatmo (UTC naive — TZ stripped dal driver DuckDB). `NOW()` in DuckDB è UTC, quindi le finestre temporali in `output.py` (`NOW() - INTERVAL 3 HOURS`) confrontavano UTC con naive CET, producendo errori di 1-2h in estate.
+**Contesto**: la tabella `observations` mescolava convenzioni diverse:
+SIR realtime (CET naive, UTC+1 fisso), fonti esterne con timestamp locale, Netatmo (UTC naive — TZ stripped dal driver DuckDB). `NOW()` in DuckDB è UTC, quindi le finestre temporali in `output.py` (`NOW() - INTERVAL 3 HOURS`) confrontavano UTC con naive CET, producendo errori di 1-2h in estate.
 
 **Decisione**: tutte le osservazioni **realtime/hourly** in `observations` sono **UTC naive**.
 - SIR: pubblica sempre CET (UTC+1 fisso), convertiamo con `_CET = timezone(timedelta(hours=1))` → `-1h`.
-- ARPAT NRT: pubblica ora locale (CEST in estate), convertiamo con `_ITALY_TZ.astimezone(UTC)`.
+- Fonti esterne con timestamp locale: convertiamo in UTC con il timezone di riferimento.
 - Netatmo: già UTC naive (invariato).
 - `forecasts`: UTC-aware (invariato — modelli NWP ragionano in UTC).
 - **SIR daily e ARPAT daily**: etichette di giorno (mezzanotte naive), non istanti. Non convertite per convenzione. `features.py` le tratta come label di calendario.

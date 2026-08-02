@@ -37,7 +37,7 @@ Cloud Architect e Solution Architect con background ML applicato. Programmatore 
 ## Le 6 location
 
 Vedi `config/locations.yaml` — coordinate complete, stazioni SIR primarie e secondarie,
-stazioni ARPAT, stazioni upstream pluvio per ogni location.
+stazioni upstream pluvio per ogni location.
 
 ## Stack blindato
 
@@ -115,7 +115,6 @@ Se ERA5 appare come input dinamico a un modello: **è un bug**.
 
 - **Open-Meteo Forecast + Historical Forecast API** — 4 modelli NWP: ECMWF IFS, ICON-EU, AROME France, ICON-2I (2.2km, assimila osservazioni italiane). `ecmwf_aifs025` rimosso: restituisce null su tutte le variabili; GFS rimosso in v0.11.1; ICON-D2 rimosso.
 - **SIR Toscana** — storici osservativi validati. 34 stazioni: 21 operative, 13 upstream pluvio (ring features)
-- **ARPAT** — qualità aria (NO2, O3, CO, SO2 orari NRT; PM10, PM2.5, benzene giornalieri da bollettini)
 - **RainViewer** — radar precipitazioni (solo frontend, Sprint 7)
 
 ## Struttura repo
@@ -127,14 +126,14 @@ L'albero completo delle directory è in `README.md`. Mappa dei moduli (responsab
 - `storage.py` — DuckDBClient, upsert_*, backfill_prediction_obs
 - `fetchers.py` — CLI fetcher; la logica è nei moduli `fetch_*` per dominio:
   - `fetch_common.py` — costanti/helper HTTP condivisi · `fetch_sir.py` — SIR ·
-    `fetch_openmeteo.py` — Open-Meteo · `fetch_netatmo.py` — Netatmo · `fetch_arpat.py` — ARPAT
+    `fetch_openmeteo.py` — Open-Meteo · `fetch_netatmo.py` — Netatmo
 - `_paths.py` — path di default da env (DB_PATH, CONFIG_DIR, OUTPUT_DIR)
 - `weights.py` — pesi stazione→location, refresh_upstream_rings()
 - `features.py` — build_features_daily() → tabella features_daily
 - `models.py` — LightGBM quantile + CQR, train_all(), predict()
 - `indicators.py` — Decision Logic Engine, evaluate_all(), log_results()
 - `output.py` — build_signals(), compute_coverage_30d(), write_location_json()
-- `qc.py` — quality control osservazioni SIR + ARPAT (chiamato da ingest post-upsert)
+- `qc.py` — quality control osservazioni SIR (chiamato da ingest post-upsert)
 - `_logging.py` — setup_logging() (TTY pretty / cron JSON)
 - `netatmo_daily.py` — accumulo Netatmo realtime → daily (forward-looking storico)
 - `skill_history.py` — append_one(), dump_payload(), atomic_write_json() (usato da pipeline)
@@ -266,7 +265,7 @@ sia su successo sia su fallimento — è l'unico log machine-readable per evento
 Chiave formato `<sorgente>:<identificatore>`, senza suffissi `_batch`. Dove c'è `_log_scrape`,
 il `logger.info` discorsivo non ripete le stesse informazioni (es. conteggio righe già in `rows=`).
 
-**Scraper fragili (ARPAT)**: `try/except` con `tenacity` exponential backoff (3 tentativi,
+**Scraper fragili**: `try/except` con `tenacity` exponential backoff (3 tentativi,
 delay 60s/300s/600s); ping Healthchecks.io a fine run riuscito; se fallisce dopo tutti i
 retry: log ERROR, ping fail, non crashare — il prossimo cron riprova.
 

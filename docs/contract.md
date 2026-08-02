@@ -31,13 +31,9 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
                           "precip_mm": "realtime"|"nwp"|null,
                           "wind_speed_ms": "realtime"|"nwp"|null,
                           "wind_dir_deg": "realtime"|"nwp"|null,
-                          "pressure_hpa": "realtime"|"nwp"|null,
-                          "weather_code": "realtime"|"nwp"|null}},
-  "air_quality": {"pm10_ugm3": float | null, "pm25_ugm3": float | null,
-                  "no2_ugm3": float | null, "o3_ugm3": float | null,
-                  "co_mgm3": float | null, "benzene_ugm3": float | null,
-                  "so2_ugm3": float | null},
-  "nwp_models_hourly": [{"source": str, "label": str, "data": [{...}]}],
+                           "pressure_hpa": "realtime"|"nwp"|null,
+                           "weather_code": "realtime"|"nwp"|null}},
+   "nwp_models_hourly": [{"source": str, "label": str, "data": [{...}]}],
   "days": [
     {
       "target_date": "2026-05-19",
@@ -77,7 +73,7 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 - `coverage_empirical_30d`: rolling 30 giorni predictions vs obs. `null` se < 10 campioni → dashboard mostra "calibrazione in corso".
 - `generated_at` è il timestamp UTC ISO di generazione della pipeline: è lo stesso valore di `updates.pipeline_at` (compatibili e uguali).
 - `updates`: metadata temporale di scrittura del file — `pipeline_at` = completamento dell'ultima pipeline (== `generated_at`), `realtime_at` = completamento dell'ultimo patch realtime del JSON (`guazza-ingest realtime`). `realtime_at` è il momento del refresh, NON il timestamp dell'osservazione: quelli sono `current.ts_sir`/`current.ts_netatmo`. JSON legacy senza `updates` vengono normalizzati a `{"pipeline_at": null, "realtime_at": <refresh>}` al primo refresh.
-- `current` e `air_quality` sono `null` se non ci sono osservazioni recenti (rispettivamente realtime meteo e ARPAT).
+- `current` è `null` se non ci sono osservazioni recenti.
 - `current.ts` è il timestamp più recente del blend (UTC, suffisso `Z`); `ts_sir` è il MIN tra le stazioni SIR (freshness onesta del dato osservativo), `ts_netatmo` il MAX dei moduli Netatmo. Entrambi `null` se la sorgente non contribuisce (es. fallback NWP, o location senza SIR realtime).
 - `current.sources`: provenance per-variabile dei valori raw in `current` — `"realtime"` se la singola variabile viene dal blend SIR/Netatmo, `"nwp"` se è stata ripiegata sul forecast NWP (fallback per-variabile, fix P3), `null` se il valore è assente. `pressure_hpa` e `weather_code` sono sempre `"nwp"` quando valorizzati (oggi arrivano solo da forecasts). `dewpoint_c`/`feels_like_c` sono derivati e non hanno marker.
 - `current.wind_speed_source`: alias retrocompatibile di `sources["wind_speed_ms"]` — provenienza della velocità del vento mostrata: `"realtime"` se da osservazioni SIR/Netatmo realtime, `"nwp"` se ripiegata sul forecast NWP (fix P3: obs valide ma senza anemometro o dato realtime non arrivato), `null` se il vento manca del tutto. Il frontend usa il valore per segnalare visivamente i dati non osservativi.
