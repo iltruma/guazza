@@ -8,6 +8,19 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.12.5] - 2026-08-01
+
+### Removed
+- **ICON-D2 rimosso dal setup NWP** (5 → 4 modelli: ECMWF IFS, ICON-EU,
+  AROME France, ARPAE ICON-2I), stesso playbook della rimozione GFS (v0.11.1).
+  Rimosso da `config/sources.yaml`, fetcher Open-Meteo (run hours, OM_MODELS,
+  multi-lead, chunk HR), pivot + ensemble mean/spread in `features.py`,
+  colonne wind/humidity e model switch in `output.py`, frontend
+  (`app.js`, `affidabilita.js`), contract JSON. Le righe
+  `open_meteo_icon_d2` già in `forecasts` restano nel DB.
+  **Richiede retrain**: le feature `icond2_*` escono da `FEATURE_COLS`,
+  i modelli LightGBM salvati non sono più compatibili.
+
 ## [0.12.0] - 2026-07-20
 
 Refactoring architetturale della pipeline e dei job CLI, post-v0.11.2.

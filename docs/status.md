@@ -1,13 +1,13 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-07-31 (v0.12.0)
+> Aggiornato: 2026-08-01 (v0.12.5)
 > Storico sprint → `CHANGELOG.md`
 
 ## Stato
 
 | | |
 |---|---|
-| Versione | **0.12.0** |
+| Versione | **0.12.5** |
 | Test | 337 verdi (suite completa; `test_models.py` ~3min per LightGBM training) |
 | Lint / mypy | ✅ puliti |
 | Deploy | **Sprint 8 completato** (v0.12.2) — k3s astra/nebula, namespace `guazza`, Flux + SOPS |
@@ -19,7 +19,7 @@
 | Pipeline 6h | `guazza-pipeline` — forecasts → features → predict+DLE+JSON → skill-history → monitor |
 | Ingest | `guazza-ingest historical/daily/realtime` (SIR + Open-Meteo + Netatmo + ARPAT) |
 | Modello | LightGBM quantile + CQR + ACI (AdaptiveConformalizer, Gibbs & Candès 2021) |
-| NWP | 5 modelli: ECMWF IFS, ICON-EU, ICON-D2, AROME France, ICON-2I |
+| NWP | 4 modelli: ECMWF IFS, ICON-EU, AROME France, ICON-2I |
 | Location | 6: casa_campi, lavoro_cosimo, lavoro_madda, casa_cesto, casa_nicco, casa_cercina |
 | Frontend | `index.html` + `affidabilita.html` — CSS custom, Chart.js, Leaflet, RainViewer |
 | Schema DB | `schema.sql` unico source of truth (13 tabelle + vista `obs_weighted_daily`) |
@@ -96,14 +96,14 @@ Non è un indicatore DLE di per sé, ma abilita derivati futuri (scottatura, esp
 ### P10 — Temporale nei prossimi 30-60 min (nowcast Blitzortung)
 
 **Decisione**: Blitzortung (fulmini real-time free) come fonte scelta per il nowcast
-"temporale in arrivo". Mantiene l'architettura attuale (5 NWP Open-Meteo + obs SIR/Netatmo
+"temporale in arrivo". Mantiene l'architettura attuale (4 NWP Open-Meteo + obs SIR/Netatmo
 + ML LightGBM) intatta per forecast e realtime; Blitzortung aggiunge solo il segnale
 anticipatorio mancante (precursore canonico del temporale, 30-60 min prima della cella).
 
 **Alternative scartate e perché**:
 - **Parsing tile PNG di RainViewer**: fragile, bandwidth, complessità
 - **Tomorrow.io Free Plan**: vendor lock-in, validazione NASA limitata a CONUS, incoerente
-  con l'architettura "5 NWP + obs + ML" (sostituirebbe il modello proprietario interno).
+  con l'architettura "4 NWP + obs + ML" (sostituirebbe il modello proprietario interno).
   Resta opzione per usi non-core futuri (P3 fallback vento, campo AQ)
 - **Heuristic realtime** (∆p Netatmo, salto vento SIR, spike RH): orizzonte 0-15 min,
   troppo tardi per "30-60 min"
@@ -124,7 +124,7 @@ accettabile libera. Se il caso d'uso si amplia, riaprire la discussione.
 ### P11 — Allerte meteo Protezione Civile (da allertameteo.app)
 
 - **Decisione**: allertameteo.app (community, free, no key) come fonte scelta per le allerte
-  meteo ufficiali. Mantiene l'architettura "5 NWP + obs + ML" intatta; aggiunge solo
+  meteo ufficiali. Mantiene l'architettura "4 NWP + obs + ML" intatta; aggiunge solo
   il segnale "allerta" che non esiste oggi nel prodotto
 - **Cosa fornisce**: allerte per oggi e domani su 4 livelli (verde/giallo/arancione/rosso),
   per 3 tipologie di rischio: idraulico, temporali, idrogeologico
