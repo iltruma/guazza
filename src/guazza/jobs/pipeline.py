@@ -83,14 +83,8 @@ def _fetch_obs_summary(db: DuckDBClient, location_id: str) -> dict[str, float | 
         WHERE location_id = ? AND level_m IS NOT NULL
         ORDER BY ts DESC LIMIT 1
     """, [location_id]).fetchone()
-    pm10_row = db.execute("""
-        SELECT pm10_ugm3 FROM observations
-        WHERE location_id = ? AND pm10_ugm3 IS NOT NULL
-        ORDER BY ts DESC LIMIT 1
-    """, [location_id]).fetchone()
     return {
-        "level_sir":      level_row[0] if level_row else None,
-        "pm10_predicted": pm10_row[0] if pm10_row else None,
+        "level_sir": level_row[0] if level_row else None,
     }
 
 

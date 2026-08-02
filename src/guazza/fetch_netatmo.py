@@ -165,7 +165,7 @@ def _measure_ts(measures: dict[str, Any]) -> datetime:
 
     L'epoch Netatmo è UTC. Restituirlo aware lo farebbe convertire in locale
     all'insert DuckDB (session TZ Europe/Rome → +2h in estate); lo strippiamo a
-    naive UTC come SIR/ARPAT.
+    naive UTC come SIR.
     """
     for mdata in measures.values():
         for ts_str in mdata.get("res", {}):
@@ -366,10 +366,6 @@ def save_netatmo_to_db(
             None,  # wind_gust_ms
             None,  # pressure_hpa
             None,  # level_m
-            None,  # pm10
-            None,  # pm25
-            None,  # no2
-            None,  # o3
             sd.weight,
             sd.qc_pass,
         ])
@@ -379,7 +375,7 @@ def save_netatmo_to_db(
             "source", "station_id", "location_id", "ts", "granularity",
             "temp_c", "tmin_c", "tmax_c", "humidity_pct", "precip_mm", "precip_interval_h",
             "wind_speed_ms", "wind_dir_deg", "wind_gust_ms", "pressure_hpa", "level_m",
-            "pm10_ugm3", "pm25_ugm3", "no2_ugm3", "o3_ugm3", "weight", "qc_pass",
+            "weight", "qc_pass",
         ]
         df_obs = pd.DataFrame(obs_rows, columns=_OBS_COLS)
         db.register_df("_stg_nmo", df_obs)
@@ -388,12 +384,11 @@ def save_netatmo_to_db(
                 (source, station_id, location_id, ts, granularity,
                  temp_c, tmin_c, tmax_c, humidity_pct, precip_mm, precip_interval_h,
                  wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa, level_m,
-                 pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3,
                  weight, qc_pass)
             SELECT source, station_id, location_id, ts, granularity,
                    temp_c, tmin_c, tmax_c, humidity_pct, precip_mm, precip_interval_h,
                    wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa, level_m,
-                   pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3, weight, qc_pass
+                   weight, qc_pass
             FROM _stg_nmo
             ON CONFLICT (source, station_id, ts, granularity) DO UPDATE SET
                 location_id       = excluded.location_id,

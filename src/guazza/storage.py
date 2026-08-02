@@ -400,7 +400,7 @@ class DuckDBClient:
         return len(records)
 
     def upsert_sir_observations(self, records: list[dict[str, Any]]) -> int:
-        """UPSERT wide per osservazioni SIR/ARPAT/Netatmo storiche.
+        """UPSERT wide per osservazioni SIR/Netatmo storiche.
 
         Ogni record è parziale (solo le colonne del sensore scaricato).
         Usa staging table + UPDATE/INSERT per performance bulk:
@@ -425,8 +425,6 @@ class DuckDBClient:
             "precip_mm", "precip_interval_h", "precip_cumday_mm",
             "wind_speed_ms", "wind_dir_deg", "wind_gust_ms",
             "pressure_hpa", "level_m",
-            "pm10_ugm3", "pm25_ugm3", "no2_ugm3", "o3_ugm3",
-            "co_mgm3", "benzene_ugm3", "so2_ugm3",
             "weight", "qc_pass",
         ]
 
@@ -459,13 +457,6 @@ class DuckDBClient:
                 rec.get("wind_gust_ms"),
                 rec.get("pressure_hpa"),
                 rec.get("level_m"),
-                rec.get("pm10_ugm3"),
-                rec.get("pm25_ugm3"),
-                rec.get("no2_ugm3"),
-                rec.get("o3_ugm3"),
-                rec.get("co_mgm3"),
-                rec.get("benzene_ugm3"),
-                rec.get("so2_ugm3"),
                 rec.get("weight"),
                 rec.get("qc_pass"),
             ])
@@ -493,8 +484,6 @@ class DuckDBClient:
             "precip_mm", "precip_interval_h", "precip_cumday_mm",
             "wind_speed_ms", "wind_dir_deg", "wind_gust_ms",
             "pressure_hpa", "level_m",
-            "pm10_ugm3", "pm25_ugm3", "no2_ugm3", "o3_ugm3",
-            "co_mgm3", "benzene_ugm3", "so2_ugm3",
             "weight", "qc_pass",
         ]
         df = pd.DataFrame(rows, columns=_OBS_STAGING_COLS)
@@ -525,16 +514,12 @@ class DuckDBClient:
                  humidity_pct, precip_mm, precip_interval_h, precip_cumday_mm,
                  wind_speed_ms, wind_dir_deg, wind_gust_ms,
                  pressure_hpa, level_m,
-                 pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3,
-                 co_mgm3, benzene_ugm3, so2_ugm3,
                  weight, qc_pass)
             SELECT s.source, s.station_id, s.location_id, s.ts, s.granularity,
                    s.tmax_c, s.tmin_c, s.temp_c,
                    s.humidity_pct, s.precip_mm, s.precip_interval_h, s.precip_cumday_mm,
                    s.wind_speed_ms, s.wind_dir_deg, s.wind_gust_ms,
                    s.pressure_hpa, s.level_m,
-                   s.pm10_ugm3, s.pm25_ugm3, s.no2_ugm3, s.o3_ugm3,
-                   s.co_mgm3, s.benzene_ugm3, s.so2_ugm3,
                    s.weight, s.qc_pass
             FROM _staging_obs s
             WHERE NOT EXISTS (

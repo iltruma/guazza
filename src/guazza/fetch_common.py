@@ -1,8 +1,7 @@
-"""Costanti e helper HTTP condivisi dai fetcher (fetch_sir, fetch_openmeteo, fetch_netatmo, fetch_arpat)."""
+"""Costanti e helper HTTP condivisi dai fetcher (fetch_sir, fetch_openmeteo, fetch_netatmo)."""
 
 from __future__ import annotations
 
-import zoneinfo
 from datetime import timedelta, timezone
 
 import httpx
@@ -17,8 +16,6 @@ UA = (
 # Timezone helpers — tutte le osservazioni nel DB sono UTC naive.
 # SIR pubblica sempre CET (UTC+1 fisso, non cambia con l'ora legale)
 CET = timezone(timedelta(hours=1))
-# ARPAT pubblica ora locale italiana (CET in inverno, CEST in estate)
-ITALY_TZ = zoneinfo.ZoneInfo("Europe/Rome")
 
 
 def is_retryable_http(exc: BaseException) -> bool:

@@ -11,7 +11,7 @@ SignalBag contract (chiavi riconosciute dal DLE):
   Temperatura     — P(Tmin < 2.0°C), P(Tmin < 0.0°C), Tmin_p10, T2m_p50
   Vento NWP       — P(wind > 40kmh), P(wind < 5kmh)
   Umidità NWP     — P(RH > 80%), P(RH > 95% AND wind < 3kmh)
-  Real-time obs   — level_sir, pm10_predicted
+   Real-time obs   — level_sir
 """
 
 from __future__ import annotations
@@ -201,7 +201,7 @@ def build_signals(
     Args:
         pred:        output di models.predict() — {target: {quantile_key: float}}
         row:         riga di features_daily come pandas Series (contiene colonne NWP)
-        obs_summary: valori real-time: level_sir, pm10_predicted (entrambi opzionali)
+        obs_summary: valori real-time: level_sir (opzionale)
     """
     obs = obs_summary or {}
     precip_q = pred.get("precip_mm", {})
@@ -245,7 +245,6 @@ def build_signals(
 
         # Real-time obs (opzionali — None se non disponibili)
         "level_sir":      obs.get("level_sir"),
-        "pm10_predicted": obs.get("pm10_predicted"),
     }
 
 
@@ -342,69 +341,6 @@ def compute_coverage_30d(
         "tmax_ci90":   _cov("tmax_ci90_lo",   "tmax_ci90_hi",   "tmax_obs"),
         "precip_ci80": _cov("precip_ci80_lo", "precip_ci80_hi", "precip_obs"),
         "precip_ci90": _cov("precip_ci90_lo", "precip_ci90_hi", "precip_obs"),
-    }
-
-
-def get_current_air_quality(
-    db: DuckDBClient,
-    location_id: str,
-) -> dict[str, float | None] | None:
-    """Ultimi valori qualità aria ARPAT NRT per una location (finestra 6h, solo orario).
-
-    Finestra 6h invece di 3h: ARPAT pubblica con 2-3h di ritardo sull'ora corrente.
-    Con il cron ogni 30min, senza margine sufficiente i valori sparirebbero tra un fetch
-    e il successivo aggiornamento ARPAT.
-
-    Le stazioni sono risolte via JOIN su station_weights (source='arpat'), non su
-    observations.location_id: la PK observations non include location_id, quindi una
-    stazione condivisa tra location porta un solo tag arbitrario. Media pesata per
-    stazione (peso dal config), stessa logica del blend SIR. Richiede station_weights
-    popolata da `weights refresh`.
-
-    Returns:
-        {pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3, co_mgm3, benzene_ugm3, so2_ugm3}
-        oppure None se nessun dato nella finestra.
-    """
-    row = db.execute("""
-        WITH aq AS (
-            SELECT o.pm10_ugm3, o.pm25_ugm3, o.no2_ugm3, o.o3_ugm3,
-                   o.co_mgm3, o.benzene_ugm3, o.so2_ugm3, sw.weight AS w
-            FROM observations o
-            JOIN station_weights sw
-              ON o.station_id = sw.station_id AND sw.source = 'arpat'
-            WHERE sw.location_id = ?
-              AND o.source = 'arpat'
-              AND (
-                  (o.granularity = 'hourly' AND o.ts >= CURRENT_TIMESTAMP - INTERVAL 6 HOURS)
-               OR (o.granularity = 'daily'  AND o.ts >= CURRENT_TIMESTAMP - INTERVAL 3 DAYS)
-              )
-            QUALIFY ROW_NUMBER() OVER (
-                PARTITION BY o.station_id, o.granularity ORDER BY o.ts DESC
-            ) = 1
-        )
-        SELECT
-            ROUND(SUM(pm10_ugm3 * w)    / NULLIF(SUM(CASE WHEN pm10_ugm3    IS NOT NULL THEN w ELSE 0 END), 0), 1) AS pm10_ugm3,
-            ROUND(SUM(pm25_ugm3 * w)    / NULLIF(SUM(CASE WHEN pm25_ugm3    IS NOT NULL THEN w ELSE 0 END), 0), 1) AS pm25_ugm3,
-            ROUND(SUM(no2_ugm3 * w)     / NULLIF(SUM(CASE WHEN no2_ugm3     IS NOT NULL THEN w ELSE 0 END), 0), 1) AS no2_ugm3,
-            ROUND(SUM(o3_ugm3 * w)      / NULLIF(SUM(CASE WHEN o3_ugm3      IS NOT NULL THEN w ELSE 0 END), 0), 1) AS o3_ugm3,
-            ROUND(SUM(co_mgm3 * w)      / NULLIF(SUM(CASE WHEN co_mgm3      IS NOT NULL THEN w ELSE 0 END), 0), 2) AS co_mgm3,
-            ROUND(SUM(benzene_ugm3 * w) / NULLIF(SUM(CASE WHEN benzene_ugm3 IS NOT NULL THEN w ELSE 0 END), 0), 2) AS benzene_ugm3,
-            ROUND(SUM(so2_ugm3 * w)     / NULLIF(SUM(CASE WHEN so2_ugm3     IS NOT NULL THEN w ELSE 0 END), 0), 1) AS so2_ugm3
-        FROM aq
-    """, [location_id]).fetchone()
-
-    if row is None or all(v is None for v in row):
-        return None
-
-    pm10, pm25, no2, o3, co, benzene, so2 = row
-    return {
-        "pm10_ugm3":     float(pm10)    if pm10    is not None else None,
-        "pm25_ugm3":     float(pm25)    if pm25    is not None else None,
-        "no2_ugm3":      float(no2)     if no2     is not None else None,
-        "o3_ugm3":       float(o3)      if o3      is not None else None,
-        "co_mgm3":       float(co)      if co      is not None else None,
-        "benzene_ugm3":  float(benzene) if benzene is not None else None,
-        "so2_ugm3":      float(so2)     if so2     is not None else None,
     }
 
 
@@ -967,11 +903,11 @@ def write_location_json(
               {target_date: str, lead_time_h: int,
                pred: {target: {quantile: float}},
                indicators: list[IndicatorResult]}
-        db:   se fornito, aggiunge current, air_quality, nwp_models_hourly al payload
+        db:   se fornito, aggiunge current, nwp_models_hourly al payload
 
     Struttura JSON:
       {location_id, generated_at, updates, coverage_empirical_30d,
-       current?, air_quality?, nwp_models_hourly?,
+       current?, nwp_models_hourly?,
        days: [{target_date, lead_time_h, forecasts, indicators, hourly}, ...]}
 
     `updates.pipeline_at` è lo stesso timestamp di `generated_at`; se il JSON
@@ -1047,7 +983,6 @@ def write_location_json(
     if db is not None:
         payload["current"]            = get_current_conditions(db, location_id)
         payload["nwp_models_hourly"]  = get_nwp_models_hourly(db, location_id)
-        payload["air_quality"]        = get_current_air_quality(db, location_id)
     payload["days"] = day_payloads
 
     # Scrittura atomica: nginx serve questi file mentre il cron li riscrive —
@@ -1069,12 +1004,11 @@ def refresh_realtime_json(
     location_id: str,
     output_dir: Path,
 ) -> Path | None:
-    """Aggiorna `current` e `air_quality` nel JSON esistente di una location.
+    """Aggiorna `current` nel JSON esistente di una location.
 
     Chiamato da `guazza-ingest realtime` dopo le scritture in DuckDB: ricalcola
-    le condizioni attuali e la qualità aria con `get_current_conditions` e
-    `get_current_air_quality` (le stesse funzioni usate dalla pipeline) e
-    sostituisce i soli campi top-level `current` e `air_quality` del JSON già
+    le condizioni attuali con `get_current_conditions` (la stessa funzione usata
+    dalla pipeline) e sostituisce il solo campo top-level `current` del JSON già
     prodotto, impostando `updates.realtime_at` al completamento del patch
     (preservando `updates.pipeline_at`). Tutti gli altri campi — location_id,
     generated_at, coverage_empirical_30d, days, nwp_models_hourly — restano
@@ -1094,12 +1028,10 @@ def refresh_realtime_json(
         logger.info(f"[{location_id}] JSON non ancora generato dalla pipeline — skip refresh realtime")
         return None
 
-    current     = get_current_conditions(db, location_id)
-    air_quality = get_current_air_quality(db, location_id)
+    current = get_current_conditions(db, location_id)
 
     payload = json.loads(path.read_text())
-    payload["current"]     = current
-    payload["air_quality"] = air_quality
+    payload["current"] = current
 
     # Metadata temporale: pipeline_at resta quello scritto dalla pipeline,
     # realtime_at è il completamento di questo patch. JSON legacy senza

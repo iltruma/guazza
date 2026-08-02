@@ -4,7 +4,6 @@ La logica vive nei moduli di dominio:
   - guazza.fetch_sir       — SIR Toscana (storico CSV, realtime JSON, bulk)
   - guazza.fetch_openmeteo — Open-Meteo (forecast live, historical, multi-lead)
   - guazza.fetch_netatmo   — Netatmo realtime + QC
-  - guazza.fetch_arpat     — ARPAT qualità aria (NRT + bollettino)
   - guazza.fetch_common    — costanti e helper HTTP condivisi
 
 CLI:

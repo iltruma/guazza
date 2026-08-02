@@ -4,7 +4,7 @@ Tre comandi:
 
   historical  — one-shot: backfill completo SIR CSV + Open-Meteo historical + multilead (2022→oggi)
   daily       — cron 1×/giorno: delta di ieri (SIR CSV + OM historical lead=0 + OM multilead + Netatmo daily)
-  realtime    — cron ogni 15-30 min: SIR actions.php + Netatmo + ARPAT + refresh JSON location
+  realtime    — cron ogni 15-30 min: SIR actions.php + Netatmo + refresh JSON location
 
 I forecast NWP live e la pipeline ML sono in `guazza-pipeline`.
 
@@ -32,10 +32,6 @@ from loguru import logger
 from tqdm import tqdm
 
 from guazza._logging import log_scrape, setup_logging
-from guazza.fetch_arpat import (
-    fetch_arpat_all_locations,
-    fetch_arpat_bollettino_all_locations,
-)
 from guazza.fetch_netatmo import fetch_netatmo_all_locations
 from guazza.fetch_openmeteo import (
     OM_MODELS,
@@ -248,8 +244,6 @@ def cmd_historical(
 
     Da eseguire una volta sola per caricare lo storico di training completo.
     Non schedulare come cron — usa 'daily' per il delta incrementale.
-    La qualità aria (ARPAT NRT) non ha storico scaricabile — usa 'realtime'.
-
     Esempi:
         # Solo Open-Meteo per una location
         historical --only-openmeteo --location casa_campi
@@ -467,9 +461,9 @@ def cmd_realtime(
 ) -> None:
     """Letture istantanee: SIR actions.php + Netatmo per tutte le location.
 
-    Dopo le scritture realtime, aggiorna `current` e `air_quality` dei JSON
-    location esistenti (OUTPUT_DIR) senza rifare forecast/features/predict:
-    la pipeline li genera, questo job li mantiene freschi tra un run e l'altro.
+    Dopo le scritture realtime, aggiorna `current` dei JSON location esistenti
+    (OUTPUT_DIR) senza rifare forecast/features/predict: la pipeline li genera,
+    questo job li mantiene freschi tra un run e l'altro.
 
     Schedulare ogni 15-30 minuti.
     SIR ha granularità ~15 min; Netatmo aggiorna ogni 10 min circa.
@@ -483,7 +477,6 @@ def cmd_realtime(
     with job_run("job_realtime") as stats:
         sir_total = 0
         netatmo_total = 0
-        aq_total = 0
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
 
@@ -518,32 +511,20 @@ def cmd_realtime(
             netatmo_total = sum(len(v) for v in netatmo_results.values())
             logger.info(f"realtime Netatmo: {netatmo_total} stazioni totali")
 
-            # 3. ARPAT NRT — qualità aria oraria per tutte le location
-            aq_results = fetch_arpat_all_locations(locations)
-            for records in aq_results.values():
-                if records:
-                    aq_total += db.upsert_sir_observations(records)
-
-            # 4. ARPAT bollettino — PM10/PM2.5 giornaliero (latenza ~2gg, unico endpoint regionale)
-            boll_records = fetch_arpat_bollettino_all_locations(locations)
-            if boll_records:
-                aq_total += db.upsert_sir_observations(boll_records)
-            logger.info(f"realtime ARPAT: {aq_total} record ({len(boll_records)} bollettino PM10/PM2.5)")
-
             qc = compute_quality_flags(db)
             logger.info(f"realtime QC: {qc['total']} flag")
 
-            # 5. Refresh JSON location: aggiorna current/air_quality con le
-            #    osservazioni appena scritte (stessa connessione), senza rifare
-            #    la pipeline. I JSON senza file (mai generati) vengono saltati.
+            # 3. Refresh JSON location: aggiorna `current` con le osservazioni
+            #    appena scritte (stessa connessione), senza rifare la pipeline.
+            #    I JSON senza file (mai generati) vengono saltati.
             n_refreshed = 0
             for location_id in locations:
                 if refresh_realtime_json(db, location_id, output_dir) is not None:
                     n_refreshed += 1
             logger.info(f"realtime JSON refresh: {n_refreshed}/{len(locations)} location aggiornate")
 
-        stats.rows = sir_total + netatmo_total + aq_total
-        stats.summary = f"SIR:{sir_total} Netatmo:{netatmo_total} ARPAT:{aq_total} JSON:{n_refreshed}"
+        stats.rows = sir_total + netatmo_total
+        stats.summary = f"SIR:{sir_total} Netatmo:{netatmo_total} JSON:{n_refreshed}"
 
 
 if __name__ == "__main__":

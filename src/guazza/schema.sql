@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS locations (
     lon             DOUBLE  NOT NULL,
     elevation_m     INTEGER,
     sir_station_id  VARCHAR,
-    arpat_station_id VARCHAR,
     metadata        JSON
 );
 
@@ -39,13 +38,6 @@ CREATE TABLE IF NOT EXISTS observations (
     wind_gust_ms    DOUBLE,
     pressure_hpa    DOUBLE,
     level_m         DOUBLE,
-    pm10_ugm3       DOUBLE,
-    pm25_ugm3       DOUBLE,
-    no2_ugm3        DOUBLE,
-    o3_ugm3         DOUBLE,
-    co_mgm3         DOUBLE,   -- CO in mg/m³ (unità diversa dagli altri)
-    benzene_ugm3    DOUBLE,
-    so2_ugm3        DOUBLE,
     weight          DOUBLE,
     qc_pass         BOOLEAN,
     last_modified   TIMESTAMP DEFAULT current_timestamp,
