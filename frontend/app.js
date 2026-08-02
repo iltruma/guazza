@@ -34,18 +34,6 @@ const MODEL_DESC = {
   open_meteo_italia_meteo_arpae_icon_2i:   'ICON-2I: ItaliaMeteo/ARPAE, 2.2 km, assimila osservazioni italiane',
 };
 
-// Soglie qualità aria — mapping verde/giallo/rosso vs fasce ARPAT.
-// [lo, hi]: value<lo→verde, lo≤value<hi→giallo, value≥hi→rosso.
-const AQ_THRESHOLDS = {
-  pm10:    [20, 40],
-  pm25:    [10, 20],
-  no2:     [80, 160],
-  o3:      [72, 144],
-  co:      [4,  8],
-  benzene: [2,  4],
-  so2:     [140, 280],
-};
-
 const PLAY_SVG  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="6,3 20,12 6,21"/></svg>';
 const PAUSE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
 
@@ -238,14 +226,6 @@ function fmtTsRome(iso) {
   if (tsDate === nowDate) return time;
   const dateLabel = d.toLocaleDateString('it-IT', { timeZone: tz, day: 'numeric', month: 'short' });
   return `${dateLabel} ${time}`;
-}
-
-function aqVerdictForValue(key, value) {
-  if (value == null) return null;
-  const [lo, hi] = AQ_THRESHOLDS[key] ?? [0, Infinity];
-  if (value < lo) return 'verde';
-  if (value < hi) return 'giallo';
-  return 'rosso';
 }
 
 // ── Indicator tooltip ─────────────────────────────────────────────────────────
@@ -563,37 +543,6 @@ function renderHeroIndicators(todayDay) {
 
   _wireChipTooltip(el, '[data-hero-chip]');
   twemoji.parse(el, TWEMOJI_OPTS);
-}
-
-// ── AQ (targets #aq-section / #aq-grid) ──────────────────────────────────────
-
-function renderAQ(aq) {
-  const section = document.getElementById('aq-section');
-  const grid    = document.getElementById('aq-grid');
-  if (!section || !grid) return;
-
-  const items = [
-    { key: 'pm10',    label: 'PM10',  value: aq?.pm10_ugm3    ?? null, unit: 'µg/m³', dec: 0 },
-    { key: 'pm25',    label: 'PM2.5', value: aq?.pm25_ugm3    ?? null, unit: 'µg/m³', dec: 0 },
-    { key: 'no2',     label: 'NO₂',   value: aq?.no2_ugm3     ?? null, unit: 'µg/m³', dec: 0 },
-    { key: 'o3',      label: 'O₃',    value: aq?.o3_ugm3      ?? null, unit: 'µg/m³', dec: 0 },
-    { key: 'co',      label: 'CO',    value: aq?.co_mgm3      ?? null, unit: 'mg/m³', dec: 1 },
-    { key: 'benzene', label: 'C₆H₆', value: aq?.benzene_ugm3 ?? null, unit: 'µg/m³', dec: 1 },
-    { key: 'so2',     label: 'SO₂',   value: aq?.so2_ugm3     ?? null, unit: 'µg/m³', dec: 0 },
-  ];
-
-  grid.innerHTML = items.map(it => {
-    const display = it.value != null ? it.value.toFixed(it.dec) : '—';
-    const verdict = aqVerdictForValue(it.key, it.value);
-    const valCls  = verdict ? `g-aq-cell__val--${verdict}` : 'g-aq-cell__val--null';
-    return `<div class="g-aq-cell">
-      <span class="g-aq-cell__label">${it.label}</span>
-      <span class="g-aq-cell__val ${valCls}">${display}</span>
-      <span class="g-aq-cell__unit">${it.unit}</span>
-    </div>`;
-  }).join('');
-  section.classList.remove('hidden');
-  section.style.removeProperty('display');
 }
 
 // ── Sun/moon (targets #hero-sun inside coverage bar) ─────────────────────────
@@ -1828,7 +1777,6 @@ function render(data) {
 
   renderHeaderMeta(data);
   renderHero(data);
-  renderAQ(data.air_quality);
 
   if (data.days.length > 0) {
     renderDayStrip(data.days, selectedDayIdx);
@@ -1861,7 +1809,7 @@ async function loadLocation(locId) {
 
   const fs = document.getElementById('forecast-section');
   if (fs) fs.classList.add('hidden');
-  ['hero-card','aq-section','chart-weekly-section','skill-section','coverage-bar','error-state'].forEach(hideEl);
+  ['hero-card','chart-weekly-section','skill-section','coverage-bar','error-state'].forEach(hideEl);
   showSkeleton();
 
   if (meteoChart)    { meteoChart.destroy();    meteoChart    = null; }
