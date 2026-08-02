@@ -27,14 +27,8 @@ locations:
       anemo:  [TOS01001225, TOS01001205, TOS01001215, TOS11000076]
       igro:   [TOS01001225, TOS01001205, TOS01001215, TOS11000076]
     sir_idro_id: TOS01004791    # S. Piero a Ponti (Bisenzio) — 1.8km
-    arpat_station_id: FI-SIGNA
-    arpat_stations:
-      - id: FI-SIGNA
-        weight: 1.0    # ~5km, suburbana | nrt: NO2, O3 | daily: NO2, O3, PM10
-    arpat_zone: "agglomerato_firenze"
     extras:
       - bisenzio_level    # → sir_idro_id TOS01004791 (S. Piero a Ponti, Bisenzio)
-      - aria_qualita
     notes: >
       Piana fluviale, nebbie invernali, isola di calore moderata.
       SIR: Case Passerini (TOS01001225) 3.1km ΔQ=-9m.
@@ -59,13 +53,6 @@ locations:
       # TOS03001097 (Orto Botanico) ESCLUSA: no anemometro
       igro:   [TOS01001215, TOS03001099, TOS01001225, TOS03001097]
     sir_idro_id: TOS01004731    # Ponte di Scandicci (Greve) — 2.0km
-    arpat_station_id: FI-SCANDICCI
-    arpat_stations:
-      - id: FI-SCANDICCI
-        weight: 1.0    # ~2km, stesso comune | nrt: NO2 | daily: NO2, PM10
-    arpat_zone: "agglomerato_firenze"
-    extras:
-      - aria_qualita
     notes: >
       Conca FI sud, isola di calore urbana, molto vicino a Firenze.
       SIR: S. Giusto (TOS01001215) 2.2km ΔQ=0m.
@@ -102,16 +89,6 @@ locations:
       anemo:  [TOS01001205, TOS01001269, TOS01001225]
       igro:   [TOS01001205, TOS01001269, TOS01001225]
     sir_idro_id: TOS01004782    # Prato (Bisenzio) — 1.2km
-    arpat_station_id: PO-ROMA
-    arpat_stations:
-      - id: PO-ROMA
-        weight: 0.7    # ~1km, traff. urbano  | nrt: BENZENE, NO2      | daily: BENZENE, NO2, PM10, PM2.5
-      - id: PO-FERRUCCI
-        weight: 0.3    # traff./industriale    | nrt: CO, NO2           | daily: CO, NO2, PM10, PM2.5
-    # Unione nrt: BENZENE, CO, NO2 | Unione daily: BENZENE, CO, NO2, PM10, PM2.5
-    arpat_zone: "zona_prato_pistoia"
-    extras:
-      - aria_qualita
     notes: >
       Conca pratese, brezza canalizzata lungo il Bisenzio.
       SIR: Prato Università (TOS01001205) 1.0km ΔQ=-3m.
@@ -140,16 +117,6 @@ locations:
       anemo:  [TOS11000516, TOS01004571]
       igro:   [TOS11000516, TOS01004571]
     sir_idro_id: TOS01004591    # Incisa Valle (Arno) — 11.1km (più vicina disponibile)
-    arpat_station_id: FI-FIGLINE
-    arpat_stations:
-      - id: FI-FIGLINE
-        weight: 0.8    # ~2km, urbana          | nrt: NO2              | daily: NO2, PM10
-      - id: AR-ENELSB-SANGIOVANNI
-        weight: 0.2    # ~8km, industriale ENEL| nrt: BENZENE, CO, NO2 | daily: BENZENE, CO, NO2, PM10, PM2.5
-    # Unione nrt: BENZENE, CO, NO2 | Unione daily: BENZENE, CO, NO2, PM10, PM2.5
-    arpat_zone: "zona_valdarno_aretino_valdichiana"
-    extras:
-      - aria_qualita
     notes: >
       Valdarno collinare, drenaggio aria fredda notturno significativo.
       SIR: Casa Rota (TOS11000516) 6.7km ΔQ=+40m — unica opzione SIR accettabile.
@@ -176,19 +143,6 @@ locations:
       anemo:  [TOS01001096, TOS01001215, TOS03001099, TOS01001225]
       # Orto Botanico esclusa: no anemometro
       igro:   [TOS03001097, TOS01001096, TOS01001215, TOS01001225]
-    arpat_station_id: FI-MOSSE
-    arpat_stations:
-      - id: FI-MOSSE
-        weight: 0.50
-      - id: FI-BOBOLI
-        weight: 0.30
-      - id: FI-GRAMSCI
-        weight: 0.15
-      - id: FI-LAVAGNINI
-        weight: 0.05
-    arpat_zone: "agglomerato_firenze"
-    extras:
-      - aria_qualita
     notes: >
       Firenze Novoli, pianura urbana 40m.
       SIR primaria: Firenze Università (TOS01001096) ~1km ΔQ+44m — più vicina, set sensori completo.
@@ -223,15 +177,6 @@ locations:
       # Firenze Univ 9.7km | Case Passerini 11.3km | Boboli 13.7km | Vaiano 13.7km
       igro:   [TOS11000503, TOS03001099]
       # Vaiano (quota) | Boboli (pianura alta) — umidità collina ≠ pianura
-    arpat_station_id: FI-MOSSE
-    arpat_stations:
-      - id: FI-MOSSE
-        weight: 0.6    # NW Firenze, urbana
-      - id: FI-LAVAGNINI
-        weight: 0.4    # N Firenze
-    arpat_zone: "agglomerato_firenze"
-    extras:
-      - aria_qualita
     notes: >
       Sesto Fiorentino, versante S di Monte Morello, 311m a mezza costa sul
       catino fiorentino. Microclima da thermal belt: nelle notti serene l'aria
@@ -239,7 +184,6 @@ locations:
       vedono. SIR termo: Vaiano (TOS11000503) 13.7km ΔQ+11m, unico target
       validato alla quota giusta (vedi nota sir_station_id). Pluvio/anemo su
       vicine di pianura (meno quota-sensibili). Nessuna idrometrica (collina).
-      Qualità aria approssimata dal catino urbano (FI-MOSSE/FI-LAVAGNINI).
 
 # ── Metadati globali ────────────────────────────────────────────────────────
 metadata:

@@ -14,7 +14,6 @@
 #   P(RH > X%)              = probabilità umidità relativa > X%
 #   P(Tmin < X°C)           = probabilità temperatura minima < X°C
 #   level_sir               = livello idrometrico attuale da SIR idrometria (solo casa_campi)
-#   pm10_predicted          = PM10 previsto da ARPAT + correzione ML
 
 indicators:
 

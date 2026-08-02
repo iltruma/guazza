@@ -98,27 +98,6 @@ sources:
       Endpoint scoperto via HAR (2026-05-13). Risposta HTML, parsing robusto con flag.
       Fetcher: src/guazza/fetchers.py
 
-  # ── Qualità aria ─────────────────────────────────────────────────────────
-
-  arpat:
-    label: "ARPAT OpenData NRT — qualità aria oraria (real-time)"
-    base_url: "https://opendata.arpat.toscana.it/temi-ambientali/aria/qualita-aria/dati_orari_real_time/json_orari_nrt"
-    endpoints:
-      last: "/{station_id}/last"
-    status: OK
-    auth: nessuna
-    format: JSON
-    update_freq: "oraria (pubblicazione con 2-3h di ritardo)"
-    variables: [pm10, pm25, no2, o3, co, so2, benzene]
-    notes: >
-      Sorgente attiva dal 2026-05-22 (v0.6.3) — sostituisce OpenAQ v3, a sua volta
-      adottato per ~2 giorni (v0.6.2) e poi ritirato per copertura incompleta (KI-017).
-      Endpoint pubblico senza auth. station_id da locations.yaml (arpat_stations) —
-      lista statica per location, nessuna discovery dinamica.
-      source nel DB: "arpat". CO nativo in mg/m³ (D.Lgs.155/2010), nessuna conversione.
-      Granularità: solo 'hourly' — niente bollettini giornalieri, nessun backfill storico
-      (AQ non è feature di training).
-
   # ── Radar precipitazioni (frontend only) ────────────────────────────────
 
   rainviewer:
