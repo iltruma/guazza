@@ -32,25 +32,6 @@
 Fino ad allora `apply_aci_correction` è un pass-through su CQR statico.
 Si risolve automaticamente dopo ~30 giorni di operatività. Nessuna azione richiesta.
 
-### P3 — ✅ Risolto (2026-08-02) — Vento in `current` quasi sempre null
-
-Fallback **per-variabile** in `get_current_conditions` (output.py): se il blend
-SIR/Netatmo ha osservazioni valide ma manca una variabile (es. vento, anemometro
-assente o dato realtime non arrivato), la singola variabile viene ripiegata sulla
-media NWP dell'ora più vicina a now, senza buttare le osservazioni valide. Nuovo
-oggetto `current.sources` con provenance per ogni valore mostrato
-(`"realtime"` | `"nwp"` | `null`; `pressure_hpa`/`weather_code` sempre `"nwp"`)
-documentato in `docs/contract.md`; `current.wind_speed_source` resta come alias
-retrocompatibile. Il frontend mostra un asterisco accanto a ogni valore della
-hero (temp, umidità, pioggia, pressione, vento) quando la fonte è il modello.
-Fix in `output.py` + `frontend/`, test in `tests/test_output.py`.
-
-Freshness: nuovi campi `updates.pipeline_at`/`updates.realtime_at` nei JSON
-location (preservati tra pipeline e patch realtime) e freshness bar nell'header
-del frontend — `SIR 12:45 · Netatmo 12:43` (timestamp del dato) e
-`Realtime 12:47 · previsioni 08:12` (timestamp dei job). I run dei modelli NWP
-restano nella tabella `g-nwp__table` come già avveniva.
-
 ### P4 — `affidabilita.html` come pagina dedicata
 
 Oggi la sezione "Quanto è affidabile" è embeddata nello SPA per-location.
