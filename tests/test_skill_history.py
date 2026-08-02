@@ -53,7 +53,7 @@ def test_collect_rows_creates_one_per_source_per_var() -> None:
             return self._rows
 
     class FakeCon:
-        def execute(self, sql: str):  # noqa: ARG002
+        def execute(self, sql: str) -> FakeResult:  # noqa: ARG002
             if "FROM obs_weighted_daily" in sql:
                 return FakeResult([("casa_campi", 10.0, 20.0, 1.0)])
             if "FROM predictions" in sql:
@@ -86,7 +86,7 @@ def test_collect_rows_skips_when_actual_missing() -> None:
     class FakeResult:
         def fetchall(self) -> list: return []
     class FakeCon:
-        def execute(self, sql: str):  # noqa: ARG002
+        def execute(self, sql: str) -> FakeResult:  # noqa: ARG002
             return FakeResult()
 
     rows = _collect_rows(FakeCon(), date(2026, 6, 27))
@@ -99,7 +99,7 @@ def test_collect_rows_skips_when_actual_has_null_var() -> None:
         def __init__(self, rows: list) -> None: self._rows = rows
         def fetchall(self) -> list: return self._rows
     class FakeCon:
-        def execute(self, sql: str):  # noqa: ARG002
+        def execute(self, sql: str) -> FakeResult:  # noqa: ARG002
             if "FROM obs_weighted_daily" in sql:
                 return FakeResult([("casa_campi", None, 20.0, 1.0)])
             if "FROM predictions" in sql:
@@ -121,7 +121,7 @@ def test_collect_rows_skips_nwp_missing_for_location() -> None:
         def __init__(self, rows: list) -> None: self._rows = rows
         def fetchall(self) -> list: return self._rows
     class FakeCon:
-        def execute(self, sql: str):  # noqa: ARG002
+        def execute(self, sql: str) -> FakeResult:  # noqa: ARG002
             if "FROM obs_weighted_daily" in sql:
                 return FakeResult([("casa_campi", 10.0, 20.0, 1.0)])
             if "FROM predictions" in sql:

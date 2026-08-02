@@ -12,7 +12,7 @@ from guazza.storage import DuckDBClient
 
 
 @pytest.fixture
-def db(tmp_path: Path) -> DuckDBClient:  # type: ignore[misc]
+def db(tmp_path: Path) -> DuckDBClient:
     client = DuckDBClient(db_path=tmp_path / "test.duckdb")
     with client:
         client.init_schema()

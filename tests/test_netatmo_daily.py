@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -26,15 +26,18 @@ def _rt(ts: datetime, temp_c: float, humidity_pct: float | None = None) -> dict[
 
 
 def _daily_rows(db: DuckDBClient) -> list[tuple[Any, ...]]:
-    return db.execute(
-        """
-        SELECT station_id, location_id, ts, tmin_c, tmax_c, humidity_pct,
-               precip_mm, precip_interval_h
-        FROM observations
-        WHERE source = 'netatmo' AND granularity = 'daily'
-        ORDER BY ts, station_id
-        """
-    ).fetchall()
+    return cast(
+        list[tuple[Any, ...]],
+        db.execute(
+            """
+            SELECT station_id, location_id, ts, tmin_c, tmax_c, humidity_pct,
+                   precip_mm, precip_interval_h
+            FROM observations
+            WHERE source = 'netatmo' AND granularity = 'daily'
+            ORDER BY ts, station_id
+            """
+        ).fetchall(),
+    )
 
 
 def test_aggregate_basic(tmp_db: Path) -> None:

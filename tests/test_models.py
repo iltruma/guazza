@@ -241,8 +241,10 @@ def test_apply_cqr_enforces_nested_ci() -> None:
 
     # Crea un bundle con 5 modelli finti (solo predict, niente LightGBM)
     class FakeModel:
-        def __init__(self, q): self.q = q
-        def predict(self, X): return [self.q]
+        def __init__(self, q: float) -> None:
+            self.q = q
+        def predict(self, X: object) -> list[float]:
+            return [self.q]
     bundle = ModelBundle(
         models={0.05: FakeModel(0.10), 0.10: FakeModel(0.20),
                 0.50: FakeModel(0.50), 0.90: FakeModel(0.90),
@@ -800,7 +802,7 @@ def test_aci_state_persists_via_duckdb(tmp_path: Path) -> None:
         assert state_other is None
 
 
-def test_load_artifacts_suggests_local_data_models(monkeypatch, tmp_path: Path) -> None:
+def test_load_artifacts_suggests_local_data_models(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Quando gli artefatti mancano al path di default e data/models esiste,
     l'errore suggerisce --model-dir data/models (UX fix dev locale)."""
     from guazza import models
@@ -817,13 +819,14 @@ def test_load_artifacts_suggests_local_data_models(monkeypatch, tmp_path: Path) 
         models.load_artifacts(fake_prod)
 
 
-def test_load_artifacts_no_hint_outside_default(monkeypatch, tmp_path: Path) -> None:
+def test_load_artifacts_no_hint_outside_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Il suggerimento '--model-dir data/models' appare solo se il path è il default."""
     from guazza import models
 
+    default = tmp_path / "prod"
     other = tmp_path / "custom"
     other.mkdir()
-    monkeypatch.setattr(models, "_DEFAULT_MODEL_DIR", other)
+    monkeypatch.setattr(models, "_DEFAULT_MODEL_DIR", default)
     with pytest.raises(FileNotFoundError) as excinfo:
         models.load_artifacts(other)
     # Nessun suggerimento quando il path non è il default di produzione.
