@@ -63,7 +63,6 @@ _MODEL_RUN_HOURS: dict[str, list[int]] = {
     "ecmwf_ifs":                    [0, 6, 12, 18],
     "ecmwf_ifs025":                 [0, 6, 12, 18],
     "icon_eu":                      [0, 3, 6, 9, 12, 15, 18, 21],
-    "icon_d2":                      [0, 3, 6, 9, 12, 15, 18, 21],
     "arome_france":                 [0, 3, 6, 9, 12, 15, 18, 21],
     "italia_meteo_arpae_icon_2i":   [0, 12],
     # fallback generico
@@ -74,7 +73,6 @@ _MODEL_RUN_HOURS: dict[str, list[int]] = {
 OM_MODELS: list[str] = [
     "ecmwf_ifs",
     "icon_eu",
-    "icon_d2",
     "arome_france",
     "italia_meteo_arpae_icon_2i",  # ItaliaMeteo/ARPAE, 2.2km Italia, 72h, dati assimilati italiani
 ]
@@ -326,7 +324,7 @@ def _fetch_one_model_historical(
 
 # Chunk temporali per evitare timeout lato server: modelli convettivi ad alta
 # risoluzione usano finestre più corte (90gg), gli altri 180gg.
-_HIGH_RES_MODELS = {"icon_d2", "arome_france", "italia_meteo_arpae_icon_2i"}
+_HIGH_RES_MODELS = {"arome_france", "italia_meteo_arpae_icon_2i"}
 _DEFAULT_CHUNK_DAYS = 180
 _HIGH_RES_CHUNK_DAYS = 90
 
@@ -424,7 +422,6 @@ def fetch_openmeteo_historical_batch(
 _OM_PREVIOUS_DAY_MAX: dict[str, int] = {
     "ecmwf_ifs":                  7,
     "icon_eu":                    4,
-    "icon_d2":                    1,
     "arome_france":               1,
     "italia_meteo_arpae_icon_2i": 2,
 }

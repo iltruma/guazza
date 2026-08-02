@@ -16,7 +16,6 @@ sources:
       - ecmwf_ifs
       - icon_eu
       - arome_france              # copertura storica limitata, vedi known_issues KI003
-      - icon_d2                   # DWD, 2.2km Italia, ogni 3h
       - italia_meteo_arpae_icon_2i  # ItaliaMeteo/ARPAE, 2.2km Italia, ogni 12h, 72h horizon
     variables:
       - temperature_2m

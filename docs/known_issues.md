@@ -517,7 +517,7 @@ risposta API live con i record attuali nel DB.
 - Il backtest grafico (`affidabilita.html` sezione "Come ha performato") non
   mostra GFS perché tutti i valori sono NULL. Il frontend nasconde
   automaticamente le source con tutti null nella finestra corrente.
-- Le 5 NWP restanti (ECMWF IFS, ICON-EU, ICON-D2, AROME France, ARPAE ICON-2I)
+- Le 4 NWP restanti (ECMWF IFS, ICON-EU, AROME France, ARPAE ICON-2I)
   funzionano regolarmente e coprono il backtest.
 
 **Mitigazione provvisoria** (nel frontend): `affidabilita.js` filtra i NWP
@@ -530,4 +530,4 @@ disegnarli. GFS semplicemente non appare finché il problema non è risolto.
 3. Se l'API è cambiata, aggiornare la query; altrimenti ri-ingesta GFS
 
 **Stato**: aperto. Non bloccante per il deploy (Sprint 8) né per la pagina
-affidabilità (funziona con 5 NWP).
+affidabilità (funziona con 4 NWP).

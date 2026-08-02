@@ -126,7 +126,6 @@ giornaliero, idempotente).
     "guazza",
     "open_meteo_ecmwf_ifs",
     "open_meteo_icon_eu",
-    "open_meteo_icon_d2",
     "open_meteo_gfs025",
     "open_meteo_arome_france",
     "open_meteo_italia_meteo_arpae_icon_2i"

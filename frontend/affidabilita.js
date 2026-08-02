@@ -23,14 +23,12 @@ const SKILL_HISTORY_URL = '/data/skill_history.json';
 const NWP_SOURCES = [
   'open_meteo_ecmwf_ifs',
   'open_meteo_icon_eu',
-  'open_meteo_icon_d2',
   'open_meteo_arome_france',
   'open_meteo_italia_meteo_arpae_icon_2i',
 ];
 const NWP_LABELS = {
   'open_meteo_ecmwf_ifs':                    'ECMWF IFS',
   'open_meteo_icon_eu':                      'ICON-EU',
-  'open_meteo_icon_d2':                      'ICON-D2',
   'open_meteo_arome_france':                 'AROME France',
   'open_meteo_italia_meteo_arpae_icon_2i':   'ARPAE ICON-2I',
 };
@@ -277,7 +275,7 @@ function drawHist(sliced, canvasId) {
 
   const labels = sliced.dates.map(fmtShortDate);
 
-  // Dataset: actual (riferimento, nero spesso) + Guazza (accent) + 6 NWP (grigi tratteggiati)
+  // Dataset: actual (riferimento, nero spesso) + Guazza (accent) + 4 NWP (grigi tratteggiati)
   const datasets = [
     { label: 'Osservato', data: sliced.actual,
       borderColor: v('--text-1'), backgroundColor: v('--text-1'),
@@ -321,7 +319,7 @@ function drawHist(sliced, canvasId) {
         legend: { display: false }, // legenda statica sopra il grafico
         tooltip: {
           callbacks: {
-            filter: (item) => !item.dataset._isNwp, // nasconde i 6 NWP dal tooltip
+            filter: (item) => !item.dataset._isNwp, // nasconde i 4 NWP dal tooltip
             afterBody: (items) => {
               if (!sliced.dates.length) return '';
               const i = items[0].dataIndex;

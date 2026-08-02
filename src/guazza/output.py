@@ -71,11 +71,11 @@ def _apparent_temp(t: float, rh: float, ws: float) -> float:
 SignalBag = dict[str, float | None]
 
 _NWP_WIND_COLS = [
-    "ecmwf_wind_ms", "icon_wind_ms", "icond2_wind_ms",
+    "ecmwf_wind_ms", "icon_wind_ms",
     "arome_wind_ms", "icon2i_wind_ms",
 ]
 _NWP_HUM_COLS = [
-    "ecmwf_humidity_pct", "icon_humidity_pct", "icond2_humidity_pct",
+    "ecmwf_humidity_pct", "icon_humidity_pct",
     "arome_humidity_pct", "icon2i_humidity_pct",
 ]
 
@@ -83,14 +83,12 @@ _NWP_HUM_COLS = [
 _MODEL_ORDER = [
     "open_meteo_ecmwf_ifs",
     "open_meteo_icon_eu",
-    "open_meteo_icon_d2",
     "open_meteo_arome_france",
     "open_meteo_italia_meteo_arpae_icon_2i",
 ]
 _MODEL_LABELS: dict[str, str] = {
     "open_meteo_ecmwf_ifs":                  "ECMWF IFS",
     "open_meteo_icon_eu":                    "ICON-EU",
-    "open_meteo_icon_d2":                    "ICON-D2",
     "open_meteo_arome_france":               "AROME",
     "open_meteo_italia_meteo_arpae_icon_2i": "ICON-2I",
 }

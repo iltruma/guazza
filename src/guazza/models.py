@@ -85,7 +85,7 @@ LEAD_BUCKETS: dict[str, tuple[int, int]] = {
 }
 
 FEATURE_COLS: list[str] = [
-    # NWP per modello (5 modelli) — derivate da NWP_MODEL_PREFIXES, stessa fonte del
+    # NWP per modello (4 modelli) — derivate da NWP_MODEL_PREFIXES, stessa fonte del
     # pivot wide in features.py: le due liste non possono divergere.
     *NWP_FEATURE_COLS,
     # Ensemble stats

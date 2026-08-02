@@ -170,7 +170,7 @@ def test_idempotent(db: DuckDBClient) -> None:
 
 
 def test_spread_with_partial_models(db: DuckDBClient) -> None:
-    """Con 2 modelli su 6, DuckDB GREATEST/LEAST ignora i NULL e restituisce
+    """Con 2 modelli su 4, DuckDB GREATEST/LEAST ignora i NULL e restituisce
     il range tra i modelli disponibili (non NULL)."""
     _populate(db)  # inserisce solo ecmwf e icon
     build_features_daily(db)
@@ -179,7 +179,7 @@ def test_spread_with_partial_models(db: DuckDBClient) -> None:
         WHERE nwp_tmin_spread IS NOT NULL
           AND ecmwf_tmin_c IS NOT NULL
           AND icon_tmin_c IS NOT NULL
-          AND icond2_tmin_c IS NULL
+          AND arome_tmin_c IS NULL
           AND icon2i_tmin_c IS NULL
     """).fetchone()
     assert row is not None and row[0] > 0

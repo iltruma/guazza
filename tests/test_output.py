@@ -55,10 +55,8 @@ def sample_row() -> pd.Series:
     """Row da features_daily con dati NWP plausibili (alta umidità, vento basso)."""
     return pd.Series({
         "ecmwf_humidity_pct": 70.0, "icon_humidity_pct":   75.0,
-        "icond2_humidity_pct": 72.0,
         "arome_humidity_pct": 74.0, "icon2i_humidity_pct": 71.0,
         "ecmwf_wind_ms": 2.0,  "icon_wind_ms":   3.0,
-        "icond2_wind_ms": 2.5,
         "arome_wind_ms": 2.8,  "icon2i_wind_ms": 2.2,
     })
 
@@ -1107,7 +1105,7 @@ def test_current_conditions_pressure_from_forecasts(seeded_db: Path) -> None:
         INSERT INTO forecasts
             (source, location_id, ts_run, ts_valid, lead_time_h, pressure_hpa)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, ["open_meteo_icon_d2", "casa_campi", now - timedelta(hours=2), now - timedelta(minutes=30), 2, 1018.5])
+    """, ["open_meteo_icon_eu", "casa_campi", now - timedelta(hours=2), now - timedelta(minutes=30), 2, 1018.5])
     con.close()
 
     with DuckDBClient(db_path=seeded_db, read_only=True) as db:
@@ -1130,7 +1128,7 @@ def test_current_conditions_fallback_nwp(seeded_db: Path) -> None:
             (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, wind_speed_ms)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     """, [
-        ["open_meteo_icon_d2", "casa_campi", now - timedelta(hours=2), now - timedelta(minutes=20), 2, 16.0, 2.0],
+        ["open_meteo_arome_france", "casa_campi", now - timedelta(hours=2), now - timedelta(minutes=20), 2, 16.0, 2.0],
         ["open_meteo_ecmwf_ifs", "casa_campi", now - timedelta(hours=2), now - timedelta(minutes=20), 2, 18.0, 4.0],
     ])
     con.close()

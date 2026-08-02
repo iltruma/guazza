@@ -30,7 +30,6 @@ const MODEL_DESC = {
   guazza:                                  'Guazza ML: post-processing su osservazioni SIR',
   open_meteo_ecmwf_ifs:                    'ECMWF IFS: modello globale europeo',
   open_meteo_icon_eu:                      'ICON-EU: DWD, dominio europeo',
-  open_meteo_icon_d2:                      'ICON-D2: DWD, alta risoluzione 2.2 km',
   open_meteo_arome_france:                 'AROME: Météo-France, alta risoluzione',
   open_meteo_italia_meteo_arpae_icon_2i:   'ICON-2I: ItaliaMeteo/ARPAE, 2.2 km, assimila osservazioni italiane',
 };

@@ -53,7 +53,7 @@ guazza/
 │   ├── fetchers.py         # CLI fetcher (sir-historical / sir-realtime / netatmo)
 │   ├── fetch_common.py     # Costanti e helper HTTP condivisi (UA, retry, timezone)
 │   ├── fetch_sir.py        # SIR storico CSV + realtime JSON + bulk
-│   ├── fetch_openmeteo.py  # Open-Meteo forecast / historical / multi-lead (6 modelli)
+│   ├── fetch_openmeteo.py  # Open-Meteo forecast / historical / multi-lead (4 modelli)
 │   ├── fetch_netatmo.py    # Netatmo realtime + QC (range, cross, vs SIR)
 │   ├── fetch_arpat.py      # ARPAT qualità aria NRT + bollettino PM10/PM2.5
 │   ├── _paths.py           # Path di default da env (DB_PATH, CONFIG_DIR, OUTPUT_DIR)
@@ -277,7 +277,7 @@ cd frontend && python3 -m http.server 8080
 | **A — Condizioni attuali** | Temperatura grande, icona meteo, temperatura percepita (Steadman), punto di rugiada (Magnus), grid stats: vento (velocità + direzione), umidità, precipitazione, pressione (hPa + indicatore alta/bassa), alba/tramonto (SunCalc), fase lunare; card qualità aria ARPAT (PM10, PM2.5, NO₂, O₃, CO, benzene, SO₂); indicatori DLE calcolati su obs realtime |
 | **Radar precipitazioni** | Mappa Leaflet con overlay RainViewer: ultimi ~60min osservati + nowcast +60min (se attivo); timeline animata, pausa di default, zoom custom |
 | **B — Previsioni giornaliere** | Striscia card D+0…D+7 con icona/Tmax/Tmin/precip/indicator-dots; clic espande CI bar 80/90% + 8 indicatori + tabella NWP con data ultimo run |
-| **C — Grafico multi-giorno** | Chart.js: temperatura, umidità, precipitazioni, vento — switch Guazza ML ↔ 6 modelli NWP, crosshair verticale |
+| **C — Grafico multi-giorno** | Chart.js: temperatura, umidità, precipitazioni, vento — switch Guazza ML ↔ 4 modelli NWP, crosshair verticale |
 
 ### Struttura file frontend
 
@@ -349,7 +349,7 @@ uv run mypy src/
 
 | Sorgente | Uso | Accesso |
 |---|---|---|
-| Open-Meteo Forecast + Historical | 5 modelli NWP (ECMWF, ICON-EU, ICON-D2, AROME, ICON-2I) | API pubblica, no key |
+| Open-Meteo Forecast + Historical | 4 modelli NWP (ECMWF, ICON-EU, AROME, ICON-2I) | API pubblica, no key |
 | SIR Toscana | Ground truth osservazioni validate, 34 stazioni | Open Data |
 | Netatmo | Osservazioni iperlocali real-time | OAuth2 |
 | ARPAT OpenData NRT | Qualità aria oraria (NO₂, O₃, CO, SO₂, PM10, PM2.5, benzene) | Open Data |

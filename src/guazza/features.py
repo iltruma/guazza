@@ -30,7 +30,6 @@ from guazza.storage import DuckDBClient
 NWP_MODEL_PREFIXES: list[tuple[str, str]] = [
     ("ecmwf",  "ecmwf_ifs"),
     ("icon",   "icon_eu"),
-    ("icond2", "icon_d2"),
     ("arome",  "arome_france"),
     ("icon2i", "italia_meteo_arpae_icon_2i"),
 ]
@@ -87,7 +86,7 @@ climatology AS (
 -- ── 3. NWP orario → aggregato giornaliero ────────────────────────────────────
 -- lead_time_h = giorni interi da ts_run::DATE a target_date × 24.
 -- Dati same-day (backfill storico): ts_run::DATE = ts_valid::DATE → lead_time_h=0.
---   Il run nominale cambia ogni 6h (ECMWF) o 3h (ICON-D2), quindi per un dato
+--   Il run nominale cambia ogni 6h (ECMWF) o 3h (ICON-EU/AROME), quindi per un dato
 --   target_date esistono più ts_run sullo stesso giorno. Si aggrega tutto il giorno
 --   ignorando ts_run (CASE → NULL nel GROUP BY) per ottenere tmin/tmax/precip
 --   sull'intera giornata, coerente con le osservazioni SIR.
@@ -134,7 +133,7 @@ last_run AS (
     WHERE rn = 1
 ),
 
--- ── 5. Pivot 5 modelli → wide (colonne generate da NWP_MODEL_PREFIXES) ────────
+-- ── 5. Pivot 4 modelli → wide (colonne generate da NWP_MODEL_PREFIXES) ────────
 nwp_wide AS (
     SELECT
         location_id,
@@ -183,53 +182,46 @@ SELECT
     n.target_date,
     n.lead_time_h,
 
-    -- NWP per modello (6 modelli)
+    -- NWP per modello (4 modelli)
     n.ecmwf_tmin_c, n.ecmwf_tmax_c, n.ecmwf_precip_mm, n.ecmwf_humidity_pct, n.ecmwf_wind_ms,
     n.icon_tmin_c,  n.icon_tmax_c,  n.icon_precip_mm,  n.icon_humidity_pct,  n.icon_wind_ms,
-    n.icond2_tmin_c, n.icond2_tmax_c, n.icond2_precip_mm, n.icond2_humidity_pct, n.icond2_wind_ms,
     n.arome_tmin_c, n.arome_tmax_c, n.arome_precip_mm, n.arome_humidity_pct, n.arome_wind_ms,
     n.icon2i_tmin_c, n.icon2i_tmax_c, n.icon2i_precip_mm, n.icon2i_humidity_pct, n.icon2i_wind_ms,
 
-    -- Ensemble mean (media null-safe su 6 modelli)
+    -- Ensemble mean (media null-safe su 4 modelli)
     (COALESCE(n.ecmwf_tmin_c, 0) + COALESCE(n.icon_tmin_c, 0)
-        + COALESCE(n.icond2_tmin_c, 0)
         + COALESCE(n.arome_tmin_c, 0) + COALESCE(n.icon2i_tmin_c, 0))
     / NULLIF(
         (n.ecmwf_tmin_c IS NOT NULL)::INT + (n.icon_tmin_c IS NOT NULL)::INT
-        + (n.icond2_tmin_c IS NOT NULL)::INT
         + (n.arome_tmin_c IS NOT NULL)::INT + (n.icon2i_tmin_c IS NOT NULL)::INT, 0
     ) AS nwp_tmin_mean,
 
     -- Ensemble spread (max - min tra modelli disponibili).
     -- DuckDB GREATEST/LEAST ignora i NULL: spread calcolato anche con modelli parziali.
-    GREATEST(n.ecmwf_tmin_c, n.icon_tmin_c, n.icond2_tmin_c, n.arome_tmin_c, n.icon2i_tmin_c)
-        - LEAST(n.ecmwf_tmin_c, n.icon_tmin_c, n.icond2_tmin_c, n.arome_tmin_c, n.icon2i_tmin_c)
+    GREATEST(n.ecmwf_tmin_c, n.icon_tmin_c, n.arome_tmin_c, n.icon2i_tmin_c)
+        - LEAST(n.ecmwf_tmin_c, n.icon_tmin_c, n.arome_tmin_c, n.icon2i_tmin_c)
         AS nwp_tmin_spread,
 
     (COALESCE(n.ecmwf_tmax_c, 0) + COALESCE(n.icon_tmax_c, 0)
-        + COALESCE(n.icond2_tmax_c, 0)
         + COALESCE(n.arome_tmax_c, 0) + COALESCE(n.icon2i_tmax_c, 0))
     / NULLIF(
         (n.ecmwf_tmax_c IS NOT NULL)::INT + (n.icon_tmax_c IS NOT NULL)::INT
-        + (n.icond2_tmax_c IS NOT NULL)::INT
         + (n.arome_tmax_c IS NOT NULL)::INT + (n.icon2i_tmax_c IS NOT NULL)::INT, 0
     ) AS nwp_tmax_mean,
 
-    GREATEST(n.ecmwf_tmax_c, n.icon_tmax_c, n.icond2_tmax_c, n.arome_tmax_c, n.icon2i_tmax_c)
-        - LEAST(n.ecmwf_tmax_c, n.icon_tmax_c, n.icond2_tmax_c, n.arome_tmax_c, n.icon2i_tmax_c)
+    GREATEST(n.ecmwf_tmax_c, n.icon_tmax_c, n.arome_tmax_c, n.icon2i_tmax_c)
+        - LEAST(n.ecmwf_tmax_c, n.icon_tmax_c, n.arome_tmax_c, n.icon2i_tmax_c)
         AS nwp_tmax_spread,
 
     (COALESCE(n.ecmwf_precip_mm, 0) + COALESCE(n.icon_precip_mm, 0)
-        + COALESCE(n.icond2_precip_mm, 0)
         + COALESCE(n.arome_precip_mm, 0) + COALESCE(n.icon2i_precip_mm, 0))
     / NULLIF(
         (n.ecmwf_precip_mm IS NOT NULL)::INT + (n.icon_precip_mm IS NOT NULL)::INT
-        + (n.icond2_precip_mm IS NOT NULL)::INT
         + (n.arome_precip_mm IS NOT NULL)::INT + (n.icon2i_precip_mm IS NOT NULL)::INT, 0
     ) AS nwp_precip_mean,
 
-    GREATEST(n.ecmwf_precip_mm, n.icon_precip_mm, n.icond2_precip_mm, n.arome_precip_mm, n.icon2i_precip_mm)
-        - LEAST(n.ecmwf_precip_mm, n.icon_precip_mm, n.icond2_precip_mm, n.arome_precip_mm, n.icon2i_precip_mm)
+    GREATEST(n.ecmwf_precip_mm, n.icon_precip_mm, n.arome_precip_mm, n.icon2i_precip_mm)
+        - LEAST(n.ecmwf_precip_mm, n.icon_precip_mm, n.arome_precip_mm, n.icon2i_precip_mm)
         AS nwp_precip_spread,
 
     -- Obs features (giorno precedente — lookahead-safe)
