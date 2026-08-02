@@ -46,7 +46,6 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 | Componente | Scelta | Motivazione |
 |---|---|---|
 | Server | Dell Optiplex Micro 3050 — NixOS baremetal (homelab astra, host `nebula`; Guazza è un tenant k8s) | Hardware già disponibile, costo zero; Guazza è un tenant tra altri |
-| OS | Ubuntu 24.04 LTS | LTS, standard |
 | Scheduling | cron Linux o k8s CronJob | Job = CLI idempotenti orchestrator-agnostic; scheduler a scelta del homelab |
 | Storage analitico | DuckDB | Column-oriented, file singolo, backup = cp |
 | Storage raw NWP | Parquet partizionato | Compresso, leggibile con pandas/polars |
