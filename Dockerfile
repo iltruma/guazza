@@ -27,7 +27,7 @@ COPY deploy/nginx-k8s.conf /etc/nginx/conf.d/default.conf
 
 # Permessi e pid compatibile con readOnlyRootFS
 WORKDIR /var/lib/guazza
-RUN chown -R guazza:guazza /var/lib/guazza /var/lib/nginx \
+RUN chown -R guazza:guazza /var/lib/guazza /var/lib/nginx /var/log/nginx \
     && sed -i 's|^pid .*|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf
 
 USER guazza
