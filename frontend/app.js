@@ -224,6 +224,22 @@ function fmtLastRun(iso) {
   return d.toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
+// Timestamp UTC ISO (con Z) → Europe/Rome. Orario breve HH:MM se oggi,
+// con data (gi mese) quando il giorno differisce. Ritorna null se invalido.
+function fmtTsRome(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const tz = 'Europe/Rome';
+  const fmtDate = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+  const tsDate  = fmtDate.format(d);
+  const nowDate = fmtDate.format(new Date());
+  const time = d.toLocaleTimeString('it-IT', { timeZone: tz, hour: '2-digit', minute: '2-digit' });
+  if (tsDate === nowDate) return time;
+  const dateLabel = d.toLocaleDateString('it-IT', { timeZone: tz, day: 'numeric', month: 'short' });
+  return `${dateLabel} ${time}`;
+}
+
 function aqVerdictForValue(key, value) {
   if (value == null) return null;
   const [lo, hi] = AQ_THRESHOLDS[key] ?? [0, Infinity];
@@ -372,15 +388,48 @@ function updatePillPosition(switchId, pillId, activeSource) {
 
 // ── Header meta ───────────────────────────────────────────────────────────────
 
-function renderHeaderMeta(generatedAt) {
+function renderHeaderMeta(data) {
   const el = document.getElementById('header-meta');
   if (!el) return;
-  const ageH = (Date.now() - new Date(generatedAt).getTime()) / 3600000;
-  const time = new Date(generatedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-  if (ageH >= 6) {
-    el.innerHTML = `<span class="g-stale-pill">dati vecchi</span>`;
+  const current = data.current;
+  const updates = data.updates;
+
+  // Stale pill: basata su generated_at (semantica invariata).
+  if (data.generated_at) {
+    const ageH = (Date.now() - new Date(data.generated_at).getTime()) / 3600000;
+    if (ageH >= 6) {
+      el.innerHTML = `<span class="g-stale-pill">dati vecchi</span>`;
+      return;
+    }
+  }
+
+  // Osservazioni: timestamp del dato SIR/Netatmo (non del job di ingest).
+  const obsParts = [];
+  if (current?.ts_sir) { const t = fmtTsRome(current.ts_sir); if (t) obsParts.push(`SIR ${t}`); }
+  if (current?.ts_netatmo) { const t = fmtTsRome(current.ts_netatmo); if (t) obsParts.push(`Netatmo ${t}`); }
+
+  // Job Guazza: realtime (patch JSON current) e pipeline (rigenerazione previsioni).
+  const updParts = [];
+  if (updates?.realtime_at) { const t = fmtTsRome(updates.realtime_at); if (t) updParts.push(`Realtime ${t}`); }
+  if (updates?.pipeline_at) { const t = fmtTsRome(updates.pipeline_at); if (t) updParts.push(`previsioni ${t}`); }
+
+  if (obsParts.length || updParts.length) {
+    const obsHtml = obsParts.length
+      ? `<span class="g-hmeta__obs${updParts.length ? ' g-hmeta__obs--div' : ''}">${escHtml(obsParts.join(' \u00b7 '))}</span>`
+      : '';
+    const updHtml = updParts.length
+      ? `<span class="g-hmeta__upd">${escHtml(updParts[0])}${updParts.length > 1 ? `<span class="g-hmeta__pipe"> \u00b7 ${escHtml(updParts[1])}</span>` : ''}</span>`
+      : '';
+    el.innerHTML = `<span class="g-hmeta">${obsHtml}${updHtml}</span>`;
+    return;
+  }
+
+  // Fallback: JSON senza updates/ts_* → comportamento legacy.
+  if (data.generated_at) {
+    const t = fmtTsRome(data.generated_at);
+    el.innerHTML = t ? `<span class="tabular-nums font-mono">Aggiornato ${t}</span>` : '';
   } else {
-    el.innerHTML = `<span class="tabular-nums font-mono">Aggiornato ${time}</span>`;
+    el.innerHTML = '';
   }
 }
 
@@ -1777,7 +1826,7 @@ function render(data) {
   hideSkeleton();
   hideEl('error-state');
 
-  renderHeaderMeta(data.generated_at);
+  renderHeaderMeta(data);
   renderHero(data);
   renderAQ(data.air_quality);
 

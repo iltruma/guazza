@@ -13,6 +13,7 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 {
   "location_id": "casa_campi",
   "generated_at": "2026-05-18T...",
+  "updates": {"pipeline_at": "UTC ISO-8601" | null, "realtime_at": "UTC ISO-8601" | null},
   "coverage_empirical_30d": {
     "tmin_ci80": float | null, "tmin_ci90": float | null,
     "tmax_ci80": float | null, "tmax_ci90": float | null,
@@ -74,6 +75,8 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 ```
 
 - `coverage_empirical_30d`: rolling 30 giorni predictions vs obs. `null` se < 10 campioni → dashboard mostra "calibrazione in corso".
+- `generated_at` è il timestamp UTC ISO di generazione della pipeline: è lo stesso valore di `updates.pipeline_at` (compatibili e uguali).
+- `updates`: metadata temporale di scrittura del file — `pipeline_at` = completamento dell'ultima pipeline (== `generated_at`), `realtime_at` = completamento dell'ultimo patch realtime del JSON (`guazza-ingest realtime`). `realtime_at` è il momento del refresh, NON il timestamp dell'osservazione: quelli sono `current.ts_sir`/`current.ts_netatmo`. JSON legacy senza `updates` vengono normalizzati a `{"pipeline_at": null, "realtime_at": <refresh>}` al primo refresh.
 - `current` e `air_quality` sono `null` se non ci sono osservazioni recenti (rispettivamente realtime meteo e ARPAT).
 - `current.ts` è il timestamp più recente del blend (UTC, suffisso `Z`); `ts_sir` è il MIN tra le stazioni SIR (freshness onesta del dato osservativo), `ts_netatmo` il MAX dei moduli Netatmo. Entrambi `null` se la sorgente non contribuisce (es. fallback NWP, o location senza SIR realtime).
 - `current.sources`: provenance per-variabile dei valori raw in `current` — `"realtime"` se la singola variabile viene dal blend SIR/Netatmo, `"nwp"` se è stata ripiegata sul forecast NWP (fallback per-variabile, fix P3), `null` se il valore è assente. `pressure_hpa` e `weather_code` sono sempre `"nwp"` quando valorizzati (oggi arrivano solo da forecasts). `dewpoint_c`/`feels_like_c` sono derivati e non hanno marker.

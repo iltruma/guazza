@@ -452,6 +452,9 @@ def test_write_location_json_structure(
     assert data["location_id"] == "lavoro_cosimo"
     assert "generated_at" in data
     assert data["coverage_empirical_30d"]["tmin_ci80"] is None
+    # Metadata temporale presente, coerente con generated_at
+    assert data["updates"]["pipeline_at"] == data["generated_at"]
+    assert data["updates"]["realtime_at"] is None
 
     assert len(data["days"]) == 2
     day0 = data["days"][0]
@@ -1725,3 +1728,90 @@ def test_refresh_realtime_json_updates_air_quality_and_clean_tmp(
     assert list(tmp_path.glob("*.tmp")) == []
     # Il JSON resta leggibile e i forecast invariati
     assert data["days"][0]["forecasts"]["tmin_c"]["p50"] == sample_pred["tmin_c"]["p50"]
+
+
+# ── updates metadata temporale ────────────────────────────────────────────────
+
+def test_write_location_json_preserves_realtime_at(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+) -> None:
+    """Una riscrittura pipeline conserva updates.realtime_at del payload precedente."""
+    write_location_json(
+        location_id="casa_campi",
+        days=_make_days(sample_pred, sample_indicators),
+        coverage={},
+        output_dir=tmp_path,
+    )
+    # Simula un refresh realtime intervenuto tra una pipeline e l'altra
+    path = tmp_path / "casa_campi.json"
+    payload = json.loads(path.read_text())
+    payload["updates"]["realtime_at"] = "2026-05-18T10:00:00+00:00"
+    path.write_text(json.dumps(payload))
+
+    write_location_json(
+        location_id="casa_campi",
+        days=_make_days(sample_pred, sample_indicators),
+        coverage={},
+        output_dir=tmp_path,
+    )
+    data = json.loads(path.read_text())
+    assert data["updates"]["realtime_at"] == "2026-05-18T10:00:00+00:00"
+    assert data["updates"]["pipeline_at"] == data["generated_at"]
+
+
+def test_refresh_realtime_json_sets_realtime_at(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+    seeded_db: Path,
+) -> None:
+    """Il refresh imposta updates.realtime_at preservando pipeline_at e generated_at."""
+    with DuckDBClient(db_path=seeded_db) as db:
+        path = write_location_json(
+            location_id="casa_campi",
+            days=_make_days(sample_pred, sample_indicators),
+            coverage={},
+            output_dir=tmp_path,
+        )
+        before = json.loads(path.read_text())
+        pipeline_at = before["updates"]["pipeline_at"]
+        generated_at = before["generated_at"]
+
+        _seed_realtime_sir(seeded_db, "casa_campi", 21.5)
+        refresh_realtime_json(db, "casa_campi", tmp_path)
+
+    data = json.loads(path.read_text())
+    assert data["updates"]["pipeline_at"] == pipeline_at
+    assert data["updates"]["realtime_at"] is not None
+    # Il refresh non tocca generated_at (resta quello della pipeline)
+    assert data["generated_at"] == generated_at
+    assert data["updates"]["realtime_at"] != pipeline_at
+
+
+def test_refresh_realtime_json_normalizes_legacy(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+    seeded_db: Path,
+) -> None:
+    """JSON legacy senza updates → struttura valida con pipeline_at null."""
+    with DuckDBClient(db_path=seeded_db) as db:
+        path = write_location_json(
+            location_id="casa_campi",
+            days=_make_days(sample_pred, sample_indicators),
+            coverage={},
+            output_dir=tmp_path,
+        )
+        # Rimuove updates: simula un JSON prodotto prima della metadata temporale
+        payload = json.loads(path.read_text())
+        del payload["updates"]
+        path.write_text(json.dumps(payload))
+
+        _seed_realtime_sir(seeded_db, "casa_campi", 21.5)
+        refresh_realtime_json(db, "casa_campi", tmp_path)
+
+    data = json.loads(path.read_text())
+    assert data["updates"]["pipeline_at"] is None
+    assert data["updates"]["realtime_at"] is not None

@@ -194,6 +194,20 @@ img.emoji {
   animation: stale-pulse 2s ease-in-out infinite;
 }
 
+/* Header meta: freshness bar — osservazioni | job Guazza.
+   Eredita font/size/color da .g-header__meta. */
+.g-hmeta { white-space: nowrap; }
+.g-hmeta__obs--div {
+  margin-right: 10px;
+  padding-right: 10px;
+  border-right: 1px solid var(--border-2);
+}
+/* Mobile: mostra solo l'attività Guazza più recente (le obs restano nel hero). */
+@media (max-width: 767px) {
+  .g-hmeta__obs,
+  .g-hmeta__pipe { display: none; }
+}
+
 /* === Header: nav pagine (Previsioni | Affidabilità) === */
 .g-header__pages { display: inline-flex; gap: 4px; flex-shrink: 0; }
 

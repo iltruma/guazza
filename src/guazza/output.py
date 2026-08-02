@@ -970,9 +970,13 @@ def write_location_json(
         db:   se fornito, aggiunge current, air_quality, nwp_models_hourly al payload
 
     Struttura JSON:
-      {location_id, generated_at, coverage_empirical_30d,
+      {location_id, generated_at, updates, coverage_empirical_30d,
        current?, air_quality?, nwp_models_hourly?,
        days: [{target_date, lead_time_h, forecasts, indicators, hourly}, ...]}
+
+    `updates.pipeline_at` è lo stesso timestamp di `generated_at`; se il JSON
+    esiste già viene preservato `updates.realtime_at` del payload precedente
+    (il patch realtime più recente sopravvive alla riscrittura della pipeline).
 
     Returns:
         Path del file scritto.
@@ -1022,9 +1026,22 @@ def write_location_json(
             "nwp_comparison":  day.get("nwp_comparison"),
         })
 
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"{location_id}.json"
+    # Se il JSON esiste già, preserva updates.realtime_at dal payload precedente:
+    # il patch realtime più recente sopravvive alla riscrittura della pipeline.
+    realtime_at: str | None = None
+    if path.exists():
+        try:
+            realtime_at = (json.loads(path.read_text()).get("updates") or {}).get("realtime_at")
+        except (json.JSONDecodeError, OSError):
+            logger.warning(f"[{location_id}] JSON esistente non leggibile — updates.realtime_at non preservato")
+
+    now_iso = datetime.now(tz=UTC).isoformat()
     payload: dict[str, Any] = {
         "location_id":            location_id,
-        "generated_at":           datetime.now(tz=UTC).isoformat(),
+        "generated_at":           now_iso,
+        "updates":                {"pipeline_at": now_iso, "realtime_at": realtime_at},
         "coverage_empirical_30d": coverage,
     }
     if db is not None:
@@ -1033,8 +1050,6 @@ def write_location_json(
         payload["air_quality"]        = get_current_air_quality(db, location_id)
     payload["days"] = day_payloads
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{location_id}.json"
     # Scrittura atomica: nginx serve questi file mentre il cron li riscrive —
     # un write_text diretto esporrebbe un JSON troncato ai client.
     tmp_path = path.with_suffix(".json.tmp")
@@ -1060,9 +1075,10 @@ def refresh_realtime_json(
     le condizioni attuali e la qualità aria con `get_current_conditions` e
     `get_current_air_quality` (le stesse funzioni usate dalla pipeline) e
     sostituisce i soli campi top-level `current` e `air_quality` del JSON già
-    prodotto. Tutti gli altri campi — location_id, generated_at,
-    coverage_empirical_30d, days, nwp_models_hourly — restano intatti: nessun
-    ricalcolo di forecast/features/predict.
+    prodotto, impostando `updates.realtime_at` al completamento del patch
+    (preservando `updates.pipeline_at`). Tutti gli altri campi — location_id,
+    generated_at, coverage_empirical_30d, days, nwp_models_hourly — restano
+    intatti: nessun ricalcolo di forecast/features/predict.
 
     Se il JSON non esiste ancora fa skip senza crearlo: lo genererà la prima
     pipeline (la tabella predictions non è ancora backfillata).
@@ -1084,6 +1100,15 @@ def refresh_realtime_json(
     payload = json.loads(path.read_text())
     payload["current"]     = current
     payload["air_quality"] = air_quality
+
+    # Metadata temporale: pipeline_at resta quello scritto dalla pipeline,
+    # realtime_at è il completamento di questo patch. JSON legacy senza
+    # `updates` viene normalizzato a struttura valida (pipeline_at null).
+    prev_updates = payload.get("updates")
+    payload["updates"] = {
+        "pipeline_at": prev_updates.get("pipeline_at") if isinstance(prev_updates, dict) else None,
+        "realtime_at": datetime.now(tz=UTC).isoformat(),
+    }
 
     tmp_path = path.with_name(path.name + _REALTIME_TMP_SUFFIX)
     try:
