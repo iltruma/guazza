@@ -1,13 +1,13 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-08-02 (v0.12.6)
+> Aggiornato: 2026-08-02 (v0.13.0)
 > Storico sprint → `CHANGELOG.md`
 
 ## Stato
 
 | | |
 |---|---|
-| Versione | **0.12.6** |
+| Versione | **0.13.0** |
 | Test | 337 verdi (suite completa; `test_models.py` ~3min per LightGBM training) |
 | Lint / mypy | ✅ puliti |
 | Deploy | **Sprint 8 completato** (v0.12.2) — k3s astra/nebula, namespace `guazza`, Flux + SOPS |

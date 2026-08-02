@@ -8,6 +8,29 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-02
+
+### Removed
+- **Qualità dell'aria (ARPAT) rimossa dal progetto**: eliminato il modulo
+  `fetch_arpat.py` (NRT + bollettino), le 7 colonne AQ da `observations`
+  (`pm10_ugm3`, `pm25_ugm3`, `no2_ugm3`, `o3_ugm3`, `co_mgm3`, `benzene_ugm3`,
+  `so2_ugm3`), `arpat_station_id` da `locations`, `get_current_air_quality()`
+  da `output.py`, `pm10_predicted` dalla pipeline, costanti/flag ARPAT da `qc.py`,
+  `arpat_stations` da `weights.py`, `ITALY_TZ` da `fetch_common.py` (usata solo
+  da ARPAT). Puliti config (`arpat_levels.yaml` eliminato, `locations.yaml`,
+  `stations.yaml`, `sources.yaml`, `indicators.yaml`), frontend (sezione AQ da
+  `index.html`/`app.js`/`style.css`), test (506 righe rimosse) e documentazione
+  (`contract.md`, `status.md`, `AGENTS.md`, `README.md`, `DESIGN.md`,
+  `decisions.md`, `known_issues.md` — KI-021 rimossa, KI-016/017/018 storiche
+  lasciate). Il campo `air_quality` non è più presente nel JSON di output.
+
+### Fixed
+- **`test_load_artifacts_no_hint_outside_default`**: bug nel test (impostava
+  `_DEFAULT_MODEL_DIR` uguale al path testato, attivando erroneamente l'hint
+  `--model-dir`). Aggiunte type annotation mancanti in 5 file di test
+  (errori mypy pre-esistenti: `no-any-return`, `unused-ignore`, `no-untyped-def`,
+  `index`).
+
 ## [0.12.6] - 2026-08-02
 
 ### Added
