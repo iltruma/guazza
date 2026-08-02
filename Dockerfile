@@ -14,6 +14,9 @@ RUN apt-get update \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
+# Config dell'app versionata con l'immagine (unica source of truth: repo guazza)
+COPY config ./config
+ENV CONFIG_DIR=/app/config
 
 # Install (uv gestisce build isolation automaticamente)
 RUN uv pip install --system --no-cache .
