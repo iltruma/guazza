@@ -262,3 +262,29 @@ produzione futuri. Il drift è di calibrazione, non di accuratezza (MAE stabile)
 `AdaptiveConformalizer` aggiusta α_t online sulle coppie (prediction, actual), garantendo
 copertura long-run marginal anche sotto distribution shift. Cold start N=30 (CQR statico
 fino a 30 osservazioni). Persistenza in DuckDB (`aci_state`). Dettaglio in D-019.
+
+---
+
+## KI-025 — GFS ha record orari senza `temp_c` valorizzato (~6.7% del totale)
+
+**Severità**: bassa
+**Stato**: risolto per rimozione (GFS rimosso dallo stack in v0.11.1, 2026-06-27)
+
+**Problema originale** (2026-06-27, debug di `skill_history_daily`):
+- `forecasts` aveva 246786 record per `source='open_meteo_gfs025'`
+- Solo 16440 (6.7%) avevano `temp_c` NON NULL
+- Anche `precip_mm` NULL sul ~90% dei record (24072/246786)
+- Causa probabile: l'API Open-Meteo per GFS aveva cambiato parametri, oppure
+  il fetcher `fetch_openmeteo_forecast_batch` non li estraeva correttamente.
+- Effetto: backtest grafico GFS vuoto in `affidabilita.html` sezione "Come ha performato".
+  Frontend filtrava automaticamente le source con tutti null.
+
+**Risoluzione**: GFS rimosso completamente dallo stack (5 → 4 NWP: ECMWF IFS,
+ICON-EU, AROME France, ARPAE ICON-2I) in v0.11.1. Le 246k righe GFS già presenti
+in `forecasts` sono state lasciate come dati morti ma innocui (per non rompere audit).
+Rimosso anche `_OM_PREVIOUS_DAY_MAX` e l'elenco da `NWP_MODEL_PREFIXES`,
+`OM_MODELS`, `NWP_SOURCES`, `NWP_LABELS` (frontend). Dettaglio in `CHANGELOG.md` [0.11.1].
+
+**Workaround che era in uso**: il frontend `affidabilita.js` filtrava i NWP con
+almeno un valore non-null nella finestra corrente prima di disegnarli. GFS
+semplicemente non appariva. Reso obsoleto dalla rimozione del modello.
