@@ -41,27 +41,15 @@ stazioni upstream pluvio per ogni location.
 
 ## Stack blindato
 
-Scelte validate da debate multi-modello. **Non proporre alternative** a meno che un bug tecnico reale le imponga.
+Scelte validate da debate multi-modello. **Non proporre alternative** a meno che un bug tecnico reale le imponga. Tabella completa (13 voci) → `README.md` §Architettura.
 
-| Componente | Scelta | Motivazione |
+| Componente | Scelta | Vincolo operativo |
 |---|---|---|
-| Server | Dell Optiplex Micro 3050 — NixOS baremetal (homelab astra, host `nebula`; Guazza è un tenant k8s) | Hardware già disponibile, costo zero; Guazza è un tenant tra altri |
-| Scheduling | cron Linux o k8s CronJob | Job = CLI idempotenti orchestrator-agnostic; scheduler a scelta del homelab |
-| Storage analitico | DuckDB | Column-oriented, file singolo, backup = cp |
-| Storage raw NWP | Parquet partizionato | Compresso, leggibile con pandas/polars |
-| Backup | Cloudflare R2 (10GB free) | Egress gratis, free tier |
-| ML core | LightGBM quantile | Gold standard dati tabulari, no GPU |
-| CI calibrazione | CQR (Romano 2019) | Garanzia copertura marginale |
-| Esposizione pubblica | Tailscale Funnel | HTTPS terminato da Tailscale, no port forwarding, no IP pubblico; richiede `tailscale` sull'host e dominio (custom o `*.ts.net`) puntato al nodo |
-| Accesso tailnet / admin | Tailscale (già installato) | SSH, gestione, e servizi interni `*.lab.paroparo.it` via Traefik su k3s |
-| Deploy | CI su GitHub Actions (pubblica); CD nel homelab (es. namespace k8s) | CI clean-room + badge; il deploy non vincola l'app |
-| Frontend | HTML + CSS custom + Chart.js + Leaflet + Nginx | Statico, CSS custom (no framework), librerie e font via CDN jsDelivr |
-| DNS pubblico | Cloudflare (solo zona DNS) | Gestione dominio `guazza.it`; niente proxy/WAF/CDN. CNAME pubblico punta al nodo Tailscale Funnel |
-| Monitoring | Healthchecks.io + UptimeRobot | Free tier, dead-man switch |
-| Retry scraper | tenacity | Exponential backoff, standard |
-| Logging | loguru | JSON strutturato |
-| Validation | pydantic v2 | Solo ai boundary: config YAML in ingresso, JSON in uscita |
-| HTTP | httpx (sync) | Niente async overhead per cron |
+| Server | NixOS baremetal (homelab astra, host `nebula`); Guazza è un tenant k3s | — |
+| Scheduling | cron Linux o k8s CronJob | CLI idempotenti, orchestrator-agnostic |
+| Storage analitico | DuckDB | Single-writer, PVC RWO su k8s |
+| ML core | LightGBM quantile | no GPU, no deep learning |
+| CI calibrazione | CQR (Romano 2019) | Stratificato per lead time bucket |
 
 ### Anti-pattern — non proporre mai
 
@@ -89,26 +77,13 @@ dedicato.
 
 ## Decisioni scientifiche — blindate
 
-Dettaglio completo in `docs/decisions.md`. Sintesi:
+Hard stop operativi (vedi dettaglio in `docs/decisions.md`, D-001..D-022):
 
-- **ERA5 mai come predittore di forecast** — solo climatologia statica o ground truth alternativo. Usarlo come predittore = train/serve skew grave.
-- **Embargo 7 giorni in CV** — autocorrelazione sinottica. Meno = metriche gonfiate.
-- **CQR stratificato per lead time bucket** — calibration set separato per: 0-6h, 6-12h, 12-24h, 24-48h, 48-72h
-- **`coverage_empirical_30d` nel JSON di output** — onestà su quanto fidarsi del CI
-- **Modello globale con location-id categorica** — no modelli per-location indipendenti
-- **Ogni previsione è una distribuzione** — mai valori puntuali nudi senza CI
-- **Indicatori operativi sono il prodotto** — non feature secondarie
+- **ERA5 mai come predittore di forecast** (solo climatologia statica o ground truth alternativo)
+- **Embargo ≥ 7 giorni in CV** (autocorrelazione sinottica)
+- **Niente valori puntuali nudi** (ogni previsione è una distribuzione con CI)
 
-### ERA5 — regola critica
-
-ERA5 è una reanalisi che assimila osservazioni reali. Usarlo come predittore introduce train/serve skew perché in produzione si usano forecasts che non hanno visto la verità.
-
-Usi consentiti:
-- Features climatologiche statiche (media/std mensile multi-decennale)
-- Ground truth alternativo per location senza stazioni SIR
-- Backfill storico solo come target (osservazione), mai come predittore
-
-Se ERA5 appare come input dinamico a un modello: **è un bug**.
+Se devi proporre un cambiamento a una di queste, prima leggi `docs/decisions.md`.
 
 ## Sorgenti dati
 
@@ -118,26 +93,8 @@ Se ERA5 appare come input dinamico a un modello: **è un bug**.
 
 ## Struttura repo
 
-Struttura **flat** — un file per modulo in `src/guazza/`, no package annidati.
-L'albero completo delle directory è in `README.md`. Mappa dei moduli (responsabilità):
-
-- `schema.sql` — schema DuckDB (unico source of truth; include la vista `obs_weighted_daily`)
-- `storage.py` — DuckDBClient, upsert_*, backfill_prediction_obs
-- `fetchers.py` — CLI fetcher; la logica è nei moduli `fetch_*` per dominio:
-  - `fetch_common.py` — costanti/helper HTTP condivisi · `fetch_sir.py` — SIR ·
-    `fetch_openmeteo.py` — Open-Meteo · `fetch_netatmo.py` — Netatmo
-- `_paths.py` — path di default da env (DB_PATH, CONFIG_DIR, OUTPUT_DIR)
-- `weights.py` — pesi stazione→location, refresh_upstream_rings()
-- `features.py` — build_features_daily() → tabella features_daily
-- `models.py` — LightGBM quantile + CQR, train_all(), predict()
-- `indicators.py` — Decision Logic Engine, evaluate_all(), log_results()
-- `output.py` — build_signals(), compute_coverage_30d(), write_location_json()
-- `qc.py` — quality control osservazioni SIR (chiamato da ingest post-upsert)
-- `_logging.py` — setup_logging() (TTY pretty / cron JSON)
-- `netatmo_daily.py` — accumulo Netatmo realtime → daily (forward-looking storico)
-- `skill_history.py` — append_one(), dump_payload(), atomic_write_json() (usato da pipeline)
-- `monitor.py` — compute_coverage(), check_and_log() (usato da pipeline)
-- `jobs/` — entrypoint CLI cron: ingest, pipeline, train, skill, backup
+Package flat in `src/guazza/`, CLI in `jobs/`. Albero e mappa moduli
+→ `README.md` §Repository layout.
 
 ## Guardrail operativi
 
