@@ -7,10 +7,10 @@
 Questo file è la **fonte unica** delle istruzioni di progetto. Il repo è gestito con agenti AI (Claude, Gemini, DeepSeek). Materiale
 di riferimento pesante scaricato on-demand:
 - `docs/contract.md` — contract JSON di output + logging DLE
-- `docs/frontend.md` — librerie client-side CDN (design completo in `DESIGN.md`)
 - `docs/status.md` — stato corrente (unica fonte di verità, punti aperti `🟡`)
 - `docs/decisions.md` — decisioni scientifiche in dettaglio
-- `docs/known_issues.md` — workaround non ovvi
+- `docs/known_issues.md` — workaround non ovvi (KI risolti in `docs/archive/known_issues_resolved.md`)
+- `DESIGN.md` — design system frontend (librerie CDN in §7)
 - `README.md` — albero directory completo e lista comandi operativi con tutti i flag
 
 ## Progetto
@@ -53,7 +53,7 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 | Backup | Cloudflare R2 (10GB free) | Egress gratis, free tier |
 | ML core | LightGBM quantile | Gold standard dati tabulari, no GPU |
 | CI calibrazione | CQR (Romano 2019) | Garanzia copertura marginale |
-| Esposizione pubblica | Tailscale Funnel | HTTPS terminato da Tailscale, no port forwarding, no IP pubblico; richiede `tailscale` sull'host e dominio (custom o `*.ts.net`) puntato al nodo. Da riportare su nebula dopo la migrazione k8s (P6) |
+| Esposizione pubblica | Tailscale Funnel | HTTPS terminato da Tailscale, no port forwarding, no IP pubblico; richiede `tailscale` sull'host e dominio (custom o `*.ts.net`) puntato al nodo |
 | Accesso tailnet / admin | Tailscale (già installato) | SSH, gestione, e servizi interni `*.lab.paroparo.it` via Traefik su k3s |
 | Deploy | CI su GitHub Actions (pubblica); CD nel homelab (es. namespace k8s) | CI clean-room + badge; il deploy non vincola l'app |
 | Frontend | HTML + CSS custom + Chart.js + Leaflet + Nginx | Statico, CSS custom (no framework), librerie e font via CDN jsDelivr |
@@ -192,6 +192,31 @@ staging selettivo, atomicità). Override e aggiunte specifiche di questo progett
   già vietato globalmente.
 - **Conferma obbligatoria**: non committare mai in autonomia, aspettare sempre conferma
   esplicita dell'utente.
+
+## Procedure di sync (matrice evento → write primario)
+
+**Regola anti-fanout** (la più importante):
+
+- storia → `CHANGELOG.md`
+- perché → `docs/decisions.md`
+- workaround vivo → `docs/known_issues.md`
+- coda/next → `docs/status.md`
+- contratto → `docs/contract.md`
+- istruzioni agenti → questo file
+
+Mai copiare la stessa tabella in due file.
+
+| Evento | Obbligatorio | Condizionale (solo se…) |
+|---|---|---|
+| feat/fix codice | `CHANGELOG.md` → `[Unreleased]` | `contract.md` se JSON; `known_issues` se workaround nuovo; `decisions` se scelta irreversibile nuova; riga Architettura in `status` se cambia "cosa c'è in prod" |
+| fine sessione | `status.md` header + coda (tick/add/close P) | — |
+| release/tag | `pyproject.toml` + promote CHANGELOG + cella versione in `status` | `README` solo se cambiano albero/comandi pubblici |
+| chiudi KI | move → `archive/known_issues_resolved.md` | — |
+| nuova decisione | append `D-NNN` in `decisions.md` | `AGENTS.md` solo se cambia invariante stack/scienza/anti-pattern |
+| UI system / brand | `DESIGN.md` / `PRODUCT.md` | mai `status`, mai `CHANGELOG` salvo release note user-facing |
+| doc-only | il file toccato | `CHANGELOG` voce `Docs` opzionale, non obbligatoria per typo |
+
+**Anti-pattern**: NON aggiornare `README.md` / `PRODUCT.md` / `DESIGN.md` salvo trigger esplicito (cambia UX repo, identità prodotto, design system). Il fan-out a 7 file per ogni feature è il principale fonte di drift.
 
 ### Commit: proporre al completamento di ogni task
 
