@@ -94,19 +94,25 @@ guazza/
 
 ## Roadmap
 
-Sprint completati (0–9). Storia dettagliata per release → `CHANGELOG.md`.
+Sprint completati (0–13). Storia dettagliata per release → `CHANGELOG.md`.
 Coda corrente (P-items e decisioni approvate da implementare) → `docs/status.md` §Coda.
 
 | Sprint | Obiettivo | Stato |
 |---|---|---|
 | Sprint 0 | Ricognizione sorgenti, config stazioni, struttura repo | ✅ Completato |
-| Sprint 1 | Ingestion SIR + Netatmo + Open-Meteo + ARPAT, schema DuckDB, job cron | ✅ Completato |
+| Sprint 1 | Ingestion SIR + Netatmo + Open-Meteo + ARPAT (rimosso v0.13.0), schema DuckDB, job cron | ✅ Completato |
 | Sprint 2 | Backfill SIR pre-2022, quality control (SIR), flag qualità | ✅ Completato |
 | Sprint 3 | Feature engineering, 50 feature, ring upstream pluvio | ✅ Completato |
 | Sprint 4 | LightGBM quantile + CQR, skill +25% vs NWP su temperatura | ✅ Completato |
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
 | Sprint 6 | Frontend HTML+JS+Chart.js, layout a 3 sezioni | ✅ Completato |
 | Sprint 7 | Raffinamenti logiche, radar RainViewer, redesign frontend v2 (CSS custom) | ✅ Completato |
+| Sprint 8 | Pipeline unificata + ICON-D2 rimosso + realtime refresh (v0.12.0–v0.12.6) | ✅ Completato |
+| Sprint 9 | Adaptive Conformal Inference + monitor copertura 30d (v0.10.0) | ✅ Completato |
+| Sprint 10 | Skill history time series + GFS rimosso + CQR fix (v0.11.0–v0.11.2) | ✅ Completato |
+| Sprint 11 | Calibrazione soglie DLE post-30gg `indicator_log` in produzione | 🟡 In corso |
+| Sprint 12 | Case study / pubblicazione (articolo LinkedIn/Medium, repo pubblico) | 🔴 Da fare |
+| Sprint 13 | Semplificazione documentale + archivio KI risolti + status cockpit | ✅ Completato (commit recenti) |
 | Sprint 8 | Deploy homelab: k3s + Flux + SOPS, PVC, CronJob, immagine container | ✅ Completato |
 | Sprint 9 | Adaptive Conformal Inference + monitor copertura 30d | ✅ Completato |
 
@@ -288,16 +294,8 @@ frontend/
 
 ### JSON di output (`data/output/{location_id}.json`)
 
-```
-{location_id, generated_at, coverage_empirical_30d,
- current: {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg, dewpoint_c, feels_like_c, pressure_hpa},
- nwp_models_hourly: [{source, label, data: [{ts, temp_c, humidity_pct, precip_mm, wind_speed_ms}]}],
- days: [{target_date, lead_time_h,
-         forecasts: {tmin_c, tmax_c, precip_mm} ciascuno con p50+CI80+CI90,
-         indicators: {panni, motorino, gelata, ...} con verdict+rule_matched,
-         hourly: [{hour, temp_c, humidity_pct, precip_mm, precip_prob, wind_speed_ms}],
-         nwp_comparison: [{source, label, tmin_c, tmax_c, precip_mm, last_run}]}]}
-```
+Schema canonico (output per location, `skill.json` globale, `skill_history.json`,
+DLE `indicator_log`): vedi [`docs/contract.md`](docs/contract.md).
 
 ---
 
