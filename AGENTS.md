@@ -45,7 +45,7 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 
 | Componente | Scelta | Motivazione |
 |---|---|---|
-| Server | Dell Optiplex Micro 3050 — host Proxmox (homelab multi-servizio) | Hardware già disponibile, costo zero; Guazza è un tenant tra altri |
+| Server | Dell Optiplex Micro 3050 — NixOS baremetal (homelab astra, host `nebula`; Guazza è un tenant k8s) | Hardware già disponibile, costo zero; Guazza è un tenant tra altri |
 | OS | Ubuntu 24.04 LTS | LTS, standard |
 | Scheduling | cron Linux o k8s CronJob | Job = CLI idempotenti orchestrator-agnostic; scheduler a scelta del homelab |
 | Storage analitico | DuckDB | Column-oriented, file singolo, backup = cp |
@@ -53,7 +53,7 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 | Backup | Cloudflare R2 (10GB free) | Egress gratis, free tier |
 | ML core | LightGBM quantile | Gold standard dati tabulari, no GPU |
 | CI calibrazione | CQR (Romano 2019) | Garanzia copertura marginale |
-| Esposizione pubblica | Tailscale Funnel | HTTPS terminato da Tailscale, no port forwarding, no IP pubblico; richiede `tailscale` sull'host e dominio (custom o `*.ts.net`) puntato al nodo |
+| Esposizione pubblica | Tailscale Funnel | HTTPS terminato da Tailscale, no port forwarding, no IP pubblico; richiede `tailscale` sull'host e dominio (custom o `*.ts.net`) puntato al nodo. Da riportare su nebula dopo la migrazione k8s (P6) |
 | Accesso tailnet / admin | Tailscale (già installato) | SSH, gestione, e servizi interni `*.lab.paroparo.it` via Traefik su k3s |
 | Deploy | CI su GitHub Actions (pubblica); CD nel homelab (es. namespace k8s) | CI clean-room + badge; il deploy non vincola l'app |
 | Frontend | HTML + CSS custom + Chart.js + Leaflet + Nginx | Statico, CSS custom (no framework), librerie e font via CDN jsDelivr |

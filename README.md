@@ -6,7 +6,7 @@ Previsioni meteo iper-locali per 6 microclimi toscani. Sistema operativo persona
 
 **Tesi**: i modelli numerici pubblici (ECMWF, ICON-EU, app commerciali) sbagliano sistematicamente sui microclimi specifici generati da orografia, fondi valle e isole di calore. Questo progetto lo dimostra empiricamente e produce un sistema che fa misurabilmente meglio.
 
-**Costo infrastruttura**: ~€2/mese (dominio). Server: Dell Optiplex Micro 3050 locale, esposto via Tailscale Funnel (DNS Cloudflare per `guazza.it`).
+**Costo infrastruttura**: ~€2/mese (dominio). Server: Dell Optiplex Micro 3050 — homelab NixOS `nebula` (k3s). Accesso interno `guazza.lab.paroparo.it`; pubblico `guazza.it` via Tailscale Funnel (DNS Cloudflare) — da riportare su nebula.
 
 ---
 
@@ -106,7 +106,7 @@ guazza/
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
 | Sprint 6 | Frontend HTML+JS+Chart.js, layout a 3 sezioni | ✅ Completato |
 | Sprint 7 | Raffinamenti logiche, radar RainViewer, redesign frontend v2 (CSS custom) | ✅ Completato |
-| Sprint 8 | Deploy su Optiplex locale + Tailscale Funnel, k3s/ArgoCD, immagine container | 🟡 In corso (S-A: Dockerfile + CI) |
+| Sprint 8 | Deploy su Optiplex locale: k3s + Flux + SOPS, PVC, CronJob, immagine container | ✅ Completato (v0.12.2) |
 | Sprint 9 | Adaptive Conformal Inference + monitor copertura 30d | ✅ Completato (v0.10.0) |
 | Sprint 10 | Calibrazione soglie DLE post-deploy | — |
 | Sprint 11 | Case study / pubblicazione + skill history time series | 🟡 In corso (skill history fatto, v0.11.0; GFS rimosso, v0.11.1; fix CQR, v0.11.2) |
@@ -115,15 +115,15 @@ guazza/
 
 ## Architettura
 
-- **Server**: Dell Optiplex Micro 3050 — host Proxmox (homelab multi-servizio, Guazza è un tenant)
-- **Container**: immagine `ghcr.io/iltruma/guazza` (Python 3.13 + nginx, single-stage con `uv`), buildata su push tag `v*.*.*`
-- **Scheduling**: cron Linux o k8s CronJob — job = CLI idempotenti orchestrator-agnostic
+- **Server**: Dell Optiplex Micro 3050 — NixOS baremetal (homelab astra, host `nebula`, k3s; Guazza è un tenant)
+- **Container**: immagine `ghcr.io/iltruma/guazza` (Python 3.13 + nginx, single-stage con `uv`), buildata su push tag `v*.*.*`; `config/` bundle nell'immagine (v0.12.1+, `CONFIG_DIR=/app/config`)
+- **Scheduling**: k8s CronJob in produzione (namespace `guazza`); cron Linux solo per install dev — job = CLI idempotenti orchestrator-agnostic
 - **Storage**: DuckDB (colonnare, file singolo) + R2 backup
 - **ML**: LightGBM quantile regression + CQR calibration
 - **Frontend**: HTML+JS vanilla + CSS custom (no framework) + Chart.js + Leaflet + Twemoji + suncalc; font Geist + JetBrains Mono (CDN, statico)
-- **Esposizione pubblica**: Tailscale Funnel — HTTPS terminato da Tailscale, no port forwarding, no IP pubblico
+- **Esposizione pubblica**: Tailscale Funnel — HTTPS terminato da Tailscale, no port forwarding, no IP pubblico (da riportare su nebula dopo la migrazione k8s)
 - **DNS pubblico**: Cloudflare (solo zona DNS per `guazza.it`); WAF/CDN rimossi dallo stack
-- **Accesso tailnet / admin**: Tailscale + Traefik su k3s (`guazza.lab.paroparo.it` per via interna)
+- **Accesso tailnet / admin**: Tailscale + Traefik su k3s (`guazza.lab.paroparo.it` — attivo)
 - **Monitoring**: Healthchecks.io + UptimeRobot (free tier)
 
 Vedi `docs/decisions.md` per motivazioni complete.
@@ -329,8 +329,8 @@ uv run python -m guazza.jobs.train run
 # 7. Prima pipeline (include feature build, predict, DLE+JSON, monitor)
 uv run python -m guazza.jobs.pipeline run
 
-# 8. Installa crontab sul server locale
-crontab deploy/crontab.template
+# 8. In produzione i job girano come CronJob k8s (namespace `guazza`, repo astra — vedi `docs/status.md` P6).
+#    Solo per install dev: crontab deploy/crontab.template
 ```
 
 ---

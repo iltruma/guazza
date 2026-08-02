@@ -115,7 +115,7 @@ usa finestra 3h, AQ non è feature di training).
 
 **Pulizia eseguita** (verificata 2026-06-27): `SELECT COUNT(*) FROM observations
 WHERE source='openaq'` → 0 righe. Niente da cancellare localmente. Stessa
-situazione attesa sul server homelab (k3s+ArgoCD ricrea il DB pulito al primo
+situazione attesa sul server homelab (k3s+Flux con PVC nuovo ricrea il DB pulito al primo
 deploy).
 
 **Note sul design ARPAT NRT OpenData** (apprese durante l'implementazione 2026-05-22):

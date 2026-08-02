@@ -130,7 +130,7 @@ Ogni layer aggiuntivo (Prefect, Docker, FastAPI 24/7) aggiunge:
 invocabili da qualsiasi scheduler. L'invariante blindato è che l'app resti
 **orchestrator-agnostic** — non che si usi per forza `cron`.
 
-Il *target di deploy* è libero (il 3050 è un host Proxmox multi-servizio): cron in una
+Il *target di deploy* è libero (il 3050 è un host NixOS baremetal multi-servizio): cron in una
 LXC oppure namespace k8s con CronJob e DB in PVC sono entrambi legittimi. Vietato è
 **accoppiare la logica applicativa** a un orchestratore (Prefect/Dagster/Airflow/Celery)
 o esporre l'app come PaaS — quello reintroduce superficie di failure e complessità di

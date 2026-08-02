@@ -10,7 +10,7 @@
 | Versione | **0.12.0** |
 | Test | 337 verdi (suite completa; `test_models.py` ~3min per LightGBM training) |
 | Lint / mypy | ✅ puliti |
-| Deploy | Sprint 8 in corso — k3s homelab (`houston`, namespace `guazza`) |
+| Deploy | **Sprint 8 completato** (v0.12.2) — k3s astra/nebula, namespace `guazza`, Flux + SOPS |
 
 ## Architettura corrente
 
@@ -59,12 +59,15 @@ Oggi la sezione "Quanto è affidabile" è embeddata nello SPA per-location.
 `previous_dayN` Open-Meteo parte da ~nov 2025. La versione rigorosa multi-stagione
 si accumula solo in avanti dall'avvio in produzione (Sprint 8+).
 
-### P6 — Deploy Sprint 8 in corso
+### P6 — Deploy Sprint 8 completato (2026-08-02)
 
-- Manifest k8s in `k8s/apps/guazza/` su repo Houston
-- `guazza.it` → DNS Cloudflare (solo zona): CNAME pubblico a `<node>.<tailnet>.ts.net` con HTTPS provisioning Tailscale (`tailscale set --https=guazza.it` sul nodo). `cloudflared` rimosso dallo stack.
-- `guazza.lab.paroparo.it` → resta su Traefik (wildcard `*.lab.paroparo.it` già emesso); routing tailnet indipendente da quello pubblico
-- SealedSecret `netatmo-credentials` e `healthchecks-url` già nel repo Houston
+- Manifest k8s in `k8s/apps/guazza/` su repo astra (GitOps Flux + SOPS/age, niente ArgoCD/SealedSecret)
+- `guazza.lab.paroparo.it` → Traefik (wildcard `*.lab.paroparo.it` già emessa); routing tailnet attivo
+- CronJob k8s: `guazza-realtime` (15min), `guazza-pipeline` (6h), `guazza-daily` (06:00 UTC) — `concurrencyPolicy: Forbid` (DuckDB single-writer), PVC `local-path` RWO
+- Secrets SOPS: `netatmo-credentials`, `healthchecks-url` (in `k8s/apps/guazza/`)
+- `config/` bundle nell'immagine (v0.12.1+), `CONFIG_DIR=/app/config`
+- Immagine `ghcr.io/iltruma/guazza:v0.12.2` (fix nginx non-root: chown `/var/log/nginx`)
+- `guazza.it` → DNS Cloudflare (solo zona): CNAME a `<node>.<tailnet>.ts.net` con HTTPS provisioning Tailscale (`tailscale set --https=guazza.it`). **Da riportare su nebula** (spostamento Funnel)
 
 ### P7 — UV index come dato (NWP)
 
@@ -86,7 +89,7 @@ Non è un indicatore DLE di per sé, ma abilita derivati futuri (scottatura, esp
 
 - Account Google Cloud con billing attivato (free tier $200/mese, opzionale alert soglia)
 - Air Quality API + Pollen API abilitate nel progetto GCP
-- API key in env var `GOOGLE_AQ_API_KEY` + SealedSecret su Houston
+- API key in env var `GOOGLE_AQ_API_KEY` + Secret SOPS su astra (`k8s/apps/guazza/`)
 - Verifica free tier: 6 location × 24h × 2 API = ~8.6k chiamate/mese, rientra nel credito free
 - Specie polline rilevanti per Toscana da coprire: graminacee, parietaria, cipresso, olivo, quercia
 
@@ -156,7 +159,7 @@ accettabile libera. Se il caso d'uso si amplia, riaprire la discussione.
 
 | Sprint | Stato | Contenuto |
 |---|---|---|
-| 8 | 🔄 in corso | Deploy homelab (k3s, ArgoCD, PVC, Tailscale Funnel) |
+| 8 | ✅ Completato | Deploy homelab (k3s, Flux, PVC, CronJob, Tailscale Funnel da riportare) |
 | 9 | 🔜 | Calibrazione soglie DLE (30-60gg `indicator_log` in produzione) |
 | 10 | 🔜 | Nowcasting orario (richiede 6-12 mesi di `realtime` in produzione) |
 | 11 | 🔜 | Case study / pubblicazione (repo pubblico, articolo) |

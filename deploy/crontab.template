@@ -1,6 +1,9 @@
-# Guazza — crontab template
+# Guazza — crontab template (SOLO install dev / server senza k8s)
 #
-# Installazione sul server homelab:
+# In produzione i job girano come CronJob k8s (namespace `guazza`, repo astra —
+# vedi docs/status.md P6). Questo template serve per install locali.
+#
+# Installazione su server dev:
 #   crontab deploy/crontab.template
 #
 # Prerequisiti:
