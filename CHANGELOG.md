@@ -8,6 +8,30 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.12.6] - 2026-08-02
+
+### Added
+- **Refresh realtime dei JSON location**: `guazza-ingest realtime` aggiorna
+  `current` e `air_quality` dei JSON già generati dalla pipeline (scrittura
+  atomica, temp file dedicato, skip se il file non esiste), senza rifare
+  forecast/features/predict — il frontend riflette le osservazioni entro 15 min.
+- **`current.sources`**: provenance per-variabile di tutti i valori mostrati
+  nel frontend (`"realtime"` | `"nwp"` | `null`); `current.wind_speed_source`
+  resta come alias retrocompatibile. Asterisco accessibile nella hero accanto
+  ai valori provenienti dal modello.
+- **Metadata temporale `updates`** nei JSON location: `updates.pipeline_at`
+  (== `generated_at`) e `updates.realtime_at` (completamento ultimo patch
+  realtime), preservati tra pipeline e refresh; freshness bar nell'header del
+  frontend — `SIR 12:45 · Netatmo 12:43` (timestamp del dato) e
+  `Realtime 12:47 · previsioni 08:12` (timestamp dei job).
+
+### Fixed
+- **P3 — vento in `current` quasi sempre null**: fallback per-variabile in
+  `get_current_conditions`. Se il blend SIR/Netatmo ha osservazioni valide ma
+  manca una variabile (es. vento: anemometro assente o dato realtime non
+  arrivato), la singola variabile viene ripiegata sulla media NWP dell'ora più
+  vicina a now, senza buttare le osservazioni valide.
+
 ## [0.12.5] - 2026-08-01
 
 ### Removed
