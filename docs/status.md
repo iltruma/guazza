@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | Versione | **0.13.0** |
-| Test | 337 verdi (suite completa; `test_models.py` ~3min per LightGBM training) |
+| Test | 309 verdi (suite completa; `test_models.py` ~3min per LightGBM training) |
 | Lint / mypy | ✅ puliti |
 | Deploy | k3s astra/nebula, namespace `guazza`, Flux + SOPS |
 
@@ -38,4 +38,4 @@
 
 ## Prossima mossa
 
-Sprint 9 → calibrazione soglie DLE post-30gg `indicator_log` in produzione.
+Calibrazione soglie DLE post-30gg `indicator_log` in produzione.
