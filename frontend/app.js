@@ -459,8 +459,14 @@ function renderHeroStatsInline(current) {
   const el = document.getElementById('hero-stats');
   if (!el) return;
   const windDir = windDirLabel(current?.wind_dir_deg);
+  // `wind_speed_source === "nwp"` → il valore reale non era disponibile e si è usato il modello: lo segnaliamo con un asterisco accessibile.
+  const windMark = current?.wind_speed_source === 'nwp' ? {
+    glyph: '*',
+    tip:   'Vento da modello NWP — osservazione in tempo reale non disponibile.',
+    label: 'Valore di vento stimato dal modello meteorologico; osservazione in tempo reale non disponibile.',
+  } : null;
   const stats = [
-    { icon: '💨', lbl: 'Vento',     val: current?.wind_speed_ms != null ? `${fmtWind(current.wind_speed_ms)}${windDir ? ` ${windDir.label}` : ''}` : '—' },
+    { icon: '💨', lbl: 'Vento',     val: current?.wind_speed_ms != null ? `${fmtWind(current.wind_speed_ms)}${windDir ? ` ${windDir.label}` : ''}` : '—', mark: windMark },
     { icon: '💧', lbl: 'Umidità',   val: current?.humidity_pct  != null ? `${current.humidity_pct.toFixed(0)}%` : '—' },
     { icon: '🌧️', lbl: 'Pioggia',   val: current?.precip_mm     != null ? `${current.precip_mm.toFixed(1)} mm` : '—' },
     { icon: '🌡️', lbl: 'Pressione', val: current?.pressure_hpa  != null ? `${current.pressure_hpa.toFixed(0)} hPa` : '—' },
@@ -469,8 +475,9 @@ function renderHeroStatsInline(current) {
     <div class="g-hero__stat">
       <span class="g-hero__stat-icon">${s.icon}</span>
       <span class="g-hero__stat-lbl">${s.lbl}</span>
-      <span class="g-hero__stat-val">${escHtml(s.val)}</span>
+      <span class="g-hero__stat-val">${escHtml(s.val)}${s.mark ? `<button class="g-hero__stat-mark" type="button" data-tip="${escHtml(s.mark.tip)}" aria-label="${escHtml(s.mark.label)}">${s.mark.glyph}</button>` : ''}</span>
     </div>`).join('');
+  _wireChipTooltip(el, '.g-hero__stat-mark');
   twemoji.parse(el, TWEMOJI_OPTS);
 }
 

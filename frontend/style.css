@@ -516,6 +516,23 @@ img.emoji {
   width: 100%;
 }
 
+/* Asterisco accessibile: valore derivato da modello NWP (es. vento senza obs realtime).
+   Inline, baseline, muted — non altera il layout della cella. Tooltip via #indicator-tooltip. */
+.g-hero__stat-mark {
+  margin-left: 1px;
+  padding: 0;
+  color: var(--text-3);
+  font-weight: 700;
+  font-size: 0.85em;
+  line-height: 1;
+  cursor: help;
+  vertical-align: baseline;
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 1px;
+}
+.g-hero__stat-mark:hover { color: var(--text-2); }
+
 /* Sun/moon strip — below DLE indicators, secondary context */
 .g-hero__sun {
   display: flex;

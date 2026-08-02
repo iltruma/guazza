@@ -510,10 +510,20 @@ def get_current_conditions(
     `station_weights` per SIR. Netatmo porta il proprio peso dinamico nella colonna
     `observations.weight`. I due rami vengono combinati in un'unica media pesata.
 
+    Fallback per-variabile (fix P3): se il blend stazioni copre solo alcune
+    variabili (es. temp presente ma vento null — stazione senza anemometro o
+    dato realtime non arrivato), le variabili mancanti vengono riempite con la
+    media NWP dell'ora più vicina a now, senza buttare le osservazioni valide.
+    `wind_speed_source` dichiara la provenienza del vento nel risultato:
+    "realtime" (blend stazioni), "nwp" (fallback) o null (vento assente).
+    Se invece non c'è nessuna osservazione utile, tutte le variabili vengono
+    dal NWP come prima (ts_sir/ts_netatmo null).
+
     Returns:
-        {ts, temp_c, humidity_pct, precip_mm, wind_speed_ms,
-         dewpoint_c, feels_like_c} oppure None se non ci sono né osservazioni
-        recenti né forecast disponibili.
+        {ts, ts_sir, ts_netatmo, temp_c, humidity_pct, precip_mm, wind_speed_ms,
+         wind_dir_deg, dewpoint_c, feels_like_c, pressure_hpa, weather_code,
+         wind_speed_source} oppure None se non ci sono né osservazioni recenti
+        né forecast disponibili.
     """
     # Media pesata: SIR pesato via station_weights (JOIN su station_id, non
     # location_id — la riga obs è taggata con una sola location arbitraria),
@@ -570,45 +580,86 @@ def get_current_conditions(
         FROM obs
     """
     row = db.execute(blend_sql, [location_id, location_id]).fetchone()
-
-    from_nwp = False
-    if row is None or row[3] is None:
-        # Fallback NWP: nessuna osservazione realtime utile. Media tra modelli
-        # dell'ora forecast più vicina a now (ultimo run per sorgente).
+    # Il blend è utile se almeno una variabile obs (temp/humidity/precip/wind)
+    # è non-null. wind_dir_deg da solo non conta: senza velocità non è un dato
+    # di vento utilizzabile.
+    ts = ts_sir = ts_netatmo = None
+    if row is None or not any(v is not None for v in row[3:7]):
+        # Nessuna osservazione realtime utile: tutto da NWP come prima.
         # ts_sir/ts_netatmo NULL: i dati non vengono da stazioni osservative.
-        fallback_sql = """
-            WITH f AS (
-                SELECT temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg, ts_valid
-                FROM forecasts
-                WHERE location_id = ?
-                  AND ts_valid >= NOW() - INTERVAL 2 HOURS
-                  AND ts_valid <= NOW() + INTERVAL 2 HOURS
-                  AND temp_c IS NOT NULL
-                QUALIFY ROW_NUMBER() OVER (
-                    PARTITION BY source
-                    ORDER BY ts_run DESC, abs(epoch(ts_valid) - epoch(NOW()))
-                ) = 1
-            )
-            SELECT
-                NULL                                          AS ts_sir,
-                NULL                                          AS ts_netatmo,
-                strftime(MAX(ts_valid), '%Y-%m-%dT%H:%M:%SZ') AS ts,
-                ROUND(AVG(temp_c), 1)                        AS temp_c,
-                ROUND(AVG(humidity_pct), 0)                  AS humidity_pct,
-                ROUND(AVG(precip_mm), 2)                     AS precip_mm,
-                ROUND(AVG(wind_speed_ms), 1)                 AS wind_speed_ms,
-                ROUND(AVG(wind_dir_deg), 0)                  AS wind_dir_deg
-            FROM f
-        """
-        row = db.execute(fallback_sql, [location_id]).fetchone()
-        from_nwp = True
+        has_obs = False
+        b_temp = b_hum = b_precip = b_wind = b_wdir = None
+    else:
+        has_obs = True
+        ts_sir, ts_netatmo, ts = row[0], row[1], row[2]
+        b_temp, b_hum, b_precip, b_wind, b_wdir = row[3], row[4], row[5], row[6], row[7]
 
-    if row is None or row[3] is None:
+    # Media NWP dell'ora forecast più vicina a now (ultimo run per sorgente).
+    # Nessun filtro temp_c IS NOT NULL: nel fill per-variabile servono anche le
+    # righe che hanno solo il vento. Nel ramo tutto-NWP il gate su temp_c qui
+    # sotto decide se il risultato è utilizzabile.
+    fallback_sql = """
+        WITH f AS (
+            SELECT temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg, ts_valid
+            FROM forecasts
+            WHERE location_id = ?
+              AND ts_valid >= NOW() - INTERVAL 2 HOURS
+              AND ts_valid <= NOW() + INTERVAL 2 HOURS
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY source
+                ORDER BY ts_run DESC, abs(epoch(ts_valid) - epoch(NOW()))
+            ) = 1
+        )
+        SELECT
+            NULL                                          AS ts_sir,
+            NULL                                          AS ts_netatmo,
+            strftime(MAX(ts_valid), '%Y-%m-%dT%H:%M:%SZ') AS ts,
+            ROUND(AVG(temp_c), 1)                        AS temp_c,
+            ROUND(AVG(humidity_pct), 0)                  AS humidity_pct,
+            ROUND(AVG(precip_mm), 2)                     AS precip_mm,
+            ROUND(AVG(wind_speed_ms), 1)                 AS wind_speed_ms,
+            ROUND(AVG(wind_dir_deg), 0)                  AS wind_dir_deg
+        FROM f
+    """
+    nwp: tuple[Any, ...] | None = None
+    if has_obs:
+        # Fix P3: riempi per-variabile le colonne mancanti del blend con il NWP.
+        # ts resta quello del blend (l'ora osservativa è onesta anche per i
+        # valori riempiti dal modello).
+        if any(v is None for v in (b_temp, b_hum, b_precip, b_wind, b_wdir)):
+            nwp = db.execute(fallback_sql, [location_id]).fetchone()
+    else:
+        nwp = db.execute(fallback_sql, [location_id]).fetchone()
+        if nwp is None or nwp[3] is None:
+            return None
+        ts_sir = ts_netatmo = None
+        ts = nwp[2]
+
+    def _fill(b_val: Any, n_idx: int) -> Any:
+        """Valore dal blend stazioni, o dal NWP se la variabile è mancante."""
+        if b_val is not None:
+            return b_val
+        return nwp[n_idx] if nwp is not None else None
+
+    temp_c        = _fill(b_temp, 3)
+    humidity_pct  = _fill(b_hum, 4)
+    precip_mm     = _fill(b_precip, 5)
+    wind_speed_ms = _fill(b_wind, 6)
+    wind_dir_deg  = _fill(b_wdir, 7)
+
+    if temp_c is None:
         return None
 
-    ts_sir, ts_netatmo, ts, temp_c, humidity_pct, precip_mm, wind_speed_ms, wind_dir_deg = row
-    if from_nwp:
+    # Provenance del vento per il frontend: "realtime" se dal blend stazioni,
+    # "nwp" se riempito dal forecast, null se il vento manca del tutto.
+    wind_speed_source: str | None = None
+    if wind_speed_ms is not None:
+        wind_speed_source = "realtime" if has_obs and b_wind is not None else "nwp"
+
+    if not has_obs:
         logger.debug(f"[{location_id}] current da fallback NWP (nessuna obs realtime)")
+    elif wind_speed_source == "nwp":
+        logger.debug(f"[{location_id}] vento da fallback NWP (obs realtime senza anemometro)")
 
     # pressure_hpa e weather_code vengono dai forecast NWP (tabella forecasts),
     # non dalle stazioni realtime.
@@ -655,6 +706,7 @@ def get_current_conditions(
         "precip_mm":     float(precip_mm) if precip_mm is not None else None,
         "wind_speed_ms": ws,
         "wind_dir_deg":  wd,
+        "wind_speed_source": wind_speed_source,
         "dewpoint_c":    dew,
         "feels_like_c":  apparent,
         "pressure_hpa":  float(pressure_hpa) if pressure_hpa is not None else None,

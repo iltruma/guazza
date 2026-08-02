@@ -784,6 +784,47 @@ def test_current_conditions_returns_data(seeded_db: Path) -> None:
     assert result["humidity_pct"] == pytest.approx(65.0)
     assert result["precip_mm"] == pytest.approx(0.0)
     assert result["wind_speed_ms"] == pytest.approx(1.2)
+    # Vento dal blend stazioni → provenance realtime
+    assert result["wind_speed_source"] == "realtime"
+
+
+def test_current_conditions_wind_fallback_per_variable(seeded_db: Path) -> None:
+    """P3: temp realtime SIR senza vento → wind_speed_ms ripiegato sul NWP (nwp).
+
+    La riga forecast ha SOLO il vento (temp_c null): senza il filtro
+    temp_c IS NOT NULL nel fallback non sarebbe selezionata.
+    """
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, humidity_pct)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ["sir_toscana", "ST_W", "casa_campi", now - timedelta(minutes=5), "realtime", 22.0, 55.0])
+    _seed_sir_weight(con, "ST_W", "casa_campi")
+    con.execute("""
+        INSERT INTO forecasts
+            (source, location_id, ts_run, ts_valid, lead_time_h, wind_speed_ms)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, ["open_meteo_ecmwf_ifs", "casa_campi",
+          now - timedelta(hours=2), now - timedelta(minutes=10), 2, 4.5])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    # temp dal blend stazioni (obs realtime), con ts_sir valorizzato
+    assert result["temp_c"] == pytest.approx(22.0)
+    assert result["ts_sir"] is not None
+    assert result["ts_netatmo"] is None
+    # vento dal fallback NWP, provenance esplicita
+    assert result["wind_speed_ms"] == pytest.approx(4.5)
+    assert result["wind_speed_source"] == "nwp"
 
 
 def _seed_arpat_weight(
@@ -921,6 +962,8 @@ def test_current_conditions_shared_station_wind(seeded_db: Path) -> None:
 
     assert result is not None
     assert result["wind_speed_ms"] == pytest.approx(3.4)
+    # Vento dal blend stazioni (via station_weights) → provenance realtime
+    assert result["wind_speed_source"] == "realtime"
 
 
 def test_current_conditions_weighted_blend(seeded_db: Path) -> None:
@@ -974,6 +1017,8 @@ def test_current_conditions_netatmo_blend(seeded_db: Path) -> None:
     # ts_netatmo popolato, ts_sir assente (nessuna stazione SIR)
     assert result["ts_netatmo"] is not None
     assert result["ts_sir"] is None
+    # Nessun anemometro tra le obs Netatmo e nessun forecast NWP → vento assente
+    assert result["wind_speed_source"] is None
 
 
 def test_current_conditions_excludes_netatmo_qc_fail(seeded_db: Path) -> None:
@@ -1140,6 +1185,8 @@ def test_current_conditions_fallback_nwp(seeded_db: Path) -> None:
     assert result is not None
     assert result["temp_c"] == pytest.approx(17.0)  # media (16+18)/2
     assert result["wind_speed_ms"] == pytest.approx(3.0)
+    # Nessuna obs: tutte le variabili (vento incluso) dal NWP
+    assert result["wind_speed_source"] == "nwp"
 
 
 # ── get_nwp_models_hourly ─────────────────────────────────────────────────────

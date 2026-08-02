@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-08-01 (v0.12.5)
+> Aggiornato: 2026-08-02 (v0.12.5)
 > Storico sprint → `CHANGELOG.md`
 
 ## Stato
@@ -32,22 +32,15 @@
 Fino ad allora `apply_aci_correction` è un pass-through su CQR statico.
 Si risolve automaticamente dopo ~30 giorni di operatività. Nessuna azione richiesta.
 
-### P3 — Vento in `current` quasi sempre null
+### P3 — ✅ Risolto (2026-08-02) — Vento in `current` quasi sempre null
 
-SIR è **già letto** in `get_current_conditions` (output.py:540) per le 6 location,
-e le stazioni `anemo` configurate in `locations.yaml` hanno tutte l'anemometro
-(verificato in `stations.yaml`: TOS01001225/15/05, TOS11000516, ecc.). Tuttavia
-`current.wind_speed_ms` è spesso null perché:
-- le obs realtime SIR di vento non arrivano sempre (latenza/qualità del dato
-  realtime di actions.php)
-- il fallback a NWP esiste ma è troppo grezzo: `if row is None or row[3] is None`
-  (output.py:577) — fallback SOLO se TUTTE le obs mancano, non se manca solo il vento
-
-**Fix proposto**: fallback per singola variabile in `get_current_conditions`. Se
-dopo il blend SIR+Netatmo una variabile (es. vento) è null, fallback a NWP per
-quella variabile specifica. Modifica locale a `output.py` (~30 righe) + test in
-`tests/test_output.py`. Da fare prima di Sprint 9 perché è bloccante per
-qualsiasi indicatore realtime che usa il vento (P? pressione_in_caduta, ecc.).
+Fallback **per-variabile** in `get_current_conditions` (output.py): se il blend
+SIR/Netatmo ha osservazioni valide ma manca il vento (anemometro assente o dato
+realtime non arrivato), la singola variabile viene ripiegata sulla media NWP
+dell'ora più vicina a now, senza buttare le osservazioni valide. Nuovo campo
+`current.wind_speed_source` (`"realtime"` | `"nwp"` | `null`) documentato in
+`docs/contract.md`; il frontend mostra un asterisco accanto al vento quando la
+fonte è il modello. Fix in `output.py` + `frontend/`, test in `tests/test_output.py`.
 
 ### P4 — `affidabilita.html` come pagina dedicata
 
