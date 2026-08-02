@@ -123,7 +123,7 @@ Attendo conferma prima di procedere.
 - Leggere qualsiasi file di codice/config/docs
 - Eseguire pytest, ruff, mypy
 - Scrivere/aggiornare `docs/`
-- `git add <file specifici>` + `git commit` (mai `git push`)
+- `git add <file specifici>` (proporre commit, attendere conferma — vedi §Regole di commit)
 
 ### Errori in esecuzione
 
