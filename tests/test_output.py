@@ -26,6 +26,7 @@ from guazza.output import (
     get_daily_weather_code,
     get_nwp_model_comparison,
     get_nwp_models_hourly,
+    refresh_realtime_json,
     write_location_json,
 )
 from guazza.storage import DuckDBClient
@@ -1479,3 +1480,162 @@ def test_write_location_json_weather_code_null(
     )
     data = json.loads(path.read_text())
     assert data["days"][0]["weather_code"] is None
+
+
+# ── refresh_realtime_json ─────────────────────────────────────────────────────
+
+def _seed_realtime_sir(db_path: Path, location_id: str, temp_c: float) -> None:
+    """Inserisce una osservazione SIR realtime recente con station_weights."""
+    from datetime import timedelta
+
+    import duckdb
+
+    con = duckdb.connect(str(db_path))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, humidity_pct)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ["sir_toscana", "ST_RT", location_id,
+          datetime.now() - timedelta(minutes=5), "realtime", temp_c, 60.0])
+    _seed_sir_weight(con, "ST_RT", location_id)
+    con.close()
+
+
+def test_refresh_realtime_json_updates_current(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+    seeded_db: Path,
+) -> None:
+    """refresh_realtime_json sostituisce current con le osservazioni appena ingerite."""
+    with DuckDBClient(db_path=seeded_db) as db:
+        path = write_location_json(
+            location_id="casa_campi",
+            days=_make_days(sample_pred, sample_indicators),
+            coverage={},
+            output_dir=tmp_path,
+            db=db,
+        )
+        # DB vuoto → la pipeline ha scritto current null
+        assert json.loads(path.read_text())["current"] is None
+
+        _seed_realtime_sir(seeded_db, "casa_campi", 21.5)
+        updated = refresh_realtime_json(db, "casa_campi", tmp_path)
+
+    assert updated == path
+    data = json.loads(path.read_text())
+    assert data["current"] is not None
+    assert data["current"]["temp_c"] == pytest.approx(21.5)
+    assert data["current"]["humidity_pct"] == pytest.approx(60.0)
+    # air_quality ricalcolato (None senza dati ARPAT), mai rimosso dal payload
+    assert "air_quality" in data
+
+
+def test_refresh_realtime_json_preserves_forecast_fields(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+    seeded_db: Path,
+) -> None:
+    """I campi non realtime restano intatti: solo current/air_quality cambiano."""
+    from datetime import timedelta
+
+    import duckdb
+
+    # Forecast NWP orari: nwp_models_hourly non deve essere vuoto né cambiare
+    ts_run = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.executemany("""
+        INSERT OR REPLACE INTO forecasts
+        (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, humidity_pct, precip_mm)
+        VALUES (?,?,?,?,?,?,?,?)
+    """, [
+        ["open_meteo_ecmwf_ifs", "casa_campi", ts_run, datetime.now() + timedelta(hours=1), 1, 20.0, 60.0, 0.0],
+        ["open_meteo_icon_eu",   "casa_campi", ts_run, datetime.now() + timedelta(hours=2), 2, 21.0, 55.0, 0.0],
+    ])
+    con.close()
+
+    coverage = {"tmin_ci80": 0.80, "tmin_ci90": 0.91, "tmax_ci80": None,
+                "tmax_ci90": None, "precip_ci80": None, "precip_ci90": None}
+    days = _make_days(sample_pred, sample_indicators,
+                      dates=[("2026-05-19", 24), ("2026-05-20", 48)])
+
+    with DuckDBClient(db_path=seeded_db) as db:
+        path = write_location_json(
+            location_id="casa_campi", days=days, coverage=coverage,
+            output_dir=tmp_path, db=db,
+        )
+        before = json.loads(path.read_text())
+        assert before["current"] is not None  # fallback NWP (nessuna obs)
+
+        _seed_realtime_sir(seeded_db, "casa_campi", 18.0)
+        refresh_realtime_json(db, "casa_campi", tmp_path)
+
+    after = json.loads(path.read_text())
+
+    # Campi non realtime preservati integralmente
+    assert after["location_id"] == before["location_id"]
+    assert after["generated_at"] == before["generated_at"]
+    assert after["coverage_empirical_30d"] == before["coverage_empirical_30d"]
+    assert after["nwp_models_hourly"] == before["nwp_models_hourly"]
+    assert after["days"] == before["days"]
+    # Solo current è cambiato (obs realtime batte il fallback NWP)
+    assert after["current"] != before["current"]
+    assert after["current"]["temp_c"] == pytest.approx(18.0)
+
+
+def test_refresh_realtime_json_missing_file_skips(
+    seeded_db: Path,
+    tmp_path: Path,
+) -> None:
+    """JSON non ancora generato → skip: nessun file creato, nessun temp residuo."""
+    with DuckDBClient(db_path=seeded_db) as db:
+        result = refresh_realtime_json(db, "casa_campi", tmp_path)
+
+    assert result is None
+    assert not (tmp_path / "casa_campi.json").exists()
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_refresh_realtime_json_updates_air_quality_and_clean_tmp(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+    seeded_db: Path,
+) -> None:
+    """air_quality aggiornato con dati ARPAT recenti; JSON valido e atomico."""
+    from datetime import timedelta
+
+    import duckdb
+
+    ts = datetime.now() - timedelta(hours=1)
+    con = duckdb.connect(str(seeded_db))
+    con.execute("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, no2_ugm3, o3_ugm3)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ["arpat", "FI-MOSSE", "casa_campi", ts, "hourly", 42.0, 58.0])
+    _seed_arpat_weight(con, "FI-MOSSE", "casa_campi")
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db) as db:
+        path = write_location_json(
+            location_id="casa_campi",
+            days=_make_days(sample_pred, sample_indicators),
+            coverage={},
+            output_dir=tmp_path,
+        )
+        # JSON senza db: air_quality assente → il refresh lo aggiunge
+        assert "air_quality" not in json.loads(path.read_text())
+
+        refresh_realtime_json(db, "casa_campi", tmp_path)
+
+    data = json.loads(path.read_text())
+    assert data["air_quality"] == {
+        "pm10_ugm3": None, "pm25_ugm3": None, "no2_ugm3": 42.0, "o3_ugm3": 58.0,
+        "co_mgm3": None, "benzene_ugm3": None, "so2_ugm3": None,
+    }
+    # Scrittura atomica: nessun file temporaneo residuo dopo il replace
+    assert list(tmp_path.glob("*.tmp")) == []
+    # Il JSON resta leggibile e i forecast invariati
+    assert data["days"][0]["forecasts"]["tmin_c"]["p50"] == sample_pred["tmin_c"]["p50"]

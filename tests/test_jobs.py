@@ -242,6 +242,7 @@ def test_realtime_happy_path(cfg_dir: Path, tmp_path: Path) -> None:
             "realtime",
             "--db", str(db_path),
             "--config-dir", str(cfg_dir),
+            "--output-dir", str(tmp_path / "output"),
         ])
 
     assert result.exit_code == 0, result.output

@@ -4,7 +4,7 @@ Tre comandi:
 
   historical  — one-shot: backfill completo SIR CSV + Open-Meteo historical + multilead (2022→oggi)
   daily       — cron 1×/giorno: delta di ieri (SIR CSV + OM historical lead=0 + OM multilead + Netatmo daily)
-  realtime    — cron ogni 15-30 min: SIR actions.php + Netatmo + ARPAT
+  realtime    — cron ogni 15-30 min: SIR actions.php + Netatmo + ARPAT + refresh JSON location
 
 I forecast NWP live e la pipeline ML sono in `guazza-pipeline`.
 
@@ -47,8 +47,14 @@ from guazza.fetch_sir import (
     fetch_sir_historical,
     fetch_sir_stations_realtime,
 )
-from guazza.jobs._common import CONFIG_DIR_OPTION, DB_OPTION, job_run
+from guazza.jobs._common import (
+    CONFIG_DIR_OPTION,
+    DB_OPTION,
+    OUTPUT_DIR_OPTION,
+    job_run,
+)
 from guazza.netatmo_daily import aggregate_netatmo_daily
+from guazza.output import refresh_realtime_json
 from guazza.qc import compute_quality_flags
 from guazza.storage import DuckDBClient
 from guazza.weights import load_configs
@@ -456,9 +462,14 @@ def cmd_daily(
 def cmd_realtime(
     db_path: Path = DB_OPTION,
     config_dir: Path = CONFIG_DIR_OPTION,
+    output_dir: Path = OUTPUT_DIR_OPTION,
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
     """Letture istantanee: SIR actions.php + Netatmo per tutte le location.
+
+    Dopo le scritture realtime, aggiorna `current` e `air_quality` dei JSON
+    location esistenti (OUTPUT_DIR) senza rifare forecast/features/predict:
+    la pipeline li genera, questo job li mantiene freschi tra un run e l'altro.
 
     Schedulare ogni 15-30 minuti.
     SIR ha granularità ~15 min; Netatmo aggiorna ogni 10 min circa.
@@ -522,8 +533,17 @@ def cmd_realtime(
             qc = compute_quality_flags(db)
             logger.info(f"realtime QC: {qc['total']} flag")
 
+            # 5. Refresh JSON location: aggiorna current/air_quality con le
+            #    osservazioni appena scritte (stessa connessione), senza rifare
+            #    la pipeline. I JSON senza file (mai generati) vengono saltati.
+            n_refreshed = 0
+            for location_id in locations:
+                if refresh_realtime_json(db, location_id, output_dir) is not None:
+                    n_refreshed += 1
+            logger.info(f"realtime JSON refresh: {n_refreshed}/{len(locations)} location aggiornate")
+
         stats.rows = sir_total + netatmo_total + aq_total
-        stats.summary = f"SIR:{sir_total} Netatmo:{netatmo_total} ARPAT:{aq_total}"
+        stats.summary = f"SIR:{sir_total} Netatmo:{netatmo_total} ARPAT:{aq_total} JSON:{n_refreshed}"
 
 
 if __name__ == "__main__":

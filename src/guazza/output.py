@@ -969,3 +969,55 @@ def write_location_json(
     tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
     tmp_path.replace(path)
     return path
+
+
+# Suffisso temp distinto da write_location_json (.json.tmp): il refresh realtime
+# può girare mentre la pipeline 6h scrive il proprio tmp — due processi sullo
+# stesso path si clobbererebbero il file a metà scrittura.
+_REALTIME_TMP_SUFFIX = ".realtime.tmp"
+
+
+def refresh_realtime_json(
+    db: DuckDBClient,
+    location_id: str,
+    output_dir: Path,
+) -> Path | None:
+    """Aggiorna `current` e `air_quality` nel JSON esistente di una location.
+
+    Chiamato da `guazza-ingest realtime` dopo le scritture in DuckDB: ricalcola
+    le condizioni attuali e la qualità aria con `get_current_conditions` e
+    `get_current_air_quality` (le stesse funzioni usate dalla pipeline) e
+    sostituisce i soli campi top-level `current` e `air_quality` del JSON già
+    prodotto. Tutti gli altri campi — location_id, generated_at,
+    coverage_empirical_30d, days, nwp_models_hourly — restano intatti: nessun
+    ricalcolo di forecast/features/predict.
+
+    Se il JSON non esiste ancora fa skip senza crearlo: lo genererà la prima
+    pipeline (la tabella predictions non è ancora backfillata).
+
+    Scrittura atomica (temp file + os.replace) con cleanup del temp anche in
+    caso di errore: nginx serve questi file mentre il cron li riscrive.
+
+    Returns:
+        Path del file aggiornato, oppure None se il JSON non esiste.
+    """
+    path = output_dir / f"{location_id}.json"
+    if not path.exists():
+        logger.info(f"[{location_id}] JSON non ancora generato dalla pipeline — skip refresh realtime")
+        return None
+
+    current     = get_current_conditions(db, location_id)
+    air_quality = get_current_air_quality(db, location_id)
+
+    payload = json.loads(path.read_text())
+    payload["current"]     = current
+    payload["air_quality"] = air_quality
+
+    tmp_path = path.with_name(path.name + _REALTIME_TMP_SUFFIX)
+    try:
+        tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+        tmp_path.replace(path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return path
