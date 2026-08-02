@@ -21,7 +21,6 @@ from guazza.output import (
     compute_coverage_30d,
     compute_hourly_profile,
     expected_precip,
-    get_current_air_quality,
     get_current_conditions,
     get_daily_weather_code,
     get_nwp_model_comparison,
@@ -180,7 +179,7 @@ def test_build_signals_required_keys(sample_pred: dict, sample_row: pd.Series) -
         "P(Tmin < 2.0°C)", "P(Tmin < 0.0°C)", "Tmin_p10", "T2m_p50",
         "P(wind > 40kmh)", "P(wind < 5kmh)",
         "P(RH > 80%)", "P(RH > 95% AND wind < 3kmh)",
-        "level_sir", "pm10_predicted",
+        "level_sir",
     }
     assert required.issubset(sig.keys())
 
@@ -205,9 +204,8 @@ def test_build_signals_high_tmin_low_frost(sample_pred: dict, sample_row: pd.Ser
 
 
 def test_build_signals_obs_summary(sample_pred: dict, sample_row: pd.Series) -> None:
-    sig = build_signals(sample_pred, sample_row, obs_summary={"level_sir": 1.5, "pm10_predicted": 35.0})
+    sig = build_signals(sample_pred, sample_row, obs_summary={"level_sir": 1.5})
     assert sig["level_sir"] == pytest.approx(1.5)
-    assert sig["pm10_predicted"] == pytest.approx(35.0)
 
 
 def test_build_signals_missing_nwp(sample_pred: dict) -> None:
@@ -850,93 +848,6 @@ def test_current_conditions_wind_fallback_per_variable(seeded_db: Path) -> None:
     assert result["wind_speed_source"] == sources["wind_speed_ms"]  # alias coerente
 
 
-def _seed_arpat_weight(
-    con: object, station_id: str, location_id: str, weight: float = 1.0
-) -> None:
-    """Riga station_weights per una stazione ARPAT (mapping stazione→location)."""
-    con.execute(  # type: ignore[attr-defined]
-        "INSERT INTO station_weights (station_id, source, location_id, weight) "
-        "VALUES (?, 'arpat', ?, ?)",
-        [station_id, location_id, weight],
-    )
-
-
-def test_air_quality_resolved_via_station_weights(seeded_db: Path) -> None:
-    """L'AQ si risolve via station_weights, non via obs.location_id: una stazione
-    condivisa, taggata in obs ad un'altra location, contribuisce comunque alla
-    location target (scenario casa_cercina/casa_nicco con stazioni ARPAT condivise)."""
-    from datetime import timedelta
-
-    import duckdb
-
-    ts_recent = datetime.now() - timedelta(hours=1)
-    con = duckdb.connect(str(seeded_db))
-    # obs taggata 'casa_nicco' (ha vinto la PK), ma il peso la mappa a 'casa_cercina'
-    con.execute("""
-        INSERT INTO observations
-            (source, station_id, location_id, ts, granularity, no2_ugm3, o3_ugm3)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, ["arpat", "FI-MOSSE", "casa_nicco", ts_recent, "hourly", 40.0, 60.0])
-    _seed_arpat_weight(con, "FI-MOSSE", "casa_cercina")
-    con.close()
-
-    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
-        result = get_current_air_quality(db, "casa_cercina")
-
-    assert result is not None
-    assert result["no2_ugm3"] == pytest.approx(40.0)
-    assert result["o3_ugm3"] == pytest.approx(60.0)
-
-
-def test_air_quality_weighted_average(seeded_db: Path) -> None:
-    """Media pesata per stazione: due stazioni con pesi diversi sullo stesso inquinante."""
-    from datetime import timedelta
-
-    import duckdb
-
-    ts = datetime.now() - timedelta(hours=1)
-    con = duckdb.connect(str(seeded_db))
-    con.executemany("""
-        INSERT INTO observations
-            (source, station_id, location_id, ts, granularity, no2_ugm3)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, [
-        ["arpat", "FI-MOSSE",     "x", ts, "hourly", 30.0],
-        ["arpat", "FI-LAVAGNINI", "x", ts, "hourly", 50.0],
-    ])
-    _seed_arpat_weight(con, "FI-MOSSE", "casa_cercina", 0.75)
-    _seed_arpat_weight(con, "FI-LAVAGNINI", "casa_cercina", 0.25)
-    con.close()
-
-    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
-        result = get_current_air_quality(db, "casa_cercina")
-
-    assert result is not None
-    # 30*0.75 + 50*0.25 = 35.0
-    assert result["no2_ugm3"] == pytest.approx(35.0)
-
-
-def test_air_quality_none_without_weights(seeded_db: Path) -> None:
-    """Senza station_weights ARPAT (weights refresh non eseguito) l'AQ è None."""
-    from datetime import timedelta
-
-    import duckdb
-
-    ts = datetime.now() - timedelta(hours=1)
-    con = duckdb.connect(str(seeded_db))
-    con.execute("""
-        INSERT INTO observations
-            (source, station_id, location_id, ts, granularity, no2_ugm3)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, ["arpat", "FI-MOSSE", "casa_cercina", ts, "hourly", 40.0])
-    con.close()
-
-    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
-        result = get_current_air_quality(db, "casa_cercina")
-
-    assert result is None
-
-
 def test_current_conditions_old_data_ignored(seeded_db: Path) -> None:
     """Obs più vecchie di 3h non devono contribuire al risultato."""
     from datetime import timedelta
@@ -1286,7 +1197,7 @@ def test_write_location_json_with_db_adds_realtime_fields(
     sample_indicators: list[IndicatorResult],
     seeded_db: Path,
 ) -> None:
-    """Passando db, il JSON deve includere current, air_quality, nwp_models_hourly."""
+    """Passando db, il JSON deve includere current, nwp_models_hourly."""
     days = _make_days(sample_pred, sample_indicators)
     with DuckDBClient(db_path=seeded_db) as db:
         path = write_location_json(
@@ -1298,9 +1209,8 @@ def test_write_location_json_with_db_adds_realtime_fields(
         )
     data = json.loads(path.read_text())
     assert "current" in data
-    assert "air_quality" in data
     assert "nwp_models_hourly" in data
-    # Con DB vuoto, current e air_quality saranno None, nwp_models_hourly []
+    # Con DB vuoto, current sarà None, nwp_models_hourly []
     assert data["nwp_models_hourly"] == []
 
 
@@ -1616,8 +1526,6 @@ def test_refresh_realtime_json_updates_current(
     assert data["current"] is not None
     assert data["current"]["temp_c"] == pytest.approx(21.5)
     assert data["current"]["humidity_pct"] == pytest.approx(60.0)
-    # air_quality ricalcolato (None senza dati ARPAT), mai rimosso dal payload
-    assert "air_quality" in data
 
 
 def test_refresh_realtime_json_preserves_forecast_fields(
@@ -1626,7 +1534,7 @@ def test_refresh_realtime_json_preserves_forecast_fields(
     sample_indicators: list[IndicatorResult],
     seeded_db: Path,
 ) -> None:
-    """I campi non realtime restano intatti: solo current/air_quality cambiano."""
+    """I campi non realtime restano intatti: solo current cambia."""
     from datetime import timedelta
 
     import duckdb
@@ -1684,50 +1592,6 @@ def test_refresh_realtime_json_missing_file_skips(
     assert result is None
     assert not (tmp_path / "casa_campi.json").exists()
     assert list(tmp_path.glob("*.tmp")) == []
-
-
-def test_refresh_realtime_json_updates_air_quality_and_clean_tmp(
-    tmp_path: Path,
-    sample_pred: dict,
-    sample_indicators: list[IndicatorResult],
-    seeded_db: Path,
-) -> None:
-    """air_quality aggiornato con dati ARPAT recenti; JSON valido e atomico."""
-    from datetime import timedelta
-
-    import duckdb
-
-    ts = datetime.now() - timedelta(hours=1)
-    con = duckdb.connect(str(seeded_db))
-    con.execute("""
-        INSERT INTO observations
-            (source, station_id, location_id, ts, granularity, no2_ugm3, o3_ugm3)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, ["arpat", "FI-MOSSE", "casa_campi", ts, "hourly", 42.0, 58.0])
-    _seed_arpat_weight(con, "FI-MOSSE", "casa_campi")
-    con.close()
-
-    with DuckDBClient(db_path=seeded_db) as db:
-        path = write_location_json(
-            location_id="casa_campi",
-            days=_make_days(sample_pred, sample_indicators),
-            coverage={},
-            output_dir=tmp_path,
-        )
-        # JSON senza db: air_quality assente → il refresh lo aggiunge
-        assert "air_quality" not in json.loads(path.read_text())
-
-        refresh_realtime_json(db, "casa_campi", tmp_path)
-
-    data = json.loads(path.read_text())
-    assert data["air_quality"] == {
-        "pm10_ugm3": None, "pm25_ugm3": None, "no2_ugm3": 42.0, "o3_ugm3": 58.0,
-        "co_mgm3": None, "benzene_ugm3": None, "so2_ugm3": None,
-    }
-    # Scrittura atomica: nessun file temporaneo residuo dopo il replace
-    assert list(tmp_path.glob("*.tmp")) == []
-    # Il JSON resta leggibile e i forecast invariati
-    assert data["days"][0]["forecasts"]["tmin_c"]["p50"] == sample_pred["tmin_c"]["p50"]
 
 
 # ── updates metadata temporale ────────────────────────────────────────────────

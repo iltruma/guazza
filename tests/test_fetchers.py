@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -67,14 +67,14 @@ def _mock_response(csv_text: str) -> MagicMock:
     return resp
 
 
-def _patched_sir_fetch(station_id: str, sensor_type: str, csv_text: str, location_id: str = "") -> list:
+def _patched_sir_fetch(station_id: str, sensor_type: str, csv_text: str, location_id: str = "") -> list[dict[str, Any]]:
     mock_resp = _mock_response(csv_text)
     mock_client = MagicMock()
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get = MagicMock(return_value=mock_resp)
     with patch("guazza.fetch_sir.httpx.Client", return_value=mock_client):
-        return fetch_sir_historical(station_id, sensor_type, location_id)
+        return cast(list[dict[str, Any]], fetch_sir_historical(station_id, sensor_type, location_id))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -652,7 +652,7 @@ def test_upsert_forecasts_update_on_conflict(seeded_db_forecasts: Path) -> None:
     )
     # Modifica la temperatura nel secondo batch
     import copy
-    data_v2 = copy.deepcopy(_OM_MOCK_RESPONSE)
+    data_v2 = cast(dict[str, Any], copy.deepcopy(_OM_MOCK_RESPONSE))
     data_v2["hourly"]["temperature_2m"] = [99.9, 99.9]
     rec_v2 = _parse_om_response(data_v2, "ecmwf_ifs", "lavoro_cosimo", _OM_TS_RUN_ECMWF)
 
@@ -906,288 +906,3 @@ def test_fetch_sir_bulk_realtime_handles_offline_station(monkeypatch: Any) -> No
     assert "TOS01000001" in results
     assert results["TOS01000001"]["temp_c"] is None
 
-
-# ═════════════════════════════════════════════════════════════════════════════
-# ARPAT OpenData NRT -- _parse_arpat_nrt + fetch_arpat_nrt_station + fetch_arpat_all_locations
-# ═════════════════════════════════════════════════════════════════════════════
-
-from guazza.fetch_arpat import (  # noqa: E402
-    _parse_arpat_nrt,
-    fetch_arpat_all_locations,
-    fetch_arpat_nrt_station,
-)
-
-_LOC_ID = "casa_campi"
-
-
-def _make_arpat_entry(
-    ora: str,
-    data: str = "22-MAY-26",
-    **params: float | None,
-) -> dict[str, Any]:
-    """Record orario ARPAT NRT con i parametri specificati."""
-    entry: dict[str, Any] = {
-        "ORA": ora,
-        "DATA_OSSERVAZIONE": data,
-        "NOME_STAZIONE": "FI-FIGLINE",
-        "PROVINCIA": "FIRENZE",
-        "COMUNE": "FIGLINE E INCISA VALDARNO",
-        "VALIDAZIONE": "OPERATORE_PRIMO_LIVELLO",
-    }
-    for k, v in params.items():
-        entry[k.upper().replace("_", ".")] = v
-    return entry
-
-
-# -- _parse_arpat_nrt ----------------------------------------------------------
-
-def test_parse_arpat_nrt_single_hour_no2() -> None:
-    """ARPAT NRT è ora locale (CEST in estate, UTC+2): 14:00 CEST → 12:00 UTC naive."""
-    payload = [_make_arpat_entry("14", NO2=25.3)]
-    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 0.8)
-
-    assert len(records) == 1
-    r = records[0]
-    assert r["source"] == "arpat"
-    assert r["station_id"] == "FI-FIGLINE"
-    assert r["location_id"] == _LOC_ID
-    assert r["granularity"] == "hourly"
-    assert r["weight"] == 0.8
-    assert r["ts"] == datetime(2026, 5, 22, 12, 0)  # 14:00 CEST (UTC+2) → 12:00 UTC
-    assert r["no2_ugm3"] == pytest.approx(25.3)
-
-
-def test_parse_arpat_nrt_multi_param() -> None:
-    """Record con più parametri -> tutti mappati su colonne wide."""
-    payload = [_make_arpat_entry("08", NO2=18.0, O3=40.0, PM10=30.0, BENZENE=1.2)]
-    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
-
-    assert len(records) == 1
-    r = records[0]
-    assert r["no2_ugm3"] == pytest.approx(18.0)
-    assert r["o3_ugm3"] == pytest.approx(40.0)
-    assert r["pm10_ugm3"] == pytest.approx(30.0)
-    assert r["benzene_ugm3"] == pytest.approx(1.2)
-
-
-def test_parse_arpat_nrt_null_values_skipped() -> None:
-    """Parametri null -> non inclusi nel record, ma record emesso se almeno uno non null."""
-    payload = [{"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 15.0, "PM10": None}]
-    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
-
-    assert len(records) == 1
-    assert "pm10_ugm3" not in records[0] or records[0].get("pm10_ugm3") is None
-    assert records[0]["no2_ugm3"] == pytest.approx(15.0)
-
-
-def test_parse_arpat_nrt_all_null_no_record() -> None:
-    """Tutti i parametri null -> nessun record emesso."""
-    payload = [{"ORA": "03", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": None, "PM10": None}]
-    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
-    assert records == []
-
-
-def test_parse_arpat_nrt_unknown_param_ignored() -> None:
-    """Parametri non mappati (H2S, BC, BB) -> ignorati, record emesso con quelli noti."""
-    payload = [{"ORA": "06", "DATA_OSSERVAZIONE": "22-MAY-26", "H2S": 5.0, "BB": 10.0, "NO2": 20.0}]
-    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
-
-    assert len(records) == 1
-    assert "h2s" not in records[0]
-    assert records[0]["no2_ugm3"] == pytest.approx(20.0)
-
-
-def test_parse_arpat_nrt_invalid_timestamp_skipped() -> None:
-    """Timestamp malformato -> entry saltata."""
-    payload = [
-        {"ORA": "XX", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 10.0},
-        {"ORA": "12", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 20.0},
-    ]
-    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
-    assert len(records) == 1
-    assert records[0]["ts"].hour == 10  # 12:00 CEST (UTC+2) → 10:00 UTC
-
-
-def test_parse_arpat_nrt_empty_payload() -> None:
-    """Payload lista vuota -> []."""
-    assert _parse_arpat_nrt([], "FI-FIGLINE", _LOC_ID, 1.0) == []
-
-
-def test_parse_arpat_nrt_non_list_payload() -> None:
-    """Payload non-lista (dict, None) -> []."""
-    assert _parse_arpat_nrt({}, "FI-FIGLINE", _LOC_ID, 1.0) == []
-    assert _parse_arpat_nrt(None, "FI-FIGLINE", _LOC_ID, 1.0) == []
-
-
-def test_parse_arpat_nrt_multi_hours() -> None:
-    """Più ore -> un record per ora."""
-    payload = [
-        {"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 10.0},
-        {"ORA": "11", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 12.0},
-        {"ORA": "12", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 11.0},
-    ]
-    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
-    assert len(records) == 3
-    hours = sorted(r["ts"].hour for r in records)
-    assert hours == [8, 9, 10]  # 10/11/12 CEST (UTC+2) → 8/9/10 UTC
-
-
-def test_parse_arpat_nrt_co_factor_one() -> None:
-    """CO ARPAT in mg/m³ (D.Lgs.155/2010) -> fattore 1.0, nessuna conversione."""
-    payload = [{"ORA": "09", "DATA_OSSERVAZIONE": "22-MAY-26", "CO": 0.7}]
-    records = _parse_arpat_nrt(payload, "FI-FIGLINE", _LOC_ID, 1.0)
-    assert records[0]["co_mgm3"] == pytest.approx(0.7)
-
-
-# -- fetch_arpat_nrt_station ---------------------------------------------------
-
-def test_fetch_arpat_nrt_station_ok() -> None:
-    """HTTP ok -> lista record; _log_scrape emesso con 'ok'."""
-    payload = [{"ORA": "14", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 30.0}]
-    with patch("guazza.fetch_arpat._fetch_arpat_nrt_json", return_value=payload):
-        records = fetch_arpat_nrt_station("FI-FIGLINE", _LOC_ID, 0.8)
-    assert len(records) == 1
-    assert records[0]["no2_ugm3"] == pytest.approx(30.0)
-
-
-def test_fetch_arpat_nrt_station_http_error_returns_empty() -> None:
-    """Errore HTTP -> lista vuota, nessuna eccezione propagata."""
-    with patch("guazza.fetch_arpat._fetch_arpat_nrt_json", side_effect=Exception("404")):
-        records = fetch_arpat_nrt_station("FI-FIGLINE", _LOC_ID, 0.8)
-    assert records == []
-
-
-# -- fetch_arpat_all_locations -------------------------------------------------
-
-def test_fetch_arpat_all_locations_gate() -> None:
-    """Location senza 'aria_qualita' in extras -> saltata."""
-    locations = {
-        "casa_campi": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]},
-        "no_aria": {"extras": [], "arpat_stations": [{"id": "FI-FIGLINE", "weight": 1.0}]},
-    }
-    payload = [{"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 20.0}]
-    with patch("guazza.fetch_arpat._fetch_arpat_nrt_json", return_value=payload):
-        results = fetch_arpat_all_locations(locations)
-
-    assert "casa_campi" in results
-    assert "no_aria" not in results
-
-
-def test_fetch_arpat_all_locations_dedup_station() -> None:
-    """Stessa stazione in due location -> fetchata una sola volta (seen_stations)."""
-    locations = {
-        "loc_a": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]},
-        "loc_b": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 0.5}]},
-    }
-    payload = [{"ORA": "10", "DATA_OSSERVAZIONE": "22-MAY-26", "NO2": 20.0}]
-    with patch("guazza.fetch_arpat._fetch_arpat_nrt_json", return_value=payload) as mock_fetch:
-        fetch_arpat_all_locations(locations)
-    assert mock_fetch.call_count == 1
-
-
-# -- _parse_arpat_bollettino + fetch_arpat_bollettino_all_locations ────────────
-
-from guazza.fetch_arpat import (  # noqa: E402
-    _parse_arpat_bollettino,
-    fetch_arpat_bollettino_all_locations,
-)
-
-_BOLL_MAP: dict[str, tuple[str, float]] = {
-    "FI-SIGNA": ("casa_campi", 1.0),
-    "FI-SCANDICCI": ("lavoro_cosimo", 0.8),
-}
-
-_BOLL_ENTRY = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2dot5": 9}
-
-
-def test_parse_arpat_bollettino_happy_path() -> None:
-    """Stazione configurata con PM10 e PM2.5 -> un record daily."""
-    records = _parse_arpat_bollettino([_BOLL_ENTRY], _BOLL_MAP)
-    assert len(records) == 1
-    r = records[0]
-    assert r["station_id"] == "FI-SIGNA"
-    assert r["location_id"] == "casa_campi"
-    assert r["granularity"] == "daily"
-    assert r["pm10_ugm3"] == pytest.approx(18.0)
-    assert r["pm25_ugm3"] == pytest.approx(9.0)
-    assert r["ts"].hour == 0 and r["ts"].minute == 0
-
-
-def test_parse_arpat_bollettino_station_not_in_map() -> None:
-    """Stazione non configurata -> scartata."""
-    entry = {"NOME_STAZIONE": "LU-CAPANNORI", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 20, "PM2dot5": 10}
-    records = _parse_arpat_bollettino([entry], _BOLL_MAP)
-    assert records == []
-
-
-def test_parse_arpat_bollettino_dash_values() -> None:
-    """'-' e 'n.d.' -> None; se entrambi None record scartato."""
-    entry = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": "-", "PM2dot5": "n.d."}
-    records = _parse_arpat_bollettino([entry], _BOLL_MAP)
-    assert records == []
-
-
-def test_parse_arpat_bollettino_partial_values() -> None:
-    """PM10 presente, PM2.5 assente -> record con solo PM10."""
-    entry = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 22}
-    records = _parse_arpat_bollettino([entry], _BOLL_MAP)
-    assert len(records) == 1
-    assert records[0]["pm10_ugm3"] == pytest.approx(22.0)
-    assert records[0]["pm25_ugm3"] is None
-
-
-def test_parse_arpat_bollettino_invalid_date() -> None:
-    """DATA_OSSERVAZIONE non parsificabile -> record scartato."""
-    entry = {"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "INVALID", "PM10": 20}
-    records = _parse_arpat_bollettino([entry], _BOLL_MAP)
-    assert records == []
-
-
-def test_parse_arpat_bollettino_non_list_payload() -> None:
-    """Payload non-lista -> []."""
-    assert _parse_arpat_bollettino({}, _BOLL_MAP) == []
-    assert _parse_arpat_bollettino(None, _BOLL_MAP) == []
-
-
-def test_parse_arpat_bollettino_multi_stations() -> None:
-    """Più stazioni configurate -> un record per stazione presente."""
-    payload = [
-        {"NOME_STAZIONE": "FI-SIGNA",     "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2dot5": 9},
-        {"NOME_STAZIONE": "FI-SCANDICCI", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 25, "PM2dot5": 12},
-        {"NOME_STAZIONE": "LU-CAPANNORI", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 30},
-    ]
-    records = _parse_arpat_bollettino(payload, _BOLL_MAP)
-    assert len(records) == 2
-    ids = {r["station_id"] for r in records}
-    assert ids == {"FI-SIGNA", "FI-SCANDICCI"}
-
-
-def test_fetch_arpat_bollettino_all_locations_ok() -> None:
-    """HTTP ok -> lista record dai record daily."""
-    locations = {
-        "casa_campi": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]},
-    }
-    payload = [{"NOME_STAZIONE": "FI-SIGNA", "DATA_OSSERVAZIONE": "20-MAY-26", "PM10": 18, "PM2dot5": 9}]
-    with patch("guazza.fetch_arpat._fetch_arpat_bollettino_json", return_value=payload):
-        records = fetch_arpat_bollettino_all_locations(locations)
-    assert len(records) == 1
-    assert records[0]["granularity"] == "daily"
-
-
-def test_fetch_arpat_bollettino_all_locations_http_error() -> None:
-    """Errore HTTP -> lista vuota, nessuna eccezione propagata."""
-    locations = {
-        "casa_campi": {"extras": ["aria_qualita"], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]},
-    }
-    with patch("guazza.fetch_arpat._fetch_arpat_bollettino_json", side_effect=Exception("500")):
-        records = fetch_arpat_bollettino_all_locations(locations)
-    assert records == []
-
-
-def test_fetch_arpat_bollettino_no_aria_qualita() -> None:
-    """Location senza 'aria_qualita' in extras -> nessuna chiamata HTTP, lista vuota."""
-    locations = {"no_aria": {"extras": [], "arpat_stations": [{"id": "FI-SIGNA", "weight": 1.0}]}}
-    with patch("guazza.fetch_arpat._fetch_arpat_bollettino_json") as mock_fetch:
-        records = fetch_arpat_bollettino_all_locations(locations)
-    assert records == []
-    mock_fetch.assert_not_called()

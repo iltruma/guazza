@@ -1,14 +1,10 @@
-"""Test per qc.py — quality control osservazioni SIR e ARPAT."""
+"""Test per qc.py — quality control osservazioni SIR."""
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 
 from guazza.qc import (
-    NO2_HIGH_UGM3,
-    O3_HIGH_UGM3,
-    PM10_HIGH_UGM3,
-    PM25_HIGH_UGM3,
     PRECIP_HIGH_MM,
     SPIKE_TEMP_C,
     compute_quality_flags,
@@ -26,20 +22,15 @@ def _insert_obs(
     precip_mm: float | None = None,
     granularity: str = "daily",
     source: str = "sir_toscana",
-    pm10_ugm3: float | None = None,
-    pm25_ugm3: float | None = None,
-    no2_ugm3: float | None = None,
-    o3_ugm3: float | None = None,
 ) -> None:
     db.execute(
         """
         INSERT INTO observations
             (source, station_id, location_id, ts, granularity,
-             tmin_c, tmax_c, precip_mm, pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3)
-        VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             tmin_c, tmax_c, precip_mm)
+        VALUES (?, ?, '', ?, ?, ?, ?, ?)
         """,
-        [source, station_id, ts, granularity,
-         tmin_c, tmax_c, precip_mm, pm10_ugm3, pm25_ugm3, no2_ugm3, o3_ugm3],
+        [source, station_id, ts, granularity, tmin_c, tmax_c, precip_mm],
     )
 
 
@@ -98,47 +89,6 @@ def test_range_precip_high_realtime(db: DuckDBClient) -> None:
     db.__exit__(None, None, None)
 
 
-def test_range_pm10_high(db: DuckDBClient) -> None:
-    t0 = datetime(2024, 1, 1)
-    _insert_obs(db, "STA1", t0, source="arpat", pm10_ugm3=PM10_HIGH_UGM3 + 1)
-    result = compute_quality_flags(db)
-    assert result.get("range_pm10_high", 0) >= 1
-    db.__exit__(None, None, None)
-
-
-def test_range_pm25_high(db: DuckDBClient) -> None:
-    t0 = datetime(2024, 1, 1)
-    _insert_obs(db, "STA1", t0, source="arpat", pm25_ugm3=PM25_HIGH_UGM3 + 1)
-    result = compute_quality_flags(db)
-    assert result.get("range_pm25_high", 0) >= 1
-    db.__exit__(None, None, None)
-
-
-def test_range_no2_high(db: DuckDBClient) -> None:
-    t0 = datetime(2024, 1, 1)
-    _insert_obs(db, "STA1", t0, source="arpat", no2_ugm3=NO2_HIGH_UGM3 + 1)
-    result = compute_quality_flags(db)
-    assert result.get("range_no2_high", 0) >= 1
-    db.__exit__(None, None, None)
-
-
-def test_range_o3_high(db: DuckDBClient) -> None:
-    t0 = datetime(2024, 1, 1)
-    _insert_obs(db, "STA1", t0, source="arpat", o3_ugm3=O3_HIGH_UGM3 + 1)
-    result = compute_quality_flags(db)
-    assert result.get("range_o3_high", 0) >= 1
-    db.__exit__(None, None, None)
-
-
-def test_arpat_below_threshold_no_flag(db: DuckDBClient) -> None:
-    t0 = datetime(2024, 1, 1)
-    _insert_obs(db, "STA1", t0, source="arpat", pm10_ugm3=PM10_HIGH_UGM3 - 1, no2_ugm3=NO2_HIGH_UGM3 - 1)
-    result = compute_quality_flags(db)
-    assert result.get("range_pm10_high", 0) == 0
-    assert result.get("range_no2_high", 0) == 0
-    db.__exit__(None, None, None)
-
-
 def test_below_spike_threshold_no_flag(db: DuckDBClient) -> None:
     t0 = datetime(2024, 1, 1)
     _insert_obs(db, "STA1", t0, tmin_c=10.0, tmax_c=20.0)
@@ -174,10 +124,8 @@ def test_idempotent(db: DuckDBClient) -> None:
 def test_breakdown_keys(db: DuckDBClient) -> None:
     t0 = datetime(2024, 1, 1)
     _insert_obs(db, "STA1", t0, tmin_c=20.0, tmax_c=10.0)
-    _insert_obs(db, "STA2", t0, source="arpat", pm10_ugm3=PM10_HIGH_UGM3 + 1)
     result = compute_quality_flags(db)
     assert "total" in result
     assert "inversion_temp" in result
-    assert "range_pm10_high" in result
-    assert result["total"] == result["inversion_temp"] + result["range_pm10_high"]
+    assert result["total"] == result["inversion_temp"]
     db.__exit__(None, None, None)
