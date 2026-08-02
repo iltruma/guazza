@@ -94,6 +94,9 @@ guazza/
 
 ## Roadmap
 
+Sprint completati (0–9). Storia dettagliata per release → `CHANGELOG.md`.
+Coda corrente (P-items e decisioni approvate da implementare) → `docs/status.md` §Coda.
+
 | Sprint | Obiettivo | Stato |
 |---|---|---|
 | Sprint 0 | Ricognizione sorgenti, config stazioni, struttura repo | ✅ Completato |
@@ -104,27 +107,23 @@ guazza/
 | Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
 | Sprint 6 | Frontend HTML+JS+Chart.js, layout a 3 sezioni | ✅ Completato |
 | Sprint 7 | Raffinamenti logiche, radar RainViewer, redesign frontend v2 (CSS custom) | ✅ Completato |
-| Sprint 8 | Deploy su Optiplex locale: k3s + Flux + SOPS, PVC, CronJob, immagine container | ✅ Completato (v0.12.2) |
-| Sprint 9 | Adaptive Conformal Inference + monitor copertura 30d | ✅ Completato (v0.10.0) |
-| Sprint 10 | Calibrazione soglie DLE post-deploy | — |
-| Sprint 11 | Case study / pubblicazione + skill history time series | 🟡 In corso (skill history fatto, v0.11.0; GFS rimosso, v0.11.1; fix CQR, v0.11.2) |
+| Sprint 8 | Deploy homelab: k3s + Flux + SOPS, PVC, CronJob, immagine container | ✅ Completato |
+| Sprint 9 | Adaptive Conformal Inference + monitor copertura 30d | ✅ Completato |
 
 ---
 
 ## Architettura
 
-- **Server**: Dell Optiplex Micro 3050 — NixOS baremetal (homelab astra, host `nebula`, k3s; Guazza è un tenant)
-- **Container**: immagine `ghcr.io/iltruma/guazza` (Python 3.13 + nginx, single-stage con `uv`), buildata su push tag `v*.*.*`; `config/` bundle nell'immagine (v0.12.1+, `CONFIG_DIR=/app/config`)
-- **Scheduling**: k8s CronJob in produzione (namespace `guazza`); cron Linux solo per install dev — job = CLI idempotenti orchestrator-agnostic
-- **Storage**: DuckDB (colonnare, file singolo) + R2 backup
-- **ML**: LightGBM quantile regression + CQR calibration
-- **Frontend**: HTML+JS vanilla + CSS custom (no framework) + Chart.js + Leaflet + Twemoji + suncalc; font Geist + JetBrains Mono (CDN, statico)
-- **Esposizione pubblica**: Tailscale Funnel — HTTPS terminato da Tailscale, no port forwarding, no IP pubblico (da riportare su nebula dopo la migrazione k8s)
-- **DNS pubblico**: Cloudflare (solo zona DNS per `guazza.it`); WAF/CDN rimossi dallo stack
-- **Accesso tailnet / admin**: Tailscale + Traefik su k3s (`guazza.lab.paroparo.it` — attivo)
-- **Monitoring**: Healthchecks.io + UptimeRobot (free tier)
+- **Server**: Dell Optiplex Micro 3050 — host NixOS `nebula` (k3s), Guazza è un tenant
+- **Container**: `ghcr.io/iltruma/guazza` (Python 3.13 + uv + nginx), buildato su tag `v*.*.*`
+- **Scheduling**: k8s CronJob (namespace `guazza`); cron Linux per dev
+- **Storage**: DuckDB (file singolo) + backup R2
+- **ML**: LightGBM quantile + CQR + ACI
+- **Frontend**: HTML+JS vanilla + CSS custom + Chart.js + Leaflet
+- **Esposizione**: Tailscale Funnel (pubblico) + Tailscale/Traefik (tailnet)
 
-Vedi `docs/decisions.md` per motivazioni complete.
+Tabella completa di stack, anti-pattern e invarianti in `AGENTS.md` §"Stack blindato".
+Motivazioni delle scelte in `docs/decisions.md`.
 
 ---
 
@@ -326,7 +325,7 @@ uv run python -m guazza.jobs.train run
 # 7. Prima pipeline (include feature build, predict, DLE+JSON, monitor)
 uv run python -m guazza.jobs.pipeline run
 
-# 8. In produzione i job girano come CronJob k8s (namespace `guazza`, repo astra — vedi `docs/status.md` P6).
+# 8. In produzione i job girano come CronJob k8s (namespace `guazza`, repo astra).
 #    Solo per install dev: crontab deploy/crontab.template
 ```
 
