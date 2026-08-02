@@ -3,9 +3,9 @@ FROM python:3.13-slim AS runtime
 # uv dal binario ufficiale (niente pip, niente wheel intermedio)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
-# nginx + wget + utente non-root
+# nginx + wget + libgomp (OpenMP per lightgbm) + utente non-root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nginx wget \
+    && apt-get install -y --no-install-recommends nginx wget libgomp1 \
     && rm /etc/nginx/sites-enabled/default \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 1000 guazza && useradd -u 1000 -g 1000 guazza
