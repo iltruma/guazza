@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-08-02 (v0.13.0)
+> Aggiornato: 2026-08-03 (v0.13.0)
 > Storico sprint → `CHANGELOG.md` · Decisioni → `docs/decisions.md` · Workaround attivi → `docs/known_issues.md`
 
 ## Stato
@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | Versione | **0.13.0** |
-| Test | 309 verdi (suite completa; `test_models.py` ~3min per LightGBM training) |
+| Test | 316 verdi (suite completa; `test_models.py` ~3min per LightGBM training) |
 | Lint / mypy | ✅ puliti |
 | Deploy | k3s astra/nebula, namespace `guazza`, Flux + SOPS |
 
@@ -71,10 +71,10 @@ Tre commit incrementali separati per misurare l'effetto di ogni cambiamento:
    - `TrainingArtifacts.init_score_targets` persistito nel manifest JSON
 
 ### 🟡 Da fare: lanciare walk_forward_cv con il nuovo codice
-Richiede riesecuzione su DB produzione (feature_daily rebuild + CV). Misurare Δ MAE/skill per tmin/tmax/precip rispetto alla baseline (tmin +15.6%, tmax +42.6%, precip -2.9%).
+Richiede riesecuzione su DB produzione (feature_daily rebuild + CV). Misurare Δ MAE/skill per tmin/tmax/precip rispetto alla baseline (tmin +15.6%, tmax +42.6%, precip -2.9%) e metriche classificatore (Brier, BSS, AUC).
 
 ### Prossimi candidati (non implementati)
-- **Hurdle model precip** (classificatore binario + regressore quantile su soli giorni piovosi)
+- **Hurdle model precip stadio 2** (regressore quantile su soli giorni piovosi — classificatore già implementato)
 - **Target ML vento avg** (verificare disponibilità ground truth SIR per location)
 - **Optuna tuning** LightGBM (dopo feature stabili: `num_leaves` 7-31, `learning_rate` 0.02-0.1)
 - **cal_days 120/180** (verifica coverage per bucket — D-003 richiede ~200 campioni/bucket)
