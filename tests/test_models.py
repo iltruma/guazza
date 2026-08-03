@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS features_daily (
     nwp_tmax_mean DOUBLE, nwp_tmax_spread DOUBLE,
     nwp_precip_mean DOUBLE, nwp_precip_spread DOUBLE,
     nwp_pressure_mean DOUBLE, nwp_pressure_spread DOUBLE,
+    nwp_cape_mean DOUBLE, nwp_cape_spread DOUBLE,
     obs_tmin_c DOUBLE, obs_tmax_c DOUBLE, obs_precip_mm DOUBLE, obs_humidity_pct DOUBLE,
     obs_tmin_d2 DOUBLE, obs_tmax_d2 DOUBLE,
     obs_tmin_gradient DOUBLE, obs_tmax_gradient DOUBLE,
@@ -138,6 +139,7 @@ def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) 
                 "wind_ms": 3.0,
                 "pressure_hpa_avg": pressure + rng.normal(0, 1),
                 "pressure_hpa_min": pressure - 2.0,
+                "cape_max": 500.0,
             }
             nwp_values: list[float] = []
             for _prefix, _src in NWP_MODEL_PREFIXES:
@@ -146,11 +148,12 @@ def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) 
             rows.append((
                 loc, d, 0,
                 *nwp_values,
-                # ensemble stats (tmin/tmax/precip/pressure mean+spread)
+                # ensemble stats (tmin/tmax/precip/pressure mean+spread, cape mean+spread)
                 tmin + rng.normal(0, 0.1), 1.0,
                 tmax + rng.normal(0, 0.1), 1.0,
                 precip, 0.5,
                 pressure, 3.0,
+                500.0, 100.0,
                 # obs yesterday
                 tmin - 0.5, tmax - 0.5, precip, 68.0,
                 # obs lag-2 e gradient

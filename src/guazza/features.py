@@ -37,6 +37,7 @@ NWP_MODEL_PREFIXES: list[tuple[str, str]] = [
 NWP_DAILY_VARS: list[str] = [
     "tmin_c", "tmax_c", "precip_mm", "humidity_pct", "wind_ms",
     "pressure_hpa_avg", "pressure_hpa_min",
+    "cape_max",    # MAX giornaliero CAPE (picco pomeridiano convettivo)
 ]
 
 # Colonne feature per-modello, es. "ecmwf_tmin_c". Consumate da models.FEATURE_COLS.
@@ -108,13 +109,14 @@ daily_nwp AS (
         AVG(humidity_pct)  AS humidity_pct,
         AVG(wind_speed_ms) AS wind_ms,
         AVG(pressure_hpa)  AS pressure_hpa_avg,
-        MIN(pressure_hpa)  AS pressure_hpa_min
+        MIN(pressure_hpa)  AS pressure_hpa_min,
+        MAX(cape_jkg)      AS cape_max
     FROM (
         SELECT
             source, location_id, ts_run,
             ts_valid::DATE                                    AS target_date,
             DATEDIFF('day', ts_run::DATE, ts_valid::DATE)    AS lead_time_days,
-            temp_c, precip_mm, humidity_pct, wind_speed_ms, pressure_hpa
+            temp_c, precip_mm, humidity_pct, wind_speed_ms, pressure_hpa, cape_jkg
         FROM forecasts
         WHERE ts_valid >= ts_run
     )
@@ -188,10 +190,10 @@ SELECT
     n.lead_time_h,
 
     -- NWP per modello (4 modelli)
-    n.ecmwf_tmin_c, n.ecmwf_tmax_c, n.ecmwf_precip_mm, n.ecmwf_humidity_pct, n.ecmwf_wind_ms, n.ecmwf_pressure_hpa_avg, n.ecmwf_pressure_hpa_min,
-    n.icon_tmin_c,  n.icon_tmax_c,  n.icon_precip_mm,  n.icon_humidity_pct,  n.icon_wind_ms,  n.icon_pressure_hpa_avg,  n.icon_pressure_hpa_min,
-    n.arome_tmin_c, n.arome_tmax_c, n.arome_precip_mm, n.arome_humidity_pct, n.arome_wind_ms, n.arome_pressure_hpa_avg, n.arome_pressure_hpa_min,
-    n.icon2i_tmin_c, n.icon2i_tmax_c, n.icon2i_precip_mm, n.icon2i_humidity_pct, n.icon2i_wind_ms, n.icon2i_pressure_hpa_avg, n.icon2i_pressure_hpa_min,
+    n.ecmwf_tmin_c, n.ecmwf_tmax_c, n.ecmwf_precip_mm, n.ecmwf_humidity_pct, n.ecmwf_wind_ms, n.ecmwf_pressure_hpa_avg, n.ecmwf_pressure_hpa_min, n.ecmwf_cape_max,
+    n.icon_tmin_c,  n.icon_tmax_c,  n.icon_precip_mm,  n.icon_humidity_pct,  n.icon_wind_ms,  n.icon_pressure_hpa_avg,  n.icon_pressure_hpa_min,  n.icon_cape_max,
+    n.arome_tmin_c, n.arome_tmax_c, n.arome_precip_mm, n.arome_humidity_pct, n.arome_wind_ms, n.arome_pressure_hpa_avg, n.arome_pressure_hpa_min, n.arome_cape_max,
+    n.icon2i_tmin_c, n.icon2i_tmax_c, n.icon2i_precip_mm, n.icon2i_humidity_pct, n.icon2i_wind_ms, n.icon2i_pressure_hpa_avg, n.icon2i_pressure_hpa_min, n.icon2i_cape_max,
 
     -- Ensemble mean (media null-safe su 4 modelli)
     (COALESCE(n.ecmwf_tmin_c, 0) + COALESCE(n.icon_tmin_c, 0)
@@ -240,6 +242,18 @@ SELECT
     GREATEST(n.ecmwf_pressure_hpa_avg, n.icon_pressure_hpa_avg, n.arome_pressure_hpa_avg, n.icon2i_pressure_hpa_avg)
         - LEAST(n.ecmwf_pressure_hpa_avg, n.icon_pressure_hpa_avg, n.arome_pressure_hpa_avg, n.icon2i_pressure_hpa_avg)
         AS nwp_pressure_spread,
+
+    -- Ensemble mean/spread CAPE (MAX giornaliero per modello → spread = disaccordo convettivo)
+    (COALESCE(n.ecmwf_cape_max, 0) + COALESCE(n.icon_cape_max, 0)
+        + COALESCE(n.arome_cape_max, 0) + COALESCE(n.icon2i_cape_max, 0))
+    / NULLIF(
+        (n.ecmwf_cape_max IS NOT NULL)::INT + (n.icon_cape_max IS NOT NULL)::INT
+        + (n.arome_cape_max IS NOT NULL)::INT + (n.icon2i_cape_max IS NOT NULL)::INT, 0
+    ) AS nwp_cape_mean,
+
+    GREATEST(n.ecmwf_cape_max, n.icon_cape_max, n.arome_cape_max, n.icon2i_cape_max)
+        - LEAST(n.ecmwf_cape_max, n.icon_cape_max, n.arome_cape_max, n.icon2i_cape_max)
+        AS nwp_cape_spread,
 
     -- Obs features (giorno precedente — lookahead-safe)
     prev.tmin_c      AS obs_tmin_c,

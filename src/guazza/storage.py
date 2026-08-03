@@ -357,6 +357,7 @@ class DuckDBClient:
                 rec.get("temp_c"), rec.get("humidity_pct"), rec.get("precip_mm"),
                 rec.get("wind_speed_ms"), rec.get("wind_dir_deg"),
                 rec.get("wind_gust_ms"), rec.get("pressure_hpa"),
+                rec.get("cape_jkg"),
                 rec.get("weather_code"),
             ])
 
@@ -364,6 +365,7 @@ class DuckDBClient:
             "source", "location_id", "ts_run", "ts_valid", "lead_time_h",
             "temp_c", "humidity_pct", "precip_mm",
             "wind_speed_ms", "wind_dir_deg", "wind_gust_ms", "pressure_hpa",
+            "cape_jkg",
             "weather_code",
         ]
         df = pd.DataFrame(rows, columns=_FCAST_COLS)
@@ -378,12 +380,14 @@ class DuckDBClient:
                 source, location_id, ts_run, ts_valid, lead_time_h,
                 temp_c, humidity_pct, precip_mm,
                 wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa,
+                cape_jkg,
                 weather_code
             )
             SELECT
                 source, location_id, ts_run, ts_valid, lead_time_h,
                 temp_c, humidity_pct, precip_mm,
                 wind_speed_ms, wind_dir_deg, wind_gust_ms, pressure_hpa,
+                cape_jkg,
                 weather_code
             FROM (
                 SELECT *,

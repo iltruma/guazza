@@ -104,6 +104,7 @@ FEATURE_COLS: list[str] = [
     "nwp_tmax_mean", "nwp_tmax_spread",
     "nwp_precip_mean", "nwp_precip_spread",
     "nwp_pressure_mean", "nwp_pressure_spread",
+    "nwp_cape_mean", "nwp_cape_spread",
     # Obs giorno precedente (lookahead-safe)
     "obs_tmin_c", "obs_tmax_c", "obs_precip_mm", "obs_humidity_pct",
     # Obs lag-2 e gradient termico

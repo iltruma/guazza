@@ -44,6 +44,7 @@ _OM_HOURLY_VARS = [
     "wind_gusts_10m",
     "surface_pressure",
     "weather_code",
+    "cape",          # Convective Available Potential Energy (J/kg)
 ]
 
 # Mapping variabile Open-Meteo → colonna observations wide (solo variabili float).
@@ -56,6 +57,7 @@ _OM_VAR_MAP: dict[str, str] = {
     "wind_direction_10m": "wind_dir_deg",
     "wind_gusts_10m": "wind_gust_ms",
     "surface_pressure": "pressure_hpa",
+    "cape": "cape_jkg",
 }
 
 # Cadenza run per modello (ore UTC). Usata per arrotondare ts_run.
