@@ -19,9 +19,13 @@ from guazza.models import (
     QUANTILES,
     TARGETS,
     AdaptiveConformalizer,
+    ClassifierBundle,
+    FEATURE_COLS,
+    RAIN_THRESHOLD_MM,
     TrainingArtifacts,
     _cqr_q_hat,
     _lead_time_bucket,
+    _train_rain_classifier,
     apply_aci_correction,
     crps_from_quantiles,
     load_artifacts,
@@ -325,6 +329,8 @@ def test_predict_ci_ordering(db: DuckDBClient, tmp_path: Path) -> None:
     for _, row in X.iterrows():
         result = predict(artifacts, pd.DataFrame([row])[FEATURE_COLS], lead_h=0)
         for target, preds in result.items():
+            if target == "rain_clf":
+                continue  # rain_clf non ha CI/quantili
             assert preds["ci90_lo"] <= preds["ci80_lo"], f"{target}: ci90_lo > ci80_lo"
             assert preds["ci80_hi"] <= preds["ci90_hi"], f"{target}: ci80_hi > ci90_hi"
             assert preds["p05"] <= preds["p50"] <= preds["p95"], f"{target}: quantili non ordinati"
@@ -855,3 +861,54 @@ def test_load_artifacts_no_hint_outside_default(monkeypatch: pytest.MonkeyPatch,
         models.load_artifacts(other)
     # Nessun suggerimento quando il path non è il default di produzione.
     assert "--model-dir" not in str(excinfo.value)
+
+
+def test_train_rain_classifier_returns_bundle(db: DuckDBClient, tmp_path: Path) -> None:
+    """_train_rain_classifier restituisce un ClassifierBundle con model, threshold e calibrazione."""
+    _insert_features(db, n_days=150, n_locations=1)
+    df = db.execute("SELECT * FROM features_daily").df()
+    df["location_id"] = df["location_id"].astype("category")
+
+    mask_fit = df.index < int(len(df) * 0.7)
+    mask_cal = ~mask_fit
+
+    X_fit = df.loc[mask_fit, FEATURE_COLS]
+    y_fit = df.loc[mask_fit, "target_precip_mm"].fillna(0.0)
+    X_cal = df.loc[mask_cal, FEATURE_COLS]
+    y_cal = df.loc[mask_cal, "target_precip_mm"].fillna(0.0)
+
+    bundle = _train_rain_classifier(
+        X_fit=X_fit,
+        y_precip_fit=y_fit,
+        X_cal=X_cal,
+        y_precip_cal=y_cal,
+    )
+
+    assert isinstance(bundle, ClassifierBundle)
+    assert bundle.threshold_mm == RAIN_THRESHOLD_MM
+    assert bundle.model is not None
+    # calibrazione isotonica presente (cal set > 20 righe)
+    assert bundle.calibration is not None
+    assert len(bundle.calibration.x_thresholds) > 0
+    assert len(bundle.calibration.x_thresholds) == len(bundle.calibration.y_calibrated)
+
+
+def test_predict_emits_prob_rain(db: DuckDBClient, tmp_path: Path) -> None:
+    """predict() emette out['rain_clf']['prob_rain'] in [0, 1] quando il clf è presente."""
+    _insert_features(db, n_days=400, n_locations=2)
+    model_dir = tmp_path / "models"
+    artifacts = train_all(db, model_dir=model_dir, cal_days=60)
+
+    assert artifacts.rain_classifier is not None, "rain_classifier dovrebbe essere presente con 400 giorni"
+
+    # Usa la prima riga di features come input
+    df = db.execute("SELECT * FROM features_daily LIMIT 1").df()
+    df["location_id"] = df["location_id"].astype("category")
+    X = df[FEATURE_COLS]
+
+    result = predict(artifacts, X, lead_h=0)
+
+    assert "rain_clf" in result, "predict() deve emettere rain_clf"
+    prob = result["rain_clf"]["prob_rain"]
+    assert isinstance(prob, float)
+    assert 0.0 <= prob <= 1.0

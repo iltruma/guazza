@@ -35,6 +35,11 @@ _DEFAULT_MODEL_DIR = Path(os.environ.get("MODEL_DIR", "data/models"))
 QUANTILES: list[float] = [0.05, 0.10, 0.50, 0.90, 0.95]
 TARGETS: list[str] = ["tmin_c", "tmax_c", "precip_mm"]
 
+# Soglia "wet day" per il classificatore binario pioggia/no.
+# Allineata alla soglia del DLE (P(precip > 0.2mm) in indicators.yaml / build_signals).
+# Corrisponde alla risoluzione minima del pluviometro SIR.
+RAIN_THRESHOLD_MM: float = 0.2
+
 # Ordine fisso dei quantili per il sort anti-crossing in predict / predict_frame.
 # Le chiavi sono già in ordine (p05 < p10 < p50 < p90 < p95), ma i valori
 # predetti dai 5 modelli indipendenti possono incrociarsi.
@@ -132,6 +137,17 @@ class CQRCorrection:
 
 
 @dataclass
+class IsotonicCalibration:
+    """Calibrazione isotonica post-hoc per le probabilità del classificatore binario.
+
+    Fit su (prob_raw, y_binary) del cal set. A predict time:
+      prob_calibrated = np.interp(prob_raw, x_thresholds, y_calibrated)
+    """
+    x_thresholds: list[float]   # prob grezze (punti di breakpoint isotonica)
+    y_calibrated: list[float]   # prob calibrate corrispondenti
+
+
+@dataclass
 class ModelBundle:
     """Modelli quantile + CQR corrections per un singolo target.
 
@@ -140,6 +156,19 @@ class ModelBundle:
     """
     models: dict[float, lgb.LGBMRegressor | lgb.Booster]
     cqr: dict[str, CQRCorrection]   # bucket_label → correction
+
+
+@dataclass
+class ClassifierBundle:
+    """Classificatore binario P(precip > RAIN_THRESHOLD_MM).
+
+    Un solo LGBMClassifier (objective binary), calibrato isotonicamente
+    sul cal set. Il bundle è separato da ModelBundle perché non ha
+    quantili, CQR né init_score.
+    """
+    model: lgb.LGBMClassifier | lgb.Booster
+    threshold_mm: float                        # 0.2 — persiste per riproducibilità
+    calibration: IsotonicCalibration | None    # None = prob grezze (non ancora calibrato)
 
 
 @dataclass
@@ -157,6 +186,8 @@ class TrainingArtifacts:
     # Target allenati con init_score=nwp_mean (il booster predice il residuo).
     # Persistito nel manifest per sapere a predict time quali target vanno sommati.
     init_score_targets: list[str] = field(default_factory=list)
+    # Classificatore binario pioggia/no (hurdle model stadio 1). None = non addestrato.
+    rain_classifier: ClassifierBundle | None = field(default=None)
 
 
 def load_features(db: DuckDBClient) -> pd.DataFrame:
@@ -252,6 +283,115 @@ def _es_val_split(
         return df, pd.DataFrame()
 
     return df_fit, df_es_val
+
+
+def _train_rain_classifier(
+    X_fit: pd.DataFrame,
+    y_precip_fit: pd.Series,
+    X_cal: pd.DataFrame,
+    y_precip_cal: pd.Series,
+    X_val: pd.DataFrame | None = None,
+    y_precip_val: pd.Series | None = None,
+    threshold_mm: float = RAIN_THRESHOLD_MM,
+) -> ClassifierBundle:
+    """Allena il classificatore binario pioggia/no e calibra isotonicamente.
+
+    Args:
+        X_fit: feature del fit set (stesso FEATURE_COLS dei regressori).
+        y_precip_fit: target_precip_mm del fit set (valore grezzo, non binarizzato).
+        X_cal: feature del cal set (usato per la calibrazione isotonica).
+        y_precip_cal: target_precip_mm del cal set.
+        X_val: feature del validation set per early stopping (opzionale).
+        y_precip_val: target_precip_mm del validation set (opzionale).
+        threshold_mm: soglia wet day (default RAIN_THRESHOLD_MM).
+
+    Returns:
+        ClassifierBundle con modello addestrato e calibrazione isotonica.
+    """
+    y_fit = (y_precip_fit > threshold_mm).astype(int)
+    y_cal_bin = (y_precip_cal > threshold_mm).astype(int)
+
+    n_dry = int((y_fit == 0).sum())
+    n_wet = int((y_fit == 1).sum())
+    spw = n_dry / n_wet if n_wet > 0 else 1.0
+
+    params: dict[str, Any] = {
+        "objective": "binary",
+        "metric": ["binary_logloss", "auc"],
+        "n_estimators": 2000,
+        "learning_rate": 0.05,
+        "num_leaves": 31,
+        "min_child_samples": 20,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "reg_alpha": 0.1,
+        "reg_lambda": 0.1,
+        "scale_pos_weight": spw,
+        "random_state": 42,
+        "n_jobs": -1,
+        "verbose": -1,
+    }
+
+    model = lgb.LGBMClassifier(**params)
+
+    if X_val is not None and y_precip_val is not None and len(y_precip_val) > 0:
+        y_val_bin = (y_precip_val > threshold_mm).astype(int)
+        model.fit(
+            X_fit, y_fit,
+            categorical_feature=CATEGORICAL_COLS,
+            eval_X=X_val,
+            eval_y=y_val_bin,
+            callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(0)],
+        )
+    else:
+        model.fit(X_fit, y_fit, categorical_feature=CATEGORICAL_COLS)
+
+    logger.info(
+        f"[rain_clf] addestrato: {n_wet}/{n_wet+n_dry} wet ({100*n_wet/(n_wet+n_dry):.1f}%), "
+        f"scale_pos_weight={spw:.2f}"
+    )
+
+    # Calibrazione isotonica sul cal set
+    calibration: IsotonicCalibration | None = None
+    mask_cal = y_precip_cal.notna()
+    if mask_cal.sum() >= 20:
+        X_cal_clean = X_cal.loc[mask_cal].copy()
+        for col in CATEGORICAL_COLS:
+            if col in X_cal_clean.columns:
+                X_cal_clean[col] = X_cal_clean[col].astype("category")
+        prob_raw = np.asarray(model.predict_proba(X_cal_clean))[:, 1]
+        y_cal_clean = y_cal_bin.loc[mask_cal].values
+
+        from sklearn.isotonic import IsotonicRegression  # noqa: PLC0415
+        iso = IsotonicRegression(out_of_bounds="clip")
+        iso.fit(prob_raw, y_cal_clean)
+        # Salva solo i breakpoint (punti unici, non tutto il vettore fitted)
+        x_thresh = iso.X_thresholds_.tolist()
+        y_calib  = iso.y_thresholds_.tolist()
+        calibration = IsotonicCalibration(x_thresholds=x_thresh, y_calibrated=y_calib)
+        logger.info(f"[rain_clf] calibrazione isotonica: {len(x_thresh)} breakpoint")
+    else:
+        logger.warning(f"[rain_clf] cal set troppo piccolo ({mask_cal.sum()} righe), salto calibrazione isotonica")
+
+    return ClassifierBundle(
+        model=model,
+        threshold_mm=threshold_mm,
+        calibration=calibration,
+    )
+
+
+def _apply_rain_calibration(prob_raw: np.ndarray, calibration: IsotonicCalibration | None) -> np.ndarray:
+    """Applica la calibrazione isotonica alle probabilità grezze.
+
+    Se calibration è None, restituisce prob_raw invariato.
+    """
+    if calibration is None:
+        return prob_raw
+    return np.asarray(np.interp(
+        prob_raw,
+        calibration.x_thresholds,
+        calibration.y_calibrated,
+    ))
 
 
 def _make_init_score(df: pd.DataFrame, target: str, mask: pd.Series) -> np.ndarray:
@@ -481,8 +621,25 @@ def train_all(
 
         bundles[target] = ModelBundle(models=models_q, cqr=cqr)
 
+    # Classificatore binario pioggia/no (hurdle model stadio 1)
+    mask_precip_fit = df_fit["target_precip_mm"].notna()
+    mask_precip_cal = df_cal["target_precip_mm"].notna()
+    if mask_precip_fit.sum() >= 50:
+        rain_clf: ClassifierBundle | None = _train_rain_classifier(
+            X_fit=df_fit.loc[mask_precip_fit, FEATURE_COLS],
+            y_precip_fit=df_fit.loc[mask_precip_fit, "target_precip_mm"],
+            X_cal=df_cal.loc[mask_precip_cal, FEATURE_COLS],
+            y_precip_cal=df_cal.loc[mask_precip_cal, "target_precip_mm"],
+            X_val=df_es_val.loc[df_es_val["target_precip_mm"].notna(), FEATURE_COLS] if has_es_val else None,
+            y_precip_val=df_es_val.loc[df_es_val["target_precip_mm"].notna(), "target_precip_mm"] if has_es_val else None,
+        )
+    else:
+        rain_clf = None
+        logger.warning("[rain_clf] dati insufficienti per il classificatore, saltato")
+
     artifacts = TrainingArtifacts(
         targets=bundles,
+        rain_classifier=rain_clf,
         feature_cols=FEATURE_COLS,
         categorical_cols=CATEGORICAL_COLS,
         trained_at=datetime.now(tz=UTC),
@@ -523,6 +680,22 @@ def _save_artifacts(artifacts: TrainingArtifacts, model_dir: Path) -> None:
             "models": model_files,
             "cqr": {label: asdict(corr) for label, corr in bundle.cqr.items()},
         }
+    if artifacts.rain_classifier is not None:
+        clf = artifacts.rain_classifier
+        booster = clf.model.booster_ if isinstance(clf.model, lgb.LGBMClassifier) else clf.model
+        clf_filename = "rain_clf.txt"
+        (model_dir / clf_filename).write_text(booster.model_to_string())
+        n_files += 1
+        manifest["rain_classifier"] = {
+            "model_file": clf_filename,
+            "threshold_mm": clf.threshold_mm,
+            "calibration": {
+                "x_thresholds": clf.calibration.x_thresholds,
+                "y_calibrated": clf.calibration.y_calibrated,
+            } if clf.calibration is not None else None,
+        }
+    else:
+        manifest["rain_classifier"] = None
     manifest_path = model_dir / "artifacts.json"
     manifest_path.write_text(json.dumps(manifest, indent=2))
     logger.info(f"Artefatti salvati: {manifest_path} (+{n_files} modelli .txt)")
@@ -564,8 +737,28 @@ def load_artifacts(model_dir: Path | None = None) -> TrainingArtifacts:
         cqr = {label: CQRCorrection(**corr) for label, corr in entry["cqr"].items()}
         targets[target] = ModelBundle(models=models, cqr=cqr)
 
+    rain_classifier: ClassifierBundle | None = None
+    clf_entry = manifest.get("rain_classifier")
+    if clf_entry is not None:
+        clf_model = lgb.Booster(model_str=(model_dir / clf_entry["model_file"]).read_text())
+        calib_data = clf_entry.get("calibration")
+        calibration = (
+            IsotonicCalibration(
+                x_thresholds=calib_data["x_thresholds"],
+                y_calibrated=calib_data["y_calibrated"],
+            )
+            if calib_data is not None
+            else None
+        )
+        rain_classifier = ClassifierBundle(
+            model=clf_model,
+            threshold_mm=clf_entry["threshold_mm"],
+            calibration=calibration,
+        )
+
     return TrainingArtifacts(
         targets=targets,
+        rain_classifier=rain_classifier,
         feature_cols=manifest["feature_cols"],
         categorical_cols=manifest["categorical_cols"],
         trained_at=datetime.fromisoformat(manifest["trained_at"]),
@@ -849,6 +1042,16 @@ def predict(
             pred = _invert_anomaly(pred, clim_value)
         out[target] = pred
 
+    if artifacts.rain_classifier is not None:
+        clf = artifacts.rain_classifier
+        X_clf = X.copy()
+        for col in artifacts.categorical_cols:
+            if col in X_clf.columns:
+                X_clf[col] = X_clf[col].astype("category")
+        prob_raw = np.asarray(clf.model.predict(X_clf))
+        prob_cal = _apply_rain_calibration(prob_raw, clf.calibration)
+        out["rain_clf"] = {"prob_rain": float(np.clip(prob_cal[0], 0.0, 1.0))}
+
     return out
 
 
@@ -880,6 +1083,18 @@ def predict_frame(
 
     buckets = [_lead_time_bucket(h) for h in lead_h]
     out: list[dict[str, dict[str, float]]] = [{} for _ in range(len(X))]
+
+    # Pre-calcola prob_rain per tutto il frame (una sola predict sul Booster).
+    prob_cal_all: np.ndarray | None = None
+    if artifacts.rain_classifier is not None:
+        clf = artifacts.rain_classifier
+        X_clf = X.copy()
+        for col in artifacts.categorical_cols:
+            if col in X_clf.columns:
+                X_clf[col] = X_clf[col].astype("category")
+        prob_raw_all = np.asarray(clf.model.predict(X_clf))
+        prob_cal_all = np.clip(_apply_rain_calibration(prob_raw_all, clf.calibration), 0.0, 1.0)
+
     for target, bundle in artifacts.targets.items():
         use_init = target in artifacts.init_score_targets
         q_cols = {f"p{int(q*100):02d}": _predict_level(model, X, target, use_init)
@@ -899,6 +1114,10 @@ def predict_frame(
             if clim_vals is not None:
                 pred = {k: v + float(clim_vals[i]) for k, v in pred.items()}
             out[i][target] = pred
+
+    if prob_cal_all is not None:
+        for i in range(len(X)):
+            out[i]["rain_clf"] = {"prob_rain": float(prob_cal_all[i])}
 
     return out
 
