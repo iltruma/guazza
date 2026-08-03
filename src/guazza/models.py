@@ -175,7 +175,7 @@ def _lgbm_params(quantile: float) -> dict[str, Any]:
         "objective": "quantile",
         "alpha": quantile,
         "metric": "quantile",
-        "n_estimators": 500,
+        "n_estimators": 2000,
         "learning_rate": 0.05,
         "num_leaves": 31,
         "min_child_samples": 20,
@@ -189,10 +189,62 @@ def _lgbm_params(quantile: float) -> dict[str, Any]:
     }
 
 
-def _train_lgbm(X: pd.DataFrame, y: pd.Series, quantile: float) -> lgb.LGBMRegressor:
+def _train_lgbm(
+    X: pd.DataFrame,
+    y: pd.Series,
+    quantile: float,
+    X_val: pd.DataFrame | None = None,
+    y_val: pd.Series | None = None,
+) -> lgb.LGBMRegressor:
     model = lgb.LGBMRegressor(**_lgbm_params(quantile))
-    model.fit(X, y, categorical_feature=CATEGORICAL_COLS)
+    if X_val is not None and y_val is not None and len(y_val) > 0:
+        model.fit(
+            X, y,
+            categorical_feature=CATEGORICAL_COLS,
+            eval_X=X_val,
+            eval_y=y_val,
+            callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(0)],
+        )
+    else:
+        model.fit(X, y, categorical_feature=CATEGORICAL_COLS)
     return model
+
+
+def _es_val_split(
+    df: pd.DataFrame,
+    end_date: pd.Timestamp,
+    es_val_days: int = 30,
+    embargo_days: int = 7,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Ritaglia df_fit e df_es_val con embargo dal confine end_date.
+
+    Layout temporale:
+      [--- df_fit ---][gap embargo][--- df_es_val es_val_days ---][gap embargo][end_date ...]
+
+    Args:
+        df: DataFrame con colonna target_date (date).
+        end_date: inizio del set successivo (cal set o test set).
+        es_val_days: ampiezza della finestra early-stop validation.
+        embargo_days: gap prima e dopo df_es_val.
+
+    Returns:
+        (df_fit, df_es_val). Se i dati sono insufficienti per entrambi i set
+        (df_fit < 30 righe o df_es_val vuoto), ritorna (df, empty) — il chiamante
+        deve gestire il fallback a training senza early stopping.
+    """
+    es_end   = end_date - pd.Timedelta(days=embargo_days)
+    es_start = es_end   - pd.Timedelta(days=es_val_days)
+    fit_end  = es_start - pd.Timedelta(days=embargo_days)
+
+    df_es_val = df[
+        (df["target_date"] >= es_start.date()) & (df["target_date"] < es_end.date())
+    ].copy()
+    df_fit = df[df["target_date"] < fit_end.date()].copy()
+
+    if len(df_fit) < 30 or len(df_es_val) == 0:
+        return df, pd.DataFrame()
+
+    return df_fit, df_es_val
 
 
 def _compute_cqr(
@@ -331,12 +383,17 @@ def train_all(
     cal_cutoff = pd.Timestamp(max_date) - pd.Timedelta(days=cal_days)
     cal_cutoff_date = cal_cutoff.date()
 
-    df_train = df[df["target_date"] < cal_cutoff_date].copy()
-    df_cal   = df[df["target_date"] >= cal_cutoff_date].copy()
+    df_fit, df_es_val = _es_val_split(df, end_date=pd.Timestamp(cal_cutoff_date))
+    has_es_val = len(df_es_val) > 0
+    df_cal = df[df["target_date"] >= cal_cutoff_date].copy()
 
     logger.info(
-        f"Train: {len(df_train)} righe ({df_train['target_date'].min()} → {df_train['target_date'].max()})"
+        f"Fit:   {len(df_fit)} righe ({df_fit['target_date'].min()} → {df_fit['target_date'].max()})"
     )
+    if has_es_val:
+        logger.info(
+            f"ES-val: {len(df_es_val)} righe ({df_es_val['target_date'].min()} → {df_es_val['target_date'].max()})"
+        )
     logger.info(
         f"Cal:   {len(df_cal)} righe ({df_cal['target_date'].min()} → {df_cal['target_date'].max()})"
     )
@@ -345,15 +402,21 @@ def train_all(
 
     for target in TARGETS:
         col = _target_col(target)
-        mask_train = df_train[col].notna()
-        X_tr = df_train.loc[mask_train, FEATURE_COLS]
-        y_tr = df_train.loc[mask_train, col]
+        mask_train = df_fit[col].notna()
+        X_tr = df_fit.loc[mask_train, FEATURE_COLS]
+        y_tr = df_fit.loc[mask_train, col]
 
         logger.info(f"[{target}] training su {len(y_tr)} righe con {len(QUANTILES)} quantili")
 
         models_q: dict[float, lgb.LGBMRegressor | lgb.Booster] = {}
         for q in QUANTILES:
-            models_q[q] = _train_lgbm(X_tr, y_tr, q)
+            if has_es_val:
+                mask_val = df_es_val[col].notna()
+                X_val_es = df_es_val.loc[mask_val, FEATURE_COLS]
+                y_val_es = df_es_val.loc[mask_val, col]
+                models_q[q] = _train_lgbm(X_tr, y_tr, q, X_val=X_val_es, y_val=y_val_es)
+            else:
+                models_q[q] = _train_lgbm(X_tr, y_tr, q)
             logger.debug(f"[{target}] q={q:.2f} addestrato")
 
         X_cal = df_cal[FEATURE_COLS]
@@ -372,7 +435,7 @@ def train_all(
         feature_cols=FEATURE_COLS,
         categorical_cols=CATEGORICAL_COLS,
         trained_at=datetime.now(tz=UTC),
-        n_train=len(df_train),
+        n_train=len(df_fit),
         n_cal=len(df_cal),
         anomaly_targets=list(ANOMALY_TARGETS),
     )
@@ -845,7 +908,12 @@ def walk_forward_cv(
         n_cal_dates = max(30, int(len(train_dates) * cal_fraction))
         cal_start = train_dates[-n_cal_dates]
         df_cal   = df_train_full[df_train_full["target_date"] >= cal_start]
-        df_train = df_train_full[df_train_full["target_date"] < cal_start]
+
+        cal_start_ts = pd.Timestamp(cal_start)
+        df_fit_fold, df_es_val_fold = _es_val_split(df_train_full, end_date=cal_start_ts)
+        has_es_val_fold = len(df_es_val_fold) > 0
+        # df_train sostituito da df_fit_fold per il training effettivo
+        df_train = df_fit_fold
 
         logger.info(
             f"Fold {i+1}/{n_splits}: train={len(df_train)} cal={len(df_cal)} "
@@ -866,7 +934,13 @@ def walk_forward_cv(
 
             models_q: dict[float, lgb.LGBMRegressor | lgb.Booster] = {}
             for q in QUANTILES:
-                models_q[q] = _train_lgbm(X_tr, y_tr, q)
+                if has_es_val_fold:
+                    mask_val = df_es_val_fold[col].notna()
+                    X_val_es = df_es_val_fold.loc[mask_val, FEATURE_COLS]
+                    y_val_es = df_es_val_fold.loc[mask_val, col]
+                    models_q[q] = _train_lgbm(X_tr, y_tr, q, X_val=X_val_es, y_val=y_val_es)
+                else:
+                    models_q[q] = _train_lgbm(X_tr, y_tr, q)
 
             cqr = _compute_cqr(models_q, df_cal[FEATURE_COLS], df_cal[col], df_cal["lead_time_h"])
 
