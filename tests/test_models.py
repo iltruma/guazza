@@ -45,12 +45,16 @@ CREATE TABLE IF NOT EXISTS features_daily (
     nwp_tmin_mean DOUBLE, nwp_tmin_spread DOUBLE,
     nwp_tmax_mean DOUBLE, nwp_tmax_spread DOUBLE,
     nwp_precip_mean DOUBLE, nwp_precip_spread DOUBLE,
+    nwp_pressure_mean DOUBLE, nwp_pressure_spread DOUBLE,
     obs_tmin_c DOUBLE, obs_tmax_c DOUBLE, obs_precip_mm DOUBLE, obs_humidity_pct DOUBLE,
+    obs_tmin_d2 DOUBLE, obs_tmax_d2 DOUBLE,
+    obs_tmin_gradient DOUBLE, obs_tmax_gradient DOUBLE,
     anom_tmin_c DOUBLE, anom_tmax_c DOUBLE,
     clim_tmin_mean DOUBLE, clim_tmin_std DOUBLE,
     clim_tmax_mean DOUBLE, clim_tmax_std DOUBLE,
     clim_precip_mean DOUBLE, clim_precip_std DOUBLE,
     month BIGINT, day_of_year BIGINT,
+    doy_sin DOUBLE, doy_cos DOUBLE,
     ring1_precip_d1_mean DOUBLE, ring1_precip_d1_max DOUBLE,
     ring2_precip_d1_mean DOUBLE, ring2_precip_d1_max DOUBLE,
     ring3_precip_d1_mean DOUBLE, ring3_precip_d1_max DOUBLE,
@@ -104,6 +108,8 @@ def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) 
     sono derivati da `NWP_MODEL_PREFIXES × NWP_DAILY_VARS` per restare allineati
     automaticamente a eventuali cambi di modelli.
     """
+    import math
+
     rng = np.random.default_rng(42)
     base = date(2022, 1, 1)
 
@@ -115,28 +121,46 @@ def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) 
             tmin = 5.0 + 10 * np.sin(2 * np.pi * i / 365) + rng.normal(0, 1)
             tmax = tmin + 8 + rng.normal(0, 0.5)
             precip = max(0.0, rng.exponential(1.5) if rng.random() < 0.3 else 0.0)
-            # NWP per modello: 5 valori (tmin, tmax, precip, humidity, wind) per NWP.
+            pressure = 1013.0 + rng.normal(0, 5)
+            doy = d.timetuple().tm_yday
+            # NWP per modello: derivato da NWP_DAILY_VARS per restare allineato.
+            # Valori: tmin, tmax, precip, humidity, wind, pressure_avg, pressure_min
+            # (o qualunque ordine NWP_DAILY_VARS definisca in futuro).
+            _var_vals = {
+                "tmin_c": tmin + rng.normal(0, 0.3),
+                "tmax_c": tmax + rng.normal(0, 0.3),
+                "precip_mm": precip,
+                "humidity_pct": 70.0,
+                "wind_ms": 3.0,
+                "pressure_hpa_avg": pressure + rng.normal(0, 1),
+                "pressure_hpa_min": pressure - 2.0,
+            }
             nwp_values: list[float] = []
             for _prefix, _src in NWP_MODEL_PREFIXES:
-                nwp_values.extend([
-                    tmin + rng.normal(0, 0.3), tmax + rng.normal(0, 0.3), precip,
-                    70.0, 3.0,
-                ])
+                for var in NWP_DAILY_VARS:
+                    nwp_values.append(_var_vals[var])
             rows.append((
                 loc, d, 0,
                 *nwp_values,
-                # ensemble stats (tmin/tmax/precip mean+spread — niente humidity/wind)
+                # ensemble stats (tmin/tmax/precip/pressure mean+spread)
                 tmin + rng.normal(0, 0.1), 1.0,
                 tmax + rng.normal(0, 0.1), 1.0,
                 precip, 0.5,
+                pressure, 3.0,
                 # obs yesterday
                 tmin - 0.5, tmax - 0.5, precip, 68.0,
+                # obs lag-2 e gradient
+                tmin - 1.0, tmax - 1.0,
+                0.5, 0.5,
                 # anom (clim_mean == obs nel test, anom=0)
                 0.0, 0.0,
                 # climatology
                 tmin, 2.0, tmax, 2.0, 1.5, 0.8,
                 # calendar
-                d.month, d.timetuple().tm_yday,
+                d.month, doy,
+                # doy cicliche
+                math.sin(2 * math.pi * doy / 365.25),
+                math.cos(2 * math.pi * doy / 365.25),
                 # ring features (NULL — nessuna stazione upstream nei test sintetici)
                 None, None, None, None, None, None,
                 # target

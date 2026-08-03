@@ -34,7 +34,10 @@ NWP_MODEL_PREFIXES: list[tuple[str, str]] = [
     ("icon2i", "italia_meteo_arpae_icon_2i"),
 ]
 # Variabili NWP aggregate a daily — l'ordine fissa quello di pivot e FEATURE_COLS.
-NWP_DAILY_VARS: list[str] = ["tmin_c", "tmax_c", "precip_mm", "humidity_pct", "wind_ms"]
+NWP_DAILY_VARS: list[str] = [
+    "tmin_c", "tmax_c", "precip_mm", "humidity_pct", "wind_ms",
+    "pressure_hpa_avg", "pressure_hpa_min",
+]
 
 # Colonne feature per-modello, es. "ecmwf_tmin_c". Consumate da models.FEATURE_COLS.
 NWP_FEATURE_COLS: list[str] = [
@@ -103,13 +106,15 @@ daily_nwp AS (
         MAX(temp_c)        AS tmax_c,
         SUM(precip_mm)     AS precip_mm,
         AVG(humidity_pct)  AS humidity_pct,
-        AVG(wind_speed_ms) AS wind_ms
+        AVG(wind_speed_ms) AS wind_ms,
+        AVG(pressure_hpa)  AS pressure_hpa_avg,
+        MIN(pressure_hpa)  AS pressure_hpa_min
     FROM (
         SELECT
             source, location_id, ts_run,
             ts_valid::DATE                                    AS target_date,
             DATEDIFF('day', ts_run::DATE, ts_valid::DATE)    AS lead_time_days,
-            temp_c, precip_mm, humidity_pct, wind_speed_ms
+            temp_c, precip_mm, humidity_pct, wind_speed_ms, pressure_hpa
         FROM forecasts
         WHERE ts_valid >= ts_run
     )
@@ -183,10 +188,10 @@ SELECT
     n.lead_time_h,
 
     -- NWP per modello (4 modelli)
-    n.ecmwf_tmin_c, n.ecmwf_tmax_c, n.ecmwf_precip_mm, n.ecmwf_humidity_pct, n.ecmwf_wind_ms,
-    n.icon_tmin_c,  n.icon_tmax_c,  n.icon_precip_mm,  n.icon_humidity_pct,  n.icon_wind_ms,
-    n.arome_tmin_c, n.arome_tmax_c, n.arome_precip_mm, n.arome_humidity_pct, n.arome_wind_ms,
-    n.icon2i_tmin_c, n.icon2i_tmax_c, n.icon2i_precip_mm, n.icon2i_humidity_pct, n.icon2i_wind_ms,
+    n.ecmwf_tmin_c, n.ecmwf_tmax_c, n.ecmwf_precip_mm, n.ecmwf_humidity_pct, n.ecmwf_wind_ms, n.ecmwf_pressure_hpa_avg, n.ecmwf_pressure_hpa_min,
+    n.icon_tmin_c,  n.icon_tmax_c,  n.icon_precip_mm,  n.icon_humidity_pct,  n.icon_wind_ms,  n.icon_pressure_hpa_avg,  n.icon_pressure_hpa_min,
+    n.arome_tmin_c, n.arome_tmax_c, n.arome_precip_mm, n.arome_humidity_pct, n.arome_wind_ms, n.arome_pressure_hpa_avg, n.arome_pressure_hpa_min,
+    n.icon2i_tmin_c, n.icon2i_tmax_c, n.icon2i_precip_mm, n.icon2i_humidity_pct, n.icon2i_wind_ms, n.icon2i_pressure_hpa_avg, n.icon2i_pressure_hpa_min,
 
     -- Ensemble mean (media null-safe su 4 modelli)
     (COALESCE(n.ecmwf_tmin_c, 0) + COALESCE(n.icon_tmin_c, 0)
@@ -224,11 +229,29 @@ SELECT
         - LEAST(n.ecmwf_precip_mm, n.icon_precip_mm, n.arome_precip_mm, n.icon2i_precip_mm)
         AS nwp_precip_spread,
 
+    -- Ensemble mean/spread pressione
+    (COALESCE(n.ecmwf_pressure_hpa_avg, 0) + COALESCE(n.icon_pressure_hpa_avg, 0)
+        + COALESCE(n.arome_pressure_hpa_avg, 0) + COALESCE(n.icon2i_pressure_hpa_avg, 0))
+    / NULLIF(
+        (n.ecmwf_pressure_hpa_avg IS NOT NULL)::INT + (n.icon_pressure_hpa_avg IS NOT NULL)::INT
+        + (n.arome_pressure_hpa_avg IS NOT NULL)::INT + (n.icon2i_pressure_hpa_avg IS NOT NULL)::INT, 0
+    ) AS nwp_pressure_mean,
+
+    GREATEST(n.ecmwf_pressure_hpa_avg, n.icon_pressure_hpa_avg, n.arome_pressure_hpa_avg, n.icon2i_pressure_hpa_avg)
+        - LEAST(n.ecmwf_pressure_hpa_avg, n.icon_pressure_hpa_avg, n.arome_pressure_hpa_avg, n.icon2i_pressure_hpa_avg)
+        AS nwp_pressure_spread,
+
     -- Obs features (giorno precedente — lookahead-safe)
     prev.tmin_c      AS obs_tmin_c,
     prev.tmax_c      AS obs_tmax_c,
     prev.precip_mm   AS obs_precip_mm,
     prev.humidity_pct AS obs_humidity_pct,
+
+    -- Obs lag-2 e gradient termico (lookahead-safe: entrambi <= D-1)
+    prev2.tmin_c AS obs_tmin_d2,
+    prev2.tmax_c AS obs_tmax_d2,
+    prev.tmin_c - prev2.tmin_c AS obs_tmin_gradient,
+    prev.tmax_c - prev2.tmax_c AS obs_tmax_gradient,
 
     -- Anomaly features (obs giorno prec − climatologia mensile). NULL se obs o clim
     -- mancanti: il modello impara a ignorarli come per obs_tmin_c. Usati da
@@ -244,6 +267,8 @@ SELECT
     -- Calendario
     MONTH(n.target_date)      AS month,
     DAYOFYEAR(n.target_date)  AS day_of_year,
+    SIN(2*PI()*DAYOFYEAR(n.target_date)/365.25) AS doy_sin,
+    COS(2*PI()*DAYOFYEAR(n.target_date)/365.25) AS doy_cos,
 
     -- Ring features pluviometriche (giorno precedente — lookahead-safe)
     rp.ring1_precip_d1_mean, rp.ring1_precip_d1_max,
@@ -263,6 +288,9 @@ FROM nwp_wide n
 LEFT JOIN obs_weighted prev
     ON  n.location_id = prev.location_id
     AND prev.obs_date = n.target_date - INTERVAL 1 DAY
+LEFT JOIN obs_weighted prev2
+    ON  n.location_id = prev2.location_id
+    AND prev2.obs_date = n.target_date - INTERVAL 2 DAY
 LEFT JOIN obs_weighted tgt
     ON  n.location_id = tgt.location_id
     AND tgt.obs_date  = n.target_date

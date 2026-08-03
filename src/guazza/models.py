@@ -97,8 +97,12 @@ FEATURE_COLS: list[str] = [
     "nwp_tmin_mean", "nwp_tmin_spread",
     "nwp_tmax_mean", "nwp_tmax_spread",
     "nwp_precip_mean", "nwp_precip_spread",
+    "nwp_pressure_mean", "nwp_pressure_spread",
     # Obs giorno precedente (lookahead-safe)
     "obs_tmin_c", "obs_tmax_c", "obs_precip_mm", "obs_humidity_pct",
+    # Obs lag-2 e gradient termico
+    "obs_tmin_d2", "obs_tmax_d2",
+    "obs_tmin_gradient", "obs_tmax_gradient",
     # Ring pluviometrici upstream (giorno precedente — lookahead-safe)
     "ring1_precip_d1_mean", "ring1_precip_d1_max",
     "ring2_precip_d1_mean", "ring2_precip_d1_max",
@@ -109,6 +113,7 @@ FEATURE_COLS: list[str] = [
     "clim_precip_mean", "clim_precip_std",
     # Calendario
     "month", "day_of_year",
+    "doy_sin", "doy_cos",
     # Lead time
     "lead_time_h",
     # Location (categorica)
