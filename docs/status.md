@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-08-03 (v0.13.0)
+> Aggiornato: 2026-08-03 (v0.13.0 → v0.14.0-dev)
 > Storico sprint → `CHANGELOG.md` · Decisioni → `docs/decisions.md` · Workaround attivi → `docs/known_issues.md`
 
 ## Stato
@@ -71,11 +71,31 @@ Tre commit incrementali separati per misurare l'effetto di ogni cambiamento:
    - `TrainingArtifacts.init_score_targets` persistito nel manifest JSON
 
 ### 🟡 Da fare: lanciare walk_forward_cv con il nuovo codice
-Richiede riesecuzione su DB produzione (feature_daily rebuild + CV). Misurare Δ MAE/skill per tmin/tmax/precip rispetto alla baseline (tmin +15.6%, tmax +42.6%, precip -2.9%) e metriche classificatore (Brier, BSS, AUC).
+Richiede riesecuzione su DB produzione (feature_daily rebuild + CV). Misurare Δ MAE/skill per tmin/tmax/precip rispetto alla baseline (tmin +15.6%, tmax +42.6%, precip -2.9%) e metriche classificatore (Brier, BSS, AUC) + `skill_wet_mae` del wet regressor.
+
+### Sessione 2026-08-03 (cont.) — CAPE + hurdle model stadio 2
+
+**Task 2 — CAPE feature convettiva (commit 9c289f9)**
+- `fetch_openmeteo.py`: `cape` → `cape_jkg` in `_OM_HOURLY_VARS`/`_OM_VAR_MAP`
+- `schema.sql`: colonna `cape_jkg DOUBLE` in `forecasts` (null se modello non espone)
+- `storage.py`: `cape_jkg` in INSERT/UPSERT
+- `features.py`: `MAX(cape_jkg) AS cape_max` in `daily_nwp`; `NWP_DAILY_VARS` += `cape_max`; `nwp_cape_mean/spread` in ensemble stats → `NWP_FEATURE_COLS` ora 32 (4×8)
+- `models.py`: `FEATURE_COLS` += `nwp_cape_mean`, `nwp_cape_spread`
+- Verifica empirica: tutti e 4 i modelli NWP espongono CAPE senza null (incl. icon_2i)
+- **Nota deploy**: DB prod va resettato (no migrazione; `cape_jkg` non esiste nella tabella esistente)
+
+**Task 3 — Hurdle model stadio 2 (commit 3a8a0d0)**
+- `_train_wet_regressor()`: 5 quantili LightGBM su wet days (>0.2mm), CQR stratificata per lead bucket, no init_score, `ValueError` se <30 wet days
+- `TrainingArtifacts.wet_regressor: ModelBundle | None` (retrocompatibile, default None)
+- `train_all`: addestra wet_reg dopo rain_clf
+- `_save_artifacts`/`load_artifacts`: 5 file `wet_reg_q{nn}.txt` + manifest
+- `predict`/`predict_frame`: `out["rain_clf"]["wet_reg"]` con anti-crossing e clamp ≥ 0
+- `walk_forward_cv`: metriche `mae_wet`/`skill_wet_mae` su test wet-only
+- `docs/contract.md`: aggiunto `precip_mm.wet_reg` al JSON contract
 
 ### Prossimi candidati (non implementati)
-- **Hurdle model precip stadio 2** (regressore quantile su soli giorni piovosi — classificatore già implementato)
+- **Esporre `wet_reg` nel frontend** — card "se piove, quanti mm?" distinta da `prob_rain`
+- **`walk_forward_cv` su DB prod** — misurare `skill_wet_mae` e decidere se il wet regressor vale
 - **Target ML vento avg** (verificare disponibilità ground truth SIR per location)
 - **Optuna tuning** LightGBM (dopo feature stabili: `num_leaves` 7-31, `learning_rate` 0.02-0.1)
 - **cal_days 120/180** (verifica coverage per bucket — D-003 richiede ~200 campioni/bucket)
-- **CAPE/indici convettivi** da Open-Meteo (🔴 zona rossa: richiede backfill historical)
