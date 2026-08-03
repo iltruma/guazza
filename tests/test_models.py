@@ -390,8 +390,10 @@ def test_walk_forward_cv_coverage_reasonable(db: DuckDBClient) -> None:
     aggregate, per_bucket = walk_forward_cv(db, n_splits=3, min_train_days=180, embargo_days=7)
 
     # Verifica che coverage sia un float valido in [0, 1] — non testiamo calibrazione
-    # su dati sintetici con modelli veloci (n_estimators ridotto dalla fixture fast_lgbm)
-    for df in (aggregate, per_bucket):
+    # su dati sintetici con modelli veloci (n_estimators ridotto dalla fixture fast_lgbm).
+    # Le righe rain_clf hanno coverage_80/90 = None per design (no CI quantile) → si escludono.
+    quant_agg = aggregate[aggregate["target"] != "rain_clf"]
+    for df in (quant_agg, per_bucket):
         assert (df["coverage_90"] >= 0.0).all()
         assert (df["coverage_90"] <= 1.0).all()
         assert (df["coverage_80"] >= 0.0).all()
@@ -912,3 +914,21 @@ def test_predict_emits_prob_rain(db: DuckDBClient, tmp_path: Path) -> None:
     prob = result["rain_clf"]["prob_rain"]
     assert isinstance(prob, float)
     assert 0.0 <= prob <= 1.0
+
+
+def test_walk_forward_cv_has_rain_clf_row(db: DuckDBClient) -> None:
+    """walk_forward_cv deve produrre almeno una riga target='rain_clf' con brier non None."""
+    _insert_features(db, n_days=600, n_locations=2)
+    aggregate, _per_bucket = walk_forward_cv(db, n_splits=2, min_train_days=180, embargo_days=7)
+
+    clf_rows = aggregate[aggregate["target"] == "rain_clf"]
+    assert not clf_rows.empty, "aggregate_df deve contenere righe con target='rain_clf'"
+
+    # Le righe rain_clf devono avere brier e brier_skill valorizzati
+    assert clf_rows["brier"].notna().any(), "brier deve essere non-None in almeno una riga rain_clf"
+    assert clf_rows["brier_skill"].notna().any(), "brier_skill deve essere non-None in almeno una riga rain_clf"
+
+    # Le colonne brier/brier_skill/auc devono esistere anche nelle righe dei target quantile
+    quant_rows = aggregate[aggregate["target"] != "rain_clf"]
+    assert "brier" in quant_rows.columns
+    assert quant_rows["brier"].isna().all(), "brier deve essere None per i target quantile"

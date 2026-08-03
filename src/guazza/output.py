@@ -222,8 +222,12 @@ def build_signals(
     )
 
     return {
-        # Precipitazione (ML quantile → CDF inversa lineare)
-        "P(precip > 0.2mm)": _prob_exceeds(precip_q, 0.2),
+        # Precipitazione (ML quantile → CDF inversa lineare, o classificatore diretto)
+        "P(precip > 0.2mm)": (
+            pred.get("rain_clf", {}).get("prob_rain")
+            if pred.get("rain_clf", {}).get("prob_rain") is not None
+            else _prob_exceeds(precip_q, 0.2)
+        ),
         "P(precip > 3mm)":   _prob_exceeds(precip_q, 3.0),
         "P(precip > 5mm/h)": _prob_exceeds(precip_q, 5.0),  # proxy: daily mm ≈ intensità
 
@@ -948,7 +952,10 @@ def write_location_json(
             "forecasts": {
                 "tmin_c":    _fmt_target(pred.get("tmin_c",    {})),
                 "tmax_c":    _fmt_target(pred.get("tmax_c",    {})),
-                "precip_mm": _fmt_precip(pred.get("precip_mm", {})),
+                "precip_mm": {
+                    **_fmt_precip(pred.get("precip_mm", {})),
+                    "prob_rain": pred.get("rain_clf", {}).get("prob_rain"),
+                },
             },
             "indicators": {
                 r.indicator_id: {

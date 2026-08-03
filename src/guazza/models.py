@@ -16,6 +16,7 @@ eseguire codice al load e i file sono ispezionabili.
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -1284,6 +1285,10 @@ def walk_forward_cv(
                 "coverage_80": round(cov80, 3),
                 "coverage_90": round(cov90, 3),
                 "skill_mae":  round(skill, 3) if not np.isnan(skill) else None,
+                "brier":              None,
+                "brier_skill":        None,
+                "brier_skill_vs_nwp": None,
+                "auc":                None,
                 "n_test":     int(mask_te.sum()),
             })
 
@@ -1319,6 +1324,67 @@ def walk_forward_cv(
                     "coverage_90": round(cov90_b, 3),
                     "skill_mae":   round(skill_b, 3) if not np.isnan(skill_b) else None,
                     "n_test":      n_b,
+                })
+
+        # Classificatore binario pioggia/no — metriche Brier/BSS/AUC per fold
+        col_precip = "target_precip_mm"
+        mask_precip_fit = df_train[col_precip].notna()
+        mask_precip_cal = df_cal[col_precip].notna()
+        if mask_precip_fit.sum() >= 50:
+            rain_clf_fold = _train_rain_classifier(
+                X_fit=df_train.loc[mask_precip_fit, FEATURE_COLS],
+                y_precip_fit=df_train.loc[mask_precip_fit, col_precip],
+                X_cal=df_cal.loc[mask_precip_cal, FEATURE_COLS],
+                y_precip_cal=df_cal.loc[mask_precip_cal, col_precip],
+                X_val=df_es_val_fold.loc[df_es_val_fold[col_precip].notna(), FEATURE_COLS] if has_es_val_fold else None,
+                y_precip_val=df_es_val_fold.loc[df_es_val_fold[col_precip].notna(), col_precip] if has_es_val_fold else None,
+            )
+
+            mask_te_clf = df_test[col_precip].notna()
+            if mask_te_clf.sum() >= 10:
+                X_te_clf = df_test.loc[mask_te_clf, FEATURE_COLS].copy()
+                for col in CATEGORICAL_COLS:
+                    if col in X_te_clf.columns:
+                        X_te_clf[col] = X_te_clf[col].astype("category")
+                y_te_bin = (df_test.loc[mask_te_clf, col_precip] > RAIN_THRESHOLD_MM).astype(int).values
+
+                prob_raw = np.asarray(rain_clf_fold.model.predict(X_te_clf))
+                prob_cal = _apply_rain_calibration(prob_raw, rain_clf_fold.calibration)
+                prob_cal = np.clip(prob_cal, 0.0, 1.0)
+
+                # Brier Score e Brier Skill Score vs climatologia (frazione wet nel train)
+                brier = float(np.mean((prob_cal - y_te_bin) ** 2))
+                p_clim = float((df_train.loc[mask_precip_fit, col_precip] > RAIN_THRESHOLD_MM).mean())
+                brier_clim = float(p_clim * (1 - p_clim))
+                bss = float(1.0 - brier / brier_clim) if brier_clim > 0 else float("nan")
+
+                # AUC-ROC (solo se ci sono entrambe le classi nel test set)
+                try:
+                    from sklearn.metrics import roc_auc_score  # noqa: PLC0415
+                    auc = float(roc_auc_score(y_te_bin, prob_cal)) if len(set(y_te_bin)) > 1 else float("nan")
+                except Exception:
+                    auc = float("nan")
+
+                # Baseline NWP: frazione modelli con nwp_precip_mean > RAIN_THRESHOLD_MM
+                nwp_prob = (df_test.loc[mask_te_clf, "nwp_precip_mean"] > RAIN_THRESHOLD_MM).astype(float).values
+                brier_nwp = float(np.mean((nwp_prob - y_te_bin) ** 2))
+                bss_vs_nwp = float(1.0 - brier / brier_nwp) if brier_nwp > 0 else float("nan")
+
+                rows.append({
+                    "split":       i + 1,
+                    "test_start":  str(test_start),
+                    "test_end":    str(test_end),
+                    "target":      "rain_clf",
+                    "mae":         None,
+                    "crps":        None,
+                    "coverage_80": None,
+                    "coverage_90": None,
+                    "skill_mae":   None,
+                    "brier":       round(brier, 4),
+                    "brier_skill": round(bss, 4) if not math.isnan(bss) else None,
+                    "brier_skill_vs_nwp": round(bss_vs_nwp, 4) if not math.isnan(bss_vs_nwp) else None,
+                    "auc":         round(auc, 4) if not math.isnan(auc) else None,
+                    "n_test":      int(mask_te_clf.sum()),
                 })
 
     return pd.DataFrame(rows), pd.DataFrame(rows_per_bucket)

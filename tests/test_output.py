@@ -1679,3 +1679,75 @@ def test_refresh_realtime_json_normalizes_legacy(
     data = json.loads(path.read_text())
     assert data["updates"]["pipeline_at"] is None
     assert data["updates"]["realtime_at"] is not None
+
+
+# ── build_signals — classificatore pioggia ────────────────────────────────────
+
+def test_build_signals_uses_prob_rain_if_present(
+    sample_row: pd.Series,
+) -> None:
+    """Se rain_clf.prob_rain è presente, P(precip > 0.2mm) usa quel valore direttamente."""
+    pred_with_clf = {
+        "tmin_c": {"p05": 5.0, "p10": 6.0, "p50": 10.0, "p90": 14.0, "p95": 15.0},
+        "tmax_c": {"p05": 15.0, "p10": 16.0, "p50": 22.0, "p90": 26.0, "p95": 28.0},
+        "precip_mm": {"p05": 0.0, "p10": 0.0, "p50": 0.5, "p90": 3.0, "p95": 5.0},
+        "rain_clf": {"prob_rain": 0.7},
+    }
+    sig = build_signals(pred_with_clf, sample_row)
+    assert sig["P(precip > 0.2mm)"] == pytest.approx(0.7)
+
+
+def test_build_signals_fallback_no_rain_clf(
+    sample_pred: dict,
+    sample_row: pd.Series,
+) -> None:
+    """Senza rain_clf, P(precip > 0.2mm) cade su _prob_exceeds — non è 0.7."""
+    sig = build_signals(sample_pred, sample_row)
+    # Verifica che non sia il valore sentinella 0.7 usato nel test sopra
+    assert sig["P(precip > 0.2mm)"] != pytest.approx(0.7)
+    # Deve comunque essere in [0, 1]
+    assert 0.0 <= sig["P(precip > 0.2mm)"] <= 1.0
+
+
+# ── write_location_json — prob_rain nel JSON ──────────────────────────────────
+
+def test_write_location_json_prob_rain_in_precip_block(
+    tmp_path: Path,
+    sample_indicators: list[IndicatorResult],
+) -> None:
+    """prob_rain dal classificatore appare nel blocco precip_mm del JSON."""
+    pred_with_clf = {
+        "tmin_c": {"p50": 10.0, "ci80_lo": 8.0, "ci80_hi": 12.0, "ci90_lo": 7.0, "ci90_hi": 13.0},
+        "tmax_c": {"p50": 20.0, "ci80_lo": 18.0, "ci80_hi": 22.0, "ci90_lo": 17.0, "ci90_hi": 23.0},
+        "precip_mm": {"p05": 0.0, "p10": 0.0, "p50": 0.5, "p90": 3.0, "p95": 5.0,
+                      "ci80_lo": 0.0, "ci80_hi": 3.5, "ci90_lo": 0.0, "ci90_hi": 6.0},
+        "rain_clf": {"prob_rain": 0.42},
+    }
+    path = write_location_json(
+        location_id="test_loc",
+        days=_make_days(pred_with_clf, sample_indicators),
+        coverage={},
+        output_dir=tmp_path,
+    )
+    data = json.loads(path.read_text())
+    fc = data["days"][0]["forecasts"]["precip_mm"]
+    assert "prob_rain" in fc
+    assert fc["prob_rain"] == pytest.approx(0.42)
+
+
+def test_write_location_json_prob_rain_none_without_clf(
+    tmp_path: Path,
+    sample_pred: dict,
+    sample_indicators: list[IndicatorResult],
+) -> None:
+    """Senza rain_clf nel pred, prob_rain è None nel JSON (retrocompatibilità)."""
+    path = write_location_json(
+        location_id="test_loc",
+        days=_make_days(sample_pred, sample_indicators),
+        coverage={},
+        output_dir=tmp_path,
+    )
+    data = json.loads(path.read_text())
+    fc = data["days"][0]["forecasts"]["precip_mm"]
+    assert "prob_rain" in fc
+    assert fc["prob_rain"] is None
