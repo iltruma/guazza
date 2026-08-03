@@ -35,6 +35,11 @@ _DEFAULT_MODEL_DIR = Path(os.environ.get("MODEL_DIR", "data/models"))
 QUANTILES: list[float] = [0.05, 0.10, 0.50, 0.90, 0.95]
 TARGETS: list[str] = ["tmin_c", "tmax_c", "precip_mm"]
 
+# Ordine fisso dei quantili per il sort anti-crossing in predict / predict_frame.
+# Le chiavi sono già in ordine (p05 < p10 < p50 < p90 < p95), ma i valori
+# predetti dai 5 modelli indipendenti possono incrociarsi.
+_Q_ORDER: list[str] = ["p05", "p10", "p50", "p90", "p95"]
+
 # Mapping target → colonna ensemble mean in features_daily
 _TARGET_NWP_MEAN: dict[str, str] = {
     "tmin_c":    "nwp_tmin_mean",
@@ -194,7 +199,9 @@ def _compute_cqr(
     """Computa CQR corrections stratificate per bucket lead time.
 
     Per ogni bucket: q_hat = quantile (1-alpha)(1+1/n) dei conformity scores.
-    Se il bucket ha meno di 10 campioni, usa tutti i dati del cal set (fallback).
+    Se il bucket ha meno di 10 campioni, usa il bucket adiacente più vicino
+    con dati sufficienti. Solo come ultima risorsa (nessun bucket adiacente
+    disponibile) usa tutti i dati del cal set.
     """
     mask = y_cal.notna()
     X = X_cal.loc[mask]
@@ -206,12 +213,44 @@ def _compute_cqr(
         q: np.asarray(m.predict(X)) for q, m in models_q.items()
     }
 
+    # Pre-calcola quanti campioni ha ogni bucket
+    bucket_labels = list(LEAD_BUCKETS.keys())
+    bucket_counts = {
+        label: int(((lh >= lo) & (lh < hi)).sum())
+        for label, (lo, hi) in LEAD_BUCKETS.items()
+    }
+
+    def _bucket_idx_for(target_label: str) -> pd.Series:
+        """Ritorna la maschera per il bucket target o il più vicino con >=10 campioni."""
+        lo_t, hi_t = LEAD_BUCKETS[target_label]
+        idx_t = (lh >= lo_t) & (lh < hi_t)
+        if idx_t.sum() >= 10:
+            return idx_t
+        # Cerca il bucket adiacente con dati sufficienti, partendo dal più vicino
+        target_pos = bucket_labels.index(target_label)
+        for distance in range(1, len(bucket_labels)):
+            for direction in [-1, 1]:
+                neighbor_pos = target_pos + direction * distance
+                if 0 <= neighbor_pos < len(bucket_labels):
+                    neighbor = bucket_labels[neighbor_pos]
+                    lo_n, hi_n = LEAD_BUCKETS[neighbor]
+                    idx_n = (lh >= lo_n) & (lh < hi_n)
+                    if idx_n.sum() >= 10:
+                        logger.debug(
+                            f"CQR bucket '{target_label}' ({bucket_counts[target_label]} campioni) "
+                            f"→ fallback su '{neighbor}' ({bucket_counts[neighbor]} campioni)"
+                        )
+                        return idx_n
+        # Ultima risorsa: tutti i dati disponibili
+        logger.warning(
+            f"CQR bucket '{target_label}': nessun bucket adiacente con >=10 campioni, "
+            f"uso tutti i dati ({mask.sum()} campioni)"
+        )
+        return pd.Series(True, index=lh.index)
+
     cqr: dict[str, CQRCorrection] = {}
-    for label, (lo, hi) in LEAD_BUCKETS.items():
-        bucket_idx = (lh >= lo) & (lh < hi)
-        if bucket_idx.sum() < 10:
-            # Fallback: calibra su tutti i dati disponibili
-            bucket_idx = pd.Series(True, index=lh.index)
+    for label in bucket_labels:
+        bucket_idx = _bucket_idx_for(label)
         n = int(bucket_idx.sum())
 
         y_b = y[bucket_idx].values
@@ -456,6 +495,26 @@ def _invert_anomaly(
     return {k: v + clim_value for k, v in preds.items()}
 
 
+# Learning rate ACI (γ): D-019 specifica 0.005. Il drift da correggere è
+# stagionale (scala mesi), non giornaliero. γ=0.02 sarebbe 4× troppo aggressivo
+# — inseguirebbe il rumore meteo invece del trend di calibrazione.
+# Punto unico di verità: importato da pipeline.py per evitare drift doc↔codice.
+ACI_LEARNING_RATE: float = 0.005
+
+# Fattore di correzione ACI clampato a [MIN, MAX] per evitare bande patologiche
+# quando alpha_t si avvicina al clamp eps=0.01 (drift prolungato). Senza clamp,
+# f = alpha_target/alpha_t può arrivare a 10+ → banda ±30°C inutili.
+# 0.5..2.0 = la correzione può stringere al massimo del 50% o allargare al massimo
+# del 100% rispetto al CQR baseline. Oltre è rumore.
+ACI_CORRECTION_FACTOR_MIN: float = 0.5
+ACI_CORRECTION_FACTOR_MAX: float = 2.0
+
+# Cold start: prime N osservazioni prima che ACI sia affidabile. CQR statico
+# (calcolato da train_all) è più conservativo e ci protegge. Dopo N obs,
+# l'alpha_t corrente è già stabile.
+ACI_COLD_START_N: int = 30
+
+
 class AdaptiveConformalizer:
     """ACI (Gibbs & Candès 2021) per singolo livello α.
 
@@ -469,14 +528,15 @@ class AdaptiveConformalizer:
 
     Args:
         alpha_target: livello target (es. 0.10 per CI 90%, 0.20 per CI 80%).
-        learning_rate: γ. Default 0.02 (Gibbs & Candès).
+        learning_rate: γ. Default ACI_LEARNING_RATE=0.005 (D-019). Il drift da
+            correggere è stagionale (mesi); γ più alto inseguirebbe rumore giornaliero.
         eps: clamping per evitare alpha degeneri (0 o 1).
     """
 
     def __init__(
         self,
         alpha_target: float,
-        learning_rate: float = 0.02,
+        learning_rate: float = ACI_LEARNING_RATE,
         eps: float = 0.01,
     ) -> None:
         self.alpha_target = alpha_target
@@ -531,7 +591,7 @@ class AdaptiveConformalizer:
         alpha_t: float,
         n_updates: int,
         err_sum: int,
-        learning_rate: float = 0.02,
+        learning_rate: float = ACI_LEARNING_RATE,
         eps: float = 0.01,
     ) -> AdaptiveConformalizer:
         """Ricostruisce ACI da state persistito (DuckDB o dizionario).
@@ -554,25 +614,11 @@ class AdaptiveConformalizer:
         return self._err_sum
 
 
-# Cold start: prime N osservazioni prima che ACI sia affidabile. CQR statico
-# (calcolato da train_all) è più conservativo e ci protegge. Dopo N obs,
-# l'alpha_t corrente è già stabile.
-ACI_COLD_START_N: int = 30
-
-# Fattore di correzione ACI clampato a [MIN, MAX] per evitare bande patologiche
-# quando alpha_t si avvicina al clamp eps=0.01 (drift prolungato). Senza clamp,
-# f = alpha_target/alpha_t può arrivare a 10+ → banda ±30°C inutili.
-# 0.5..2.0 = la correzione può stringere al massimo del 50% o allargare al massimo
-# del 100% rispetto al CQR baseline. Oltre è rumore.
-ACI_CORRECTION_FACTOR_MIN: float = 0.5
-ACI_CORRECTION_FACTOR_MAX: float = 2.0
-
-
 def get_aci_pair(
     db: DuckDBClient,
     target: str,
     lead_bucket: str,
-    learning_rate: float = 0.02,
+    learning_rate: float = ACI_LEARNING_RATE,
 ) -> tuple[AdaptiveConformalizer, AdaptiveConformalizer]:
     """Carica (o crea) la coppia ACI per (target, lead_bucket) ai livelli 80%/90%.
 
@@ -670,6 +716,9 @@ def predict(
     for target, bundle in artifacts.targets.items():
         preds_q = {f"p{int(q*100):02d}": float(model.predict(X)[0])
                    for q, model in bundle.models.items()}
+        # Anti-crossing: i 5 modelli sono indipendenti e i valori possono incrociarsi.
+        sorted_vals = sorted(preds_q[k] for k in _Q_ORDER)
+        preds_q = dict(zip(_Q_ORDER, sorted_vals, strict=True))
         pred = _apply_cqr(preds_q, bundle, bucket)
         if target in artifacts.anomaly_targets:
             clim_col = _TARGET_CLIM_COL[target]
@@ -719,6 +768,9 @@ def predict_frame(
         )
         for i in range(len(X)):
             preds_q = {k: float(v[i]) for k, v in q_cols.items()}
+            # Anti-crossing: ordina i valori predetti prima di passarli a CQR.
+            sorted_vals = sorted(preds_q[k] for k in _Q_ORDER)
+            preds_q = dict(zip(_Q_ORDER, sorted_vals, strict=True))
             pred = _apply_cqr(preds_q, bundle, buckets[i])
             if clim_vals is not None:
                 pred = {k: v + float(clim_vals[i]) for k, v in pred.items()}

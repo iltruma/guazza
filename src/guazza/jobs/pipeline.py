@@ -37,6 +37,7 @@ from guazza.jobs._common import (
     ping_healthchecks,
 )
 from guazza.models import (
+    ACI_LEARNING_RATE,
     LEAD_BUCKETS,
     TARGETS,
     AdaptiveConformalizer,
@@ -117,8 +118,8 @@ def _aci_update_from_history(db: DuckDBClient) -> int:
     n_updated = 0
     for target, (obs_col, p10_col, p90_col, p05_col, p95_col) in target_obs.items():
         for bucket in LEAD_BUCKETS:
-            aci_80 = AdaptiveConformalizer(alpha_target=0.20, learning_rate=0.02)
-            aci_90 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=0.02)
+            aci_80 = AdaptiveConformalizer(alpha_target=0.20, learning_rate=ACI_LEARNING_RATE)
+            aci_90 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=ACI_LEARNING_RATE)
             for _, row in rows.iterrows():
                 if row["_bucket"] != bucket:
                     continue
