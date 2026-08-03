@@ -154,6 +154,9 @@ class TrainingArtifacts:
     # Target addestrati in anomalia rispetto alla clim (vuoto = tutti valore assoluto).
     # Persistito in artifacts.json per sapere a predict time quali target vanno invertiti.
     anomaly_targets: list[str] = field(default_factory=list)
+    # Target allenati con init_score=nwp_mean (il booster predice il residuo).
+    # Persistito nel manifest per sapere a predict time quali target vanno sommati.
+    init_score_targets: list[str] = field(default_factory=list)
 
 
 def load_features(db: DuckDBClient) -> pd.DataFrame:
@@ -195,18 +198,22 @@ def _train_lgbm(
     quantile: float,
     X_val: pd.DataFrame | None = None,
     y_val: pd.Series | None = None,
+    init_score: np.ndarray | None = None,
+    init_score_val: np.ndarray | None = None,
 ) -> lgb.LGBMRegressor:
     model = lgb.LGBMRegressor(**_lgbm_params(quantile))
     if X_val is not None and y_val is not None and len(y_val) > 0:
         model.fit(
             X, y,
             categorical_feature=CATEGORICAL_COLS,
+            init_score=init_score,
             eval_X=X_val,
             eval_y=y_val,
+            eval_init_score=[init_score_val] if init_score_val is not None else None,
             callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(0)],
         )
     else:
-        model.fit(X, y, categorical_feature=CATEGORICAL_COLS)
+        model.fit(X, y, categorical_feature=CATEGORICAL_COLS, init_score=init_score)
     return model
 
 
@@ -247,11 +254,49 @@ def _es_val_split(
     return df_fit, df_es_val
 
 
+def _make_init_score(df: pd.DataFrame, target: str, mask: pd.Series) -> np.ndarray:
+    """Calcola il vettore init_score per il training: nwp_mean con fallback a clim, poi 0."""
+    nwp_col  = _TARGET_NWP_MEAN[target]
+    clim_col = _TARGET_CLIM_COL[target]
+    return np.asarray(
+        df.loc[mask, nwp_col]
+        .fillna(df.loc[mask, clim_col])
+        .fillna(0.0)
+    )
+
+
+def _predict_level(
+    model: lgb.LGBMRegressor | lgb.Booster,
+    X: pd.DataFrame,
+    target: str,
+    use_init_score: bool,
+) -> np.ndarray:
+    """Predizione LightGBM riportata a livello assoluto.
+
+    Se use_init_score=True il booster ha imparato il residuo rispetto a
+    nwp_mean; somma nwp_mean (con fallback a clim, poi 0) per tornare al
+    livello assoluto. Se False, restituisce il raw predict invariato.
+    """
+    raw = np.asarray(model.predict(X))
+    if not use_init_score:
+        return raw
+    nwp_col  = _TARGET_NWP_MEAN[target]
+    clim_col = _TARGET_CLIM_COL[target]
+    base = np.asarray(
+        X[nwp_col]
+        .fillna(X[clim_col])
+        .fillna(0.0)
+    )
+    return raw + base
+
+
 def _compute_cqr(
     models_q: dict[float, lgb.LGBMRegressor | lgb.Booster],
     X_cal: pd.DataFrame,
     y_cal: pd.Series,
     lead_h: pd.Series,
+    target: str = "",
+    use_init_score: bool = False,
 ) -> dict[str, CQRCorrection]:
     """Computa CQR corrections stratificate per bucket lead time.
 
@@ -265,9 +310,9 @@ def _compute_cqr(
     y = y_cal.loc[mask]
     lh = lead_h.loc[mask]
 
-    # Predizioni sul cal set (tutti i quantili in un colpo)
+    # Predizioni sul cal set a livello assoluto (se use_init_score, somma nwp_mean)
     pred: dict[float, np.ndarray] = {
-        q: np.asarray(m.predict(X)) for q, m in models_q.items()
+        q: _predict_level(m, X, target, use_init_score) for q, m in models_q.items()
     }
 
     # Pre-calcola quanti campioni ha ogni bucket
@@ -410,20 +455,26 @@ def train_all(
 
         models_q: dict[float, lgb.LGBMRegressor | lgb.Booster] = {}
         for q in QUANTILES:
+            init_tr  = _make_init_score(df_fit, target, mask_train)
+            init_val = _make_init_score(df_es_val, target, df_es_val[col].notna()) if has_es_val else None
             if has_es_val:
                 mask_val = df_es_val[col].notna()
                 X_val_es = df_es_val.loc[mask_val, FEATURE_COLS]
                 y_val_es = df_es_val.loc[mask_val, col]
-                models_q[q] = _train_lgbm(X_tr, y_tr, q, X_val=X_val_es, y_val=y_val_es)
+                models_q[q] = _train_lgbm(
+                    X_tr, y_tr, q,
+                    X_val=X_val_es, y_val=y_val_es,
+                    init_score=init_tr, init_score_val=init_val,
+                )
             else:
-                models_q[q] = _train_lgbm(X_tr, y_tr, q)
+                models_q[q] = _train_lgbm(X_tr, y_tr, q, init_score=init_tr)
             logger.debug(f"[{target}] q={q:.2f} addestrato")
 
         X_cal = df_cal[FEATURE_COLS]
         y_cal = df_cal[col]
         lead_h = df_cal["lead_time_h"]
 
-        cqr = _compute_cqr(models_q, X_cal, y_cal, lead_h)
+        cqr = _compute_cqr(models_q, X_cal, y_cal, lead_h, target=target, use_init_score=True)
         logger.info(
             f"[{target}] CQR 0-6h → ci80={cqr['0-6h'].ci80:.3f} ci90={cqr['0-6h'].ci90:.3f}"
         )
@@ -438,6 +489,7 @@ def train_all(
         n_train=len(df_fit),
         n_cal=len(df_cal),
         anomaly_targets=list(ANOMALY_TARGETS),
+        init_score_targets=list(TARGETS),
     )
 
     _save_artifacts(artifacts, model_dir)
@@ -455,6 +507,7 @@ def _save_artifacts(artifacts: TrainingArtifacts, model_dir: Path) -> None:
         "feature_cols": artifacts.feature_cols,
         "categorical_cols": artifacts.categorical_cols,
         "anomaly_targets": artifacts.anomaly_targets,
+        "init_score_targets": artifacts.init_score_targets,
         "targets": {},
     }
     n_files = 0
@@ -519,6 +572,7 @@ def load_artifacts(model_dir: Path | None = None) -> TrainingArtifacts:
         n_train=manifest["n_train"],
         n_cal=manifest["n_cal"],
         anomaly_targets=manifest.get("anomaly_targets", []),
+        init_score_targets=manifest.get("init_score_targets", []),
     )
 
 
@@ -782,7 +836,8 @@ def predict(
     bucket = _lead_time_bucket(lead_h)
     out: dict[str, dict[str, float]] = {}
     for target, bundle in artifacts.targets.items():
-        preds_q = {f"p{int(q*100):02d}": float(model.predict(X)[0])
+        use_init = target in artifacts.init_score_targets
+        preds_q = {f"p{int(q*100):02d}": float(_predict_level(model, X, target, use_init)[0])
                    for q, model in bundle.models.items()}
         # Anti-crossing: i 5 modelli sono indipendenti e i valori possono incrociarsi.
         sorted_vals = sorted(preds_q[k] for k in _Q_ORDER)
@@ -826,7 +881,8 @@ def predict_frame(
     buckets = [_lead_time_bucket(h) for h in lead_h]
     out: list[dict[str, dict[str, float]]] = [{} for _ in range(len(X))]
     for target, bundle in artifacts.targets.items():
-        q_cols = {f"p{int(q*100):02d}": np.asarray(model.predict(X))
+        use_init = target in artifacts.init_score_targets
+        q_cols = {f"p{int(q*100):02d}": _predict_level(model, X, target, use_init)
                   for q, model in bundle.models.items()}
         # Per target in anomaly, prepariamo il vettore clim in un colpo (no loop Python).
         clim_vals = (
@@ -934,15 +990,21 @@ def walk_forward_cv(
 
             models_q: dict[float, lgb.LGBMRegressor | lgb.Booster] = {}
             for q in QUANTILES:
+                init_tr = _make_init_score(df_train, target, mask_tr)
+                init_val_fold = _make_init_score(df_es_val_fold, target, df_es_val_fold[col].notna()) if has_es_val_fold else None
                 if has_es_val_fold:
                     mask_val = df_es_val_fold[col].notna()
                     X_val_es = df_es_val_fold.loc[mask_val, FEATURE_COLS]
                     y_val_es = df_es_val_fold.loc[mask_val, col]
-                    models_q[q] = _train_lgbm(X_tr, y_tr, q, X_val=X_val_es, y_val=y_val_es)
+                    models_q[q] = _train_lgbm(
+                        X_tr, y_tr, q,
+                        X_val=X_val_es, y_val=y_val_es,
+                        init_score=init_tr, init_score_val=init_val_fold,
+                    )
                 else:
-                    models_q[q] = _train_lgbm(X_tr, y_tr, q)
+                    models_q[q] = _train_lgbm(X_tr, y_tr, q, init_score=init_tr)
 
-            cqr = _compute_cqr(models_q, df_cal[FEATURE_COLS], df_cal[col], df_cal["lead_time_h"])
+            cqr = _compute_cqr(models_q, df_cal[FEATURE_COLS], df_cal[col], df_cal["lead_time_h"], target=target, use_init_score=True)
 
             # Valuta sul test set
             mask_te = df_test[col].notna()
@@ -953,7 +1015,7 @@ def walk_forward_cv(
             y_te = df_test.loc[mask_te, col].values
 
             preds: dict[float, np.ndarray] = {
-                q: np.asarray(m.predict(X_te)) for q, m in models_q.items()
+                q: _predict_level(m, X_te, target, use_init_score=True) for q, m in models_q.items()
             }
 
             # MAE su mediana
