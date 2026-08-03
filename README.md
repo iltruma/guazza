@@ -49,7 +49,6 @@ guazza/
 ├── src/guazza/
 │   ├── schema.sql          # Schema DuckDB — unica source of truth (+ vista obs_weighted_daily)
 │   ├── storage.py          # DuckDBClient, upsert bulk Arrow, backfill_prediction_obs
-│   ├── fetchers.py         # CLI fetcher (sir-historical / sir-realtime / netatmo)
 │   ├── fetch_common.py     # Costanti e helper HTTP condivisi (UA, retry, timezone)
 │   ├── fetch_sir.py        # SIR storico CSV + realtime JSON + bulk
 │   ├── fetch_openmeteo.py  # Open-Meteo forecast / historical / multi-lead (4 modelli)
@@ -58,7 +57,7 @@ guazza/
 │   ├── weights.py          # Pesi stazione→location, ring upstream pluvio
 │   ├── features.py         # build_features_daily() — 50 feature, tabella materializzata
 │   ├── models.py           # LightGBM quantile + CQR, train_all(), predict(), predict_frame()
-│   ├── indicators.py       # Decision Logic Engine: evaluate_all(), log_results() (eval via AST)
+│   ├── indicators.py       # Decision Logic Engine: evaluate_all(), log_results()
 │   ├── output.py           # build_signals(), build_signals_today(), dewpoint/apparent_temp, write_location_json()
 │   ├── qc.py               # Quality control osservazioni SIR (chiamato da ingest)
 │   ├── _logging.py         # setup_logging() + log_scrape() — TTY pretty / cron JSON
@@ -69,7 +68,7 @@ guazza/
  │       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
  │       ├── ingest.py       # Cron: historical / daily / realtime
  │       ├── pipeline.py     # Cron 6h: forecasts → features → predict → skill-history → monitor
- │       ├── train.py        # One-shot: train run / train eval (walk-forward CV)
+ │       ├── train.py        # One-shot: train run (LightGBM + CQR)
  │       ├── skill.py        # Cron settimanale: curva skill MAE per lead → skill.json
  │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2
 ├── data/
@@ -174,14 +173,10 @@ modelli con data ultimo run.
 ### Training (on-demand o mensile)
 
 ```bash
-# Pesi stazioni + ring upstream pluvio
-uv run python -m guazza.weights refresh
+# Pesi stazioni + ring upstream pluvio — gestiti automaticamente da guazza-pipeline run
 
 # Training LightGBM + CQR
 uv run python -m guazza.jobs.train run --db data/guazza.duckdb --model-dir data/models
-
-# Walk-forward CV con metriche
-uv run python -m guazza.jobs.train eval --db data/guazza.duckdb
 ```
 
 ### Skill history backfill manuale
@@ -314,8 +309,7 @@ DB_PATH=/var/lib/guazza/guazza.duckdb uv run python -m guazza.storage init-schem
 # 4. Backfill storico (lento — SIR + Open-Meteo 2022→oggi)
 uv run python -m guazza.jobs.ingest historical
 
-# 5. Pesi stazioni + ring upstream
-uv run python -m guazza.weights refresh
+# 5. Pesi stazioni + ring upstream (gestiti automaticamente dalla pipeline)
 
 # 6. Training modello
 uv run python -m guazza.jobs.train run

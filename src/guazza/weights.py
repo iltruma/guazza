@@ -8,8 +8,8 @@ Schema di pesi (Alessandrini et al. 2013, calibrato per Toscana):
 
 Ricalibrazione prevista dopo 60 giorni di osservazioni reali.
 
-CLI:
-    uv run python -m guazza.weights refresh
+La CLI standalone è stata rimossa: refresh_station_weights() e
+refresh_upstream_rings() sono invocati da `guazza-pipeline run`.
 """
 
 from __future__ import annotations
@@ -20,12 +20,10 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import typer
 import yaml
 from loguru import logger
 
-from guazza._logging import setup_logging
-from guazza._paths import DEFAULT_CONFIG_DIR, DEFAULT_DB_PATH
+from guazza._paths import DEFAULT_CONFIG_DIR
 from guazza.storage import DuckDBClient
 
 _HALF_DECAY_KM: float = 3.0
@@ -212,98 +210,3 @@ def refresh_station_weights(
     logger.info(f"station_weights: {len(records)} record salvati")
     return records
 
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
-
-app = typer.Typer(help="Gestione pesi stazioni per location.")
-
-
-def print_weights_report(
-    records: list[dict[str, Any]],
-    locations: dict[str, Any],
-) -> None:
-    """Stampa un report leggibile dei pesi calcolati, raggruppato per location."""
-    by_loc: dict[str, list[dict[str, Any]]] = {}
-    for r in records:
-        by_loc.setdefault(r["location_id"], []).append(r)
-
-    for loc_id in locations:
-        loc_records = by_loc.get(loc_id, [])
-        loc_label = locations[loc_id].get("label", loc_id)
-        typer.echo(f"\n{loc_id} — {loc_label}:")
-
-        sir_recs = sorted(
-            [r for r in loc_records if r["source"] == "sir"],
-            key=lambda r: r["weight"],
-            reverse=True,
-        )
-        for r in sir_recs:
-            marker = " ✓" if r["weight"] >= 0.5 else ""
-            typer.echo(
-                f"  SIR     {r['station_id']} ({r['nome'][:24]:<24}): "
-                f"peso={r['weight']:.3f}  dist={r['distance_km']:.1f}km  "
-                f"Δq={r['delta_elev_m']:+.0f}m{marker}"
-            )
-        if not loc_records:
-            typer.echo("  (nessuna stazione)")
-
-_DB_OPTION = typer.Option(str(DEFAULT_DB_PATH), "--db", help="Path del file DuckDB")
-_CFG_OPTION = typer.Option(
-    str(DEFAULT_CONFIG_DIR),
-    "--config-dir",
-    help="Directory dei file YAML di configurazione",
-)
-
-
-@app.callback()
-def _callback() -> None:
-    setup_logging()
-
-
-@app.command("refresh")
-def cmd_refresh(
-    db_path: str = _DB_OPTION,
-    config_dir: str = _CFG_OPTION,
-) -> None:
-    """Ricalcola i pesi stazione→location e salva in DuckDB. Stampa report."""
-    locations, stations = load_configs(Path(config_dir))
-    with DuckDBClient(db_path=Path(db_path)) as db:
-        db.init_schema()
-        records = refresh_station_weights(db, locations, stations)
-        ring_records = refresh_upstream_rings(db, locations, stations)
-
-    print_weights_report(records, locations)
-    typer.echo(f"\nTotale: {len(records)} record salvati in station_weights.")
-    typer.echo(f"Totale: {len(ring_records)} record salvati in upstream_ring_station.")
-
-
-@app.command("show")
-def cmd_show(db_path: str = _DB_OPTION) -> None:
-    """Mostra i pesi attualmente salvati in DuckDB (senza ricalcolare)."""
-    with DuckDBClient(db_path=Path(db_path), read_only=True) as db:
-        rows = db.execute(
-            """
-            SELECT location_id, source, station_id, weight, distance_km, delta_elev_m
-            FROM station_weights
-            ORDER BY location_id, source DESC, weight DESC
-            """
-        ).fetchall()
-
-    if not rows:
-        typer.echo("station_weights è vuota. Esegui prima: refresh")
-        return
-
-    current_loc = None
-    for loc_id, source, station_id, weight, dist_km, delta_elev in rows:
-        if loc_id != current_loc:
-            typer.echo(f"\n{loc_id}:")
-            current_loc = loc_id
-        marker = " ✓" if (source == "sir" and weight >= 0.5) else ""
-        typer.echo(
-            f"  {source:<8} {station_id:<22} peso={weight:.3f}  "
-            f"dist={dist_km:.2f}km  Δq={delta_elev:+.0f}m{marker}"
-        )
-
-
-if __name__ == "__main__":
-    app()

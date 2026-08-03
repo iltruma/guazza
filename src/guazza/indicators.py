@@ -2,9 +2,6 @@
 
 Input:  SignalBag (dict str→float) pre-computato dal pipeline di ingestion/forecast.
 Output: lista IndicatorResult (verde/giallo/rosso) + log in DuckDB indicator_log.
-
-CLI:
-    uv run python -m guazza.indicators evaluate --location casa_campi --signals '{...}'
 """
 
 from __future__ import annotations
@@ -20,11 +17,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-import typer
 import yaml
 from loguru import logger
 
-from guazza._logging import setup_logging
 from guazza._paths import DEFAULT_CONFIG_DIR
 
 if TYPE_CHECKING:
@@ -262,33 +257,3 @@ def log_results(
         f"[{results[0].location_id} @ {results[0].ts:%Y-%m-%dT%H:%M}]"
     )
 
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
-
-app = typer.Typer(help="Decision Logic Engine — valutazione manuale indicatori.")
-
-
-@app.command("evaluate")
-def cmd_evaluate(
-    location: str = typer.Option(..., help="ID location (es. casa_campi)"),
-    signals_json: str = typer.Option("{}", "--signals", help="JSON con SignalBag"),
-    config_dir: str = typer.Option(str(_DEFAULT_INDICATORS_YAML.parent), "--config-dir"),
-) -> None:
-    """Valuta tutti gli indicatori per una location con i segnali forniti."""
-    setup_logging()
-    signals: SignalBag = json.loads(signals_json)
-    indicators = load_indicators(Path(config_dir) / "indicators.yaml")
-    results = evaluate_all(indicators, signals, location)
-
-    verdict_icon = {"verde": "🟢", "giallo": "🟡", "rosso": "🔴", "grigio": "⚪"}
-    typer.echo(f"\n{location} — {len(results)} indicatori:")
-    for r in results:
-        icon = verdict_icon.get(r.verdict, "⚪")
-        typer.echo(
-            f"  {icon} {r.indicator_id:<12} {r.verdict:<6}  "
-            f"alpha={r.alpha:.2f}  rule={r.rule_matched}"
-        )
-
-
-if __name__ == "__main__":
-    app()

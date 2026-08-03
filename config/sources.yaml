@@ -96,7 +96,7 @@ sources:
     validation_states: [VALIDATO, PRE-VALIDATO, NON VALIDATO]
     notes: >
       Endpoint scoperto via HAR (2026-05-13). Risposta HTML, parsing robusto con flag.
-      Fetcher: src/guazza/fetchers.py
+      Fetcher: src/guazza/fetch_sir.py
 
   # ── Radar precipitazioni (frontend only) ────────────────────────────────
 

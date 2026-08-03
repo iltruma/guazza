@@ -43,7 +43,6 @@ guazza-pipeline       = "guazza.jobs.pipeline:app"
 guazza-train          = "guazza.jobs.train:app"
 guazza-skill          = "guazza.jobs.skill:app"
 guazza-backup         = "guazza.jobs.backup:app"
-guazza-weights        = "guazza.weights:app"
 guazza-storage        = "guazza.storage:app"
 
 [tool.hatch.build.targets.wheel]
