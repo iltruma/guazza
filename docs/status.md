@@ -18,7 +18,7 @@
 |---|---|
 | Pipeline 6h | `guazza-pipeline` — forecasts → features → predict+DLE+JSON → skill-history → monitor |
 | Ingest | `guazza-ingest historical/daily/realtime` (SIR + Open-Meteo + Netatmo) |
-| Modello | LightGBM quantile + CQR (cal_days=150) + ACI + rain_clf (hurdle stadio 1) |
+| Modello | LightGBM quantile + CQR (cal_days=90) + ACI + rain_clf (hurdle stadio 1) |
 | NWP | 4 modelli: ECMWF IFS, ICON-EU, AROME France, ICON-2I |
 | Location | 6: casa_campi, lavoro_cosimo, lavoro_madda, casa_cesto, casa_nicco, casa_cercina |
 | Frontend | `index.html` + `affidabilita.html` — CSS custom, Chart.js, Leaflet, RainViewer |
@@ -66,7 +66,7 @@ Capitolo ML chiuso. Focus su: deploy prod (reset DB + backfill + train) → cali
 ### Commit
 
 - **2dbc4b9** — `LEAD_BUCKETS` ridefiniti giornalieri (D+0..D+5+) — i vecchi bucket orari erano sempre vuoti su features_daily multi-lead
-- **fba2bd0** — `cal_days` 150 (era 90) — cal set più ampio per CQR
+- **fba2bd0/9c0a01d** — `cal_days` 150 (era 90) poi rollbackato a 90 — coverage CI non migliorava (non-stazionarietà train→test, non volume cal set)
 - **5083290** — Rimossi wet regressor (skill negativo in 3/4 fold) e `anomaly_targets` (dead code post-KI-024); 36 test rimasti verdi
 
 ### Note tecniche
