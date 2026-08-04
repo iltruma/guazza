@@ -1,11 +1,13 @@
-// Guazza · Affidabilità
-// Pagina statica self-contained: carica /data/skill.json e /data/skill_history.json
-// (file globali generati dai job `guazza-skill` e `guazza-skill-history`) e mostra:
-//   1) MAE Guazza vs consensus NWP per Tmin/Tmax, per orizzonte D+0..D+7
-//   2) Time series forecast vs actual, finestra 7gg / 30gg / totale
+// Guazza · Affidabilità — redesign completo
 //
-// Riusa le classi CSS esistenti (.g-tab, .g-card, .g-skill__*, .g-chart-legend)
-// e l'estetica Carbone+Iride di index.html. Niente dipendenza da app.js.
+// Struttura:
+//   1. Ranking compatto (D+1, per-modello da skill_history)
+//   2. MAE per orizzonte D+0..D+7 (Guazza vs NWP-consensus da skill.json)
+//   3. Errore rolling nel tempo (errore giornaliero |forecast−actual| da skill_history)
+//
+// Self-contained: nessuna dipendenza da app.js.
+
+// ── Costanti ─────────────────────────────────────────────────────────────────
 
 const AFF_LOCATIONS = [
   { id: 'casa_campi',    label: 'Casa Campi' },
@@ -16,55 +18,116 @@ const AFF_LOCATIONS = [
   { id: 'casa_cercina',  label: 'Casa Cercina' },
 ];
 
-const SKILL_URL        = '/data/skill.json';
+const SKILL_URL         = '/data/skill.json';
 const SKILL_HISTORY_URL = '/data/skill_history.json';
-// Fonti NWP nell'ordine in cui appaiono nella legenda (e nel JSON).
-// Mantenuto allineato con `jobs.skill_history.NWP_SOURCES` (lato backend).
+
+// Chiavi sorgente NWP nel JSON (ordine stabile, allineato al backend)
 const NWP_SOURCES = [
   'open_meteo_ecmwf_ifs',
   'open_meteo_icon_eu',
   'open_meteo_arome_france',
   'open_meteo_italia_meteo_arpae_icon_2i',
 ];
+
 const NWP_LABELS = {
-  'open_meteo_ecmwf_ifs':                    'ECMWF IFS',
-  'open_meteo_icon_eu':                      'ICON-EU',
-  'open_meteo_arome_france':                 'AROME France',
-  'open_meteo_italia_meteo_arpae_icon_2i':   'ARPAE ICON-2I',
+  open_meteo_ecmwf_ifs:                   'ECMWF IFS',
+  open_meteo_icon_eu:                     'ICON-EU',
+  open_meteo_arome_france:                'AROME France',
+  open_meteo_italia_meteo_arpae_icon_2i:  'ARPAE ICON-2I',
 };
 
-let affChart     = null;
-let affSkillData = null;     // skill.json (curva MAE per lead)
-let histData     = null;     // skill_history.json (time series)
-let affLocId     = 'casa_campi';
-let histWindow   = 30;       // giorni, 0 = totale
+// Colori per modello — usati in tutti e tre i grafici
+const MODEL_COLORS = {
+  guazza:                                 '#6B7FD4',  // iris accent
+  open_meteo_ecmwf_ifs:                   '#F97316',  // warm orange
+  open_meteo_icon_eu:                     '#34D399',  // verde
+  open_meteo_arome_france:                '#FBBF24',  // giallo
+  open_meteo_italia_meteo_arpae_icon_2i:  '#A78BFA',  // viola
+};
 
-// ── Utils ───────────────────────────────────────────────────────────────────
+// Classe CSS dot per la legenda HTML
+const MODEL_DOT_CLASS = {
+  guazza:                                 'aff-legend-dot--guazza',
+  open_meteo_ecmwf_ifs:                   'aff-legend-dot--ecmwf',
+  open_meteo_icon_eu:                     'aff-legend-dot--iconeu',
+  open_meteo_arome_france:                'aff-legend-dot--arome',
+  open_meteo_italia_meteo_arpae_icon_2i:  'aff-legend-dot--icon2i',
+};
 
-function fmtIsoDate(iso) {
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y.slice(2)}`;
-}
+// ── Stato applicazione ────────────────────────────────────────────────────────
 
-function fmtShortDate(iso) {
-  // Per l'asse X del grafico history: "DD/MM" (no anno, basta scansione settimana).
-  const [, m, d] = iso.split('-');
-  return `${d}/${m}`;
-}
+let skillData   = null;    // skill.json
+let histData    = null;    // skill_history.json
+
+let affLocId       = 'casa_campi';
+let rankingVar     = 'tmax_c';   // tmax_c | tmin_c
+let horizonVar     = 'tmax_c';   // tmax_c | tmin_c
+let rollingVar     = 'tmax_c';   // tmax_c | tmin_c | precip_mm
+let rollingWindow  = 90;         // giorni; 0 = totale
+
+let horizonChart = null;
+let rollingChart = null;
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
 function showEl(id) { document.getElementById(id)?.classList.remove('hidden'); }
 function hideEl(id) { document.getElementById(id)?.classList.add('hidden'); }
 
-// ── Fetch ───────────────────────────────────────────────────────────────────
+function fmtDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y.slice(2)}`;
+}
+
+// Calcola MAE di un array di valori forecast vs actual (ignora null/null)
+function computeMAE(forecasts, actuals) {
+  let sum = 0, n = 0;
+  for (let i = 0; i < forecasts.length; i++) {
+    const f = forecasts[i];
+    const a = actuals[i];
+    if (f == null || a == null) continue;
+    sum += Math.abs(f - a);
+    n++;
+  }
+  return n > 0 ? sum / n : null;
+}
+
+// Calcola errore assoluto giornaliero: array parallelo a dates, null se mancante
+function absError(forecasts, actuals) {
+  if (!forecasts || !actuals) return [];
+  return forecasts.map((f, i) => {
+    const a = actuals[i];
+    return f != null && a != null ? Math.abs(f - a) : null;
+  });
+}
+
+// Media mobile: finestra `k` giorni, null se non abbastanza valori (min 3)
+function rolling(arr, k) {
+  const out = new Array(arr.length).fill(null);
+  for (let i = 0; i < arr.length; i++) {
+    const start = Math.max(0, i - k + 1);
+    const slice = arr.slice(start, i + 1).filter(v => v != null);
+    if (slice.length >= Math.min(3, k)) {
+      out[i] = slice.reduce((s, v) => s + v, 0) / slice.length;
+    }
+  }
+  return out;
+}
+
+// Legge CSS custom property dal root
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// ── Fetch ─────────────────────────────────────────────────────────────────────
 
 async function loadSkill() {
   try {
     const r = await fetch(SKILL_URL, { cache: 'no-store' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    affSkillData = await r.json();
+    skillData = await r.json();
   } catch {
-    affSkillData = null;
-    showEl('aff-error');
+    skillData = null;
   }
 }
 
@@ -74,12 +137,12 @@ async function loadHistory() {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     histData = await r.json();
   } catch {
-    // history è best-effort: la pagina resta valida anche senza.
+    // history è best-effort: la pagina resta valida anche senza
     histData = null;
   }
 }
 
-// ── Render: tabs location ───────────────────────────────────────────────────
+// ── Location tabs ─────────────────────────────────────────────────────────────
 
 function renderLocationTabs() {
   const nav = document.getElementById('aff-locations');
@@ -92,246 +155,205 @@ function renderLocationTabs() {
       if (btn.dataset.loc !== affLocId) {
         affLocId = btn.dataset.loc;
         renderLocationTabs();
-        renderCard();
-        renderHistory();
+        renderAll();
       }
     });
   });
 }
 
-// ── Render: card MAE per lead ───────────────────────────────────────────────
+// ── Header meta ───────────────────────────────────────────────────────────────
 
-function renderCard() {
-  const card = document.getElementById('aff-card');
-  const loc = affSkillData?.locations?.[affLocId];
-  if (!loc) { hideEl('aff-card'); return; }
-
-  const tminPts = loc.tmin_c || [];
-  const tmaxPts = loc.tmax_c || [];
-  const hasAny = (tminPts.some(p => p.mae_ml != null)) || (tmaxPts.some(p => p.mae_ml != null));
-  if (!hasAny) { hideEl('aff-card'); return; }
-  showEl('aff-card');
-
-  document.getElementById('aff-sub').textContent =
-    `MAE °C · verità: stazione SIR ${loc.sir_station_id}`;
-
-  const valid = [...tminPts, ...tmaxPts].filter(p => p.n != null);
-  const nMin = valid.length ? Math.min(...valid.map(p => p.n)) : 0;
-  const nMax = valid.length ? Math.max(...valid.map(p => p.n)) : 0;
-  const win = `${fmtIsoDate(affSkillData.window_start)}→${fmtIsoDate(affSkillData.window_end)}`;
-  document.getElementById('aff-caption').textContent =
-    `Errore medio assoluto out-of-sample contro il termometro SIR primario, per orizzonte. ` +
-    `Linee piene = Guazza ML; tratteggiate = consensus NWP. Caldo = T max, freddo = T min. ` +
-    `Più in basso è, più Guazza è accurata. Finestra ${win} ` +
-    `(${nMin}–${nMax} giorni per orizzonte): è una finestra di mesi, non lifetime.`;
-
-  drawChart(tminPts, tmaxPts);
+function renderHeaderMeta() {
+  const meta = document.getElementById('header-meta');
+  if (!meta) return;
+  const ts = (skillData?.generated_at || histData?.generated_at || '').replace('T', ' ').slice(0, 16);
+  if (ts) meta.textContent = `skill aggiornato ${ts}`;
 }
 
-function drawChart(tminPts, tmaxPts) {
-  const canvas = document.getElementById('aff-chart');
-  if (!canvas || typeof Chart === 'undefined') return;
-  if (affChart) { affChart.destroy(); affChart = null; }
+// ── 1. Ranking compatto ───────────────────────────────────────────────────────
 
-  const css = getComputedStyle(document.documentElement);
-  const v = name => css.getPropertyValue(name).trim();
-  const axis   = v('--chart-axis');
-  const grid   = v('--chart-grid');
-  const warm   = v('--warm');
-  const cold   = v('--cold');
-  const warmNwp = 'rgba(249,115,22,0.45)';
-  const coldNwp = 'rgba(96,165,250,0.45)';
-
-  const leadPoints = (tminPts.length ? tminPts : tmaxPts);
-  const labels = leadPoints.map(p => `D+${p.lead_h / 24}`);
-
-  const pick = (points, key) => points.map(p => p[key]);
-
-  function skillAfterBody(items) {
-    const i = items[0].dataIndex;
-    const lines = [];
-    for (const it of items) {
-      const ds = it.dataset;
-      const targetPts = ds._target === 'tmin' ? tminPts : tmaxPts;
-      const p = targetPts[i];
-      if (!p || p.skill_pct == null) continue;
-      const sign = p.skill_pct >= 0 ? '+' : '';
-      lines.push(`${ds.label}: skill ${sign}${p.skill_pct}%  ·  n=${p.n}`);
-    }
-    return lines;
-  }
-
-  const datasets = [
-    { label: 'NWP T max',  data: pick(tmaxPts, 'mae_nwp'),
-      borderColor: warmNwp, backgroundColor: warmNwp,
-      borderDash: [5, 4], borderWidth: 1.5, pointRadius: 3, spanGaps: true, tension: 0.25,
-      _target: 'tmax' },
-    { label: 'Guazza T max', data: pick(tmaxPts, 'mae_ml'),
-      borderColor: warm, backgroundColor: warm,
-      borderWidth: 2, pointRadius: 3, spanGaps: true, tension: 0.25,
-      _target: 'tmax' },
-    { label: 'NWP T min',  data: pick(tminPts, 'mae_nwp'),
-      borderColor: coldNwp, backgroundColor: coldNwp,
-      borderDash: [5, 4], borderWidth: 1.5, pointRadius: 3, spanGaps: true, tension: 0.25,
-      _target: 'tmin' },
-    { label: 'Guazza T min', data: pick(tminPts, 'mae_ml'),
-      borderColor: cold, backgroundColor: cold,
-      borderWidth: 2, pointRadius: 3, spanGaps: true, tension: 0.25,
-      _target: 'tmin' },
-  ];
-
-  affChart = new Chart(canvas.getContext('2d'), {
-    type: 'line',
-    data: { labels, datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: { grid: { color: grid }, ticks: { color: axis } },
-        y: { grid: { color: grid }, ticks: { color: axis, callback: x => `${x}°` },
-             title: { display: true, text: 'MAE (°C)', color: axis } },
-      },
-      plugins: {
-        legend: { labels: { color: axis, usePointStyle: true, boxWidth: 8 } },
-        tooltip: { callbacks: { afterBody: skillAfterBody } },
-      },
-    },
-  });
-}
-
-// ── Render: history time series ─────────────────────────────────────────────
-
-function renderHistory() {
-  const card = document.getElementById('hist-card');
+function renderRanking() {
   const loc = histData?.locations?.[affLocId];
-  if (!loc || !histData) { hideEl('hist-card'); return; }
+  if (!loc) { hideEl('aff-ranking-card'); return; }
 
-  // Determina se la location ha almeno una riga (tmin o tmax) per la finestra scelta
-  const tmin = loc.tmin_c;
-  const tmax = loc.tmax_c;
-  const hasAny = (tmin?.dates?.length) || (tmax?.dates?.length);
-  if (!hasAny) { hideEl('hist-card'); return; }
-  showEl('hist-card');
+  const series = loc[rankingVar];
+  if (!series?.dates?.length || !series.actual) { hideEl('aff-ranking-card'); return; }
 
-  // Testo header
-  const winText = histWindow === 0
-    ? `tutto (dal ${fmtIsoDate(histData.min_date)})`
-    : `ultimi ${histWindow}gg`;
-  document.getElementById('hist-sub').textContent =
-    `forecast a D-1 vs osservato a D · ${winText}`;
+  showEl('aff-ranking-card');
 
-  // Filtra per finestra
-  const sliced = sliceByWindow(tmin, histWindow);
-  const slicedTmax = sliceByWindow(tmax, histWindow);
-  const nDates = sliced.dates.length;
-  // Conta NWP effettivamente disponibili (esclude modelli con tutti null nella finestra)
-  const nNwpAvailable = NWP_SOURCES.filter(src => {
-    const arr = sliced.sources[src];
-    return arr && arr.some(v => v != null);
-  }).length;
-  document.getElementById('hist-caption').textContent =
-    `${nDates} giorni · lead 24h · ${nNwpAvailable} NWP più Guazza ML contro la stazione SIR pesata della location. ` +
-    `Più una linea è vicina alla riga nera (osservato), più quel modello ci ha preso. ` +
-    `Finestra di append: ${fmtIsoDate(histData.min_date)}→${fmtIsoDate(histData.max_date)}.`;
-
-  drawHist(sliced, 'hist-chart-tmax');
-  drawHist(slicedTmax, 'hist-chart-tmin');
-}
-
-function sliceByWindow(series, windowDays) {
-  // series: { dates: [iso, ...], actual: [...], guazza: [...], nwp_*: [...] }
-  if (!series?.dates?.length) return { dates: [], actual: [], sources: {} };
-  let dates = series.dates;
-  let actual = series.actual;
-  let slices = { guazza: series.guazza };
-  for (const src of NWP_SOURCES) slices[src] = series[src];
-  if (windowDays > 0 && dates.length > windowDays) {
-    const start = dates.length - windowDays;
-    dates = dates.slice(start);
-    actual = actual.slice(start);
-    for (const k of Object.keys(slices)) slices[k] = slices[k].slice(start);
-  }
-  return { dates, actual, sources: slices };
-}
-
-function drawHist(sliced, canvasId) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas || typeof Chart === 'undefined') return;
-
-  // Distruggi eventuale chart precedente su questo canvas
-  const existing = Chart.getChart(canvas);
-  if (existing) existing.destroy();
-
-  if (!sliced.dates.length) return;
-
-  const css = getComputedStyle(document.documentElement);
-  const v = name => css.getPropertyValue(name).trim();
-  const axis = v('--chart-axis');
-  const grid = v('--chart-grid');
-  const accent = v('--accent');
-  const warm = v('--warm');
-  const isTmax = canvasId.endsWith('tmax');
-  const lineColor = isTmax ? warm : v('--cold');
-
-  const labels = sliced.dates.map(fmtShortDate);
-
-  // Dataset: actual (riferimento, nero spesso) + Guazza (accent) + 4 NWP (grigi tratteggiati)
-  const datasets = [
-    { label: 'Osservato', data: sliced.actual,
-      borderColor: v('--text-1'), backgroundColor: v('--text-1'),
-      borderWidth: 2.5, pointRadius: 0, spanGaps: true, tension: 0.2,
-      order: 1 },
-    { label: 'Guazza ML', data: sliced.sources.guazza,
-      borderColor: accent, backgroundColor: accent,
-      borderWidth: 2, pointRadius: 0, spanGaps: true, tension: 0.2,
-      order: 2 },
+  // Calcola MAE D+1 per ogni modello dalla history (tutti i dati disponibili, no slice)
+  const actual = series.actual;
+  const models = [
+    { key: 'guazza', label: 'Guazza ML', forecasts: series.guazza },
+    ...NWP_SOURCES.map(s => ({ key: s, label: NWP_LABELS[s], forecasts: series[s] })),
   ];
-  // NWP tratteggiati in grigio (alpha 0.55) — solo quelli con almeno un valore
-  // non-null nella finestra corrente. Esclude modelli "morti" (es. GFS oggi ha
-  // record orari senza temp_c nel DB).
-  const nwpColor = 'rgba(148,163,174,0.55)';
-  let nNwpShown = 0;
-  for (const src of NWP_SOURCES) {
-    const arr = sliced.sources[src];
-    if (!arr || !arr.some(v => v != null)) continue;
-    datasets.push({
-      label: NWP_LABELS[src] || src,
-      data: arr,
-      borderColor: nwpColor, backgroundColor: nwpColor,
-      borderDash: [3, 3], borderWidth: 1, pointRadius: 0,
-      spanGaps: true, tension: 0.2,
-      _isNwp: true, order: 3,
-    });
-    nNwpShown++;
-  }
 
-  new Chart(canvas.getContext('2d'), {
+  const scored = models
+    .map(m => ({
+      ...m,
+      mae: computeMAE(m.forecasts || [], actual),
+    }))
+    .filter(m => m.mae != null)
+    .sort((a, b) => a.mae - b.mae);
+
+  if (!scored.length) { hideEl('aff-ranking-card'); return; }
+
+  const worstMAE = Math.max(...scored.map(m => m.mae));
+  const bestKey  = scored[0].key;
+
+  // Caption data range
+  const d1 = fmtDate(histData.min_date);
+  const d2 = fmtDate(histData.max_date);
+  const varLabel = rankingVar === 'tmax_c' ? 'T max' : 'T min';
+  document.getElementById('ranking-sub').textContent =
+    `${varLabel} · periodo ${d1}→${d2} · ${series.dates.length} giorni`;
+  document.getElementById('ranking-caption').textContent =
+    `MAE medio nel periodo su lead 24h. Calcolato da skill_history.json (tutti i giorni disponibili). ` +
+    `Verità: stazione SIR pesata. Il miglior modello non è necessariamente Guazza.`;
+
+  const container = document.getElementById('ranking-cards');
+  container.innerHTML = scored.map((m, idx) => {
+    const isGuazza = m.key === 'guazza';
+    const isBest   = m.key === bestKey;
+    const dotCls   = MODEL_DOT_CLASS[m.key] || 'aff-legend-dot--nwp';
+    const barPct   = worstMAE > 0 ? ((m.mae / worstMAE) * 100).toFixed(1) : '100';
+    const barColor = MODEL_COLORS[m.key] || 'rgba(148,163,174,0.55)';
+
+    let badge = '';
+    if (isGuazza) badge += `<span class="aff-rank-card__badge aff-rank-card__badge--guazza">Guazza</span>`;
+    if (isBest)   badge += `<span class="aff-rank-card__badge aff-rank-card__badge--best">✓ Migliore</span>`;
+
+    const cardClass = [
+      'aff-rank-card',
+      isGuazza ? 'aff-rank-card--guazza' : '',
+      isBest && !isGuazza ? 'aff-rank-card--best' : '',
+    ].filter(Boolean).join(' ');
+
+    return `
+      <div class="${cardClass}" role="listitem">
+        ${badge}
+        <div class="aff-rank-card__name">${m.label}</div>
+        <div class="aff-rank-card__mae">${m.mae.toFixed(2)}<span style="font-size:0.625rem;color:var(--text-3);font-weight:400;margin-left:2px">°C</span></div>
+        <div class="aff-rank-card__rank">#${idx + 1} su ${scored.length}</div>
+        <div class="aff-rank-card__bar">
+          <div class="aff-rank-card__bar-fill" style="width:${barPct}%;background:${barColor}"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── 2. MAE per orizzonte (Guazza vs NWP-consensus) ────────────────────────────
+
+function renderHorizon() {
+  const loc = skillData?.locations?.[affLocId];
+  if (!loc) { hideEl('aff-horizon-card'); return; }
+
+  const pts = loc[horizonVar];
+  if (!pts?.length || !pts.some(p => p.mae_ml != null)) {
+    hideEl('aff-horizon-card'); return;
+  }
+  showEl('aff-horizon-card');
+
+  const varLabel = horizonVar === 'tmax_c' ? 'T max' : 'T min';
+  const d1 = fmtDate(skillData.window_start);
+  const d2 = fmtDate(skillData.window_end);
+  document.getElementById('horizon-sub').textContent =
+    `${varLabel} · SIR ${loc.sir_station_id} · ${d1}→${d2}`;
+  document.getElementById('horizon-caption').textContent =
+    `Guazza vs consensus NWP medio (ECMWF + ICON-EU + AROME + ICON-2I aggregati) per orizzonte. ` +
+    `Fonte: skill.json (CV out-of-sample, embargo ${skillData.embargo_days}gg). ` +
+    `Il dettaglio per-modello è nel grafico precedente (solo D+1).`;
+
+  drawHorizonChart(pts);
+}
+
+function drawHorizonChart(pts) {
+  const canvas = document.getElementById('aff-horizon-chart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (horizonChart) { horizonChart.destroy(); horizonChart = null; }
+
+  const axis  = cssVar('--chart-axis');
+  const grid  = cssVar('--chart-grid');
+  const iris  = MODEL_COLORS.guazza;
+  const nwpClr = 'rgba(148,163,174,0.60)';
+
+  const labels = pts.map(p => `D+${p.lead_h / 24}`);
+  const mlData  = pts.map(p => p.mae_ml  ?? null);
+  const nwpData = pts.map(p => p.mae_nwp ?? null);
+
+  horizonChart = new Chart(canvas.getContext('2d'), {
     type: 'line',
-    data: { labels, datasets },
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Guazza ML',
+          data: mlData,
+          borderColor: iris,
+          backgroundColor: iris,
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          spanGaps: true,
+          tension: 0.3,
+          order: 1,
+        },
+        {
+          label: 'NWP consensus',
+          data: nwpData,
+          borderColor: nwpClr,
+          backgroundColor: nwpClr,
+          borderDash: [5, 4],
+          borderWidth: 1.5,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          spanGaps: true,
+          tension: 0.3,
+          order: 2,
+        },
+      ],
+    },
     options: {
-      responsive: true, maintainAspectRatio: false,
+      responsive: true,
+      maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { grid: { color: grid, display: false }, ticks: { color: axis, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
-        y: { grid: { color: grid }, ticks: { color: axis, callback: x => `${x}°` } },
+        x: {
+          grid: { color: grid },
+          ticks: { color: axis, font: { family: 'JetBrains Mono, monospace', size: 11 } },
+        },
+        y: {
+          grid: { color: grid },
+          ticks: {
+            color: axis,
+            font: { family: 'JetBrains Mono, monospace', size: 11 },
+            callback: v => `${v.toFixed(1)}°`,
+          },
+          title: { display: true, text: 'MAE (°C)', color: axis, font: { size: 10 } },
+        },
       },
       plugins: {
-        legend: { display: false }, // legenda statica sopra il grafico
+        legend: {
+          display: false,  // legenda HTML sopra
+        },
         tooltip: {
+          backgroundColor: 'rgba(19,19,19,0.97)',
+          borderColor: 'rgba(255,255,255,0.09)',
+          borderWidth: 1,
+          titleColor: axis,
+          bodyColor: cssVar('--text-2'),
           callbacks: {
-            filter: (item) => !item.dataset._isNwp, // nasconde i 4 NWP dal tooltip
             afterBody: (items) => {
-              if (!sliced.dates.length) return '';
               const i = items[0].dataIndex;
+              const p = pts[i];
+              if (!p) return '';
               const lines = [];
-              // Errore Guazza vs actual
-              const g = sliced.sources.guazza?.[i];
-              const a = sliced.actual?.[i];
-              if (g != null && a != null) {
-                const err = g - a;
-                const sign = err >= 0 ? '+' : '';
-                lines.push(`Guazza: ${sign}${err.toFixed(2)}° vs osservato`);
+              if (p.skill_pct != null) {
+                const sign = p.skill_pct >= 0 ? '+' : '';
+                lines.push(`Skill: ${sign}${p.skill_pct.toFixed(1)}%`);
               }
+              if (p.n != null) lines.push(`Campioni: ${p.n}`);
               return lines;
             },
           },
@@ -341,38 +363,222 @@ function drawHist(sliced, canvasId) {
   });
 }
 
-// ── Filtro finestra (segmented control 7gg / 30gg / Totale) ────────────────
+// ── 3. Errore rolling nel tempo ────────────────────────────────────────────────
 
-document.getElementById('hist-seg')?.addEventListener('click', e => {
-  const btn = e.target.closest('.g-skill__seg-btn');
-  if (!btn) return;
-  const w = parseInt(btn.dataset.window, 10);
-  if (w === histWindow) return;
-  histWindow = w;
-  document.querySelectorAll('#hist-seg .g-skill__seg-btn').forEach(b =>
-    b.classList.toggle('is-active', parseInt(b.dataset.window, 10) === histWindow));
-  renderHistory();
-});
+function renderRolling() {
+  const loc = histData?.locations?.[affLocId];
+  if (!loc) { hideEl('aff-rolling-card'); return; }
 
-// ── Header meta: "skill aggiornato al" ──────────────────────────────────────
+  const series = loc[rollingVar];
+  if (!series?.dates?.length) { hideEl('aff-rolling-card'); return; }
 
-function renderHeaderMeta() {
-  const meta = document.getElementById('header-meta');
-  if (!meta) return;
-  const ts = (affSkillData?.generated_at || histData?.generated_at || '').replace('T', ' ').slice(0, 16);
-  if (ts) meta.textContent = `skill aggiornato ${ts}`;
+  const actual = series.actual;
+  const hasAny = actual?.some(v => v != null);
+  if (!hasAny) { hideEl('aff-rolling-card'); return; }
+
+  showEl('aff-rolling-card');
+
+  // Applica finestra temporale (slice finale)
+  let dates    = series.dates;
+  let actSlice = actual;
+  const sourceArrays = {};
+  ['guazza', ...NWP_SOURCES].forEach(k => { sourceArrays[k] = series[k]; });
+
+  if (rollingWindow > 0 && dates.length > rollingWindow) {
+    const start = dates.length - rollingWindow;
+    dates = dates.slice(start);
+    actSlice = actSlice.slice(start);
+    for (const k of Object.keys(sourceArrays)) {
+      sourceArrays[k] = sourceArrays[k]?.slice(start);
+    }
+  }
+
+  // Caption
+  const varLabel = { tmax_c: 'T max', tmin_c: 'T min', precip_mm: 'Precip' }[rollingVar] || rollingVar;
+  const unit     = rollingVar === 'precip_mm' ? 'mm' : '°C';
+  const winLabel = rollingWindow === 0 ? 'Totale' : `Ultimi ${rollingWindow}gg`;
+  document.getElementById('rolling-sub').textContent =
+    `${varLabel} · lead 24h · ${winLabel} · ${dates.length} giorni`;
+  document.getElementById('rolling-caption').textContent =
+    `Errore assoluto giornaliero |forecast − osservato| senza smoothing. ` +
+    `Fonte: skill_history.json. Verità: stazione SIR pesata della location. ` +
+    `Un punto basso = quel giorno il modello ha indovinato. ` +
+    `Guazza mostra i null nelle prime settimane (warm-up del modello).`;
+
+  drawRollingChart(dates, actSlice, sourceArrays, unit);
 }
 
-// ── Boot ────────────────────────────────────────────────────────────────────
+function drawRollingChart(dates, actual, sourceArrays, unit) {
+  const canvas = document.getElementById('aff-rolling-chart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (rollingChart) { rollingChart.destroy(); rollingChart = null; }
+
+  const axis = cssVar('--chart-axis');
+  const grid = cssVar('--chart-grid');
+
+  // Dataset: errore assoluto giornaliero per ogni modello
+  const allModels = ['guazza', ...NWP_SOURCES];
+  const datasets = [];
+
+  for (const key of allModels) {
+    const forecasts = sourceArrays[key];
+    if (!forecasts) continue;
+    const errors = absError(forecasts, actual);
+    if (!errors.some(v => v != null)) continue;
+
+    const color  = MODEL_COLORS[key] || 'rgba(148,163,174,0.55)';
+    const isGuazza = key === 'guazza';
+
+    datasets.push({
+      label: isGuazza ? 'Guazza ML' : NWP_LABELS[key] || key,
+      data: errors,
+      borderColor: color,
+      backgroundColor: color,
+      borderWidth: isGuazza ? 2 : 1.2,
+      pointRadius: 0,
+      spanGaps: true,
+      tension: 0.2,
+      borderDash: isGuazza ? [] : [4, 3],
+      order: isGuazza ? 1 : 2,
+    });
+  }
+
+  if (!datasets.length) return;
+
+  // Label asse X: "DD/MM" ogni tot
+  const labels = dates.map(d => {
+    const [, m, day] = d.split('-');
+    return `${day}/${m}`;
+  });
+
+  rollingChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: {
+          grid: { color: grid, display: false },
+          ticks: {
+            color: axis,
+            font: { family: 'JetBrains Mono, monospace', size: 10 },
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 10,
+          },
+        },
+        y: {
+          grid: { color: grid },
+          min: 0,
+          ticks: {
+            color: axis,
+            font: { family: 'JetBrains Mono, monospace', size: 10 },
+            callback: v => `${v.toFixed(1)}${unit}`,
+          },
+          title: { display: true, text: `|err| (${unit})`, color: axis, font: { size: 10 } },
+        },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(19,19,19,0.97)',
+          borderColor: 'rgba(255,255,255,0.09)',
+          borderWidth: 1,
+          titleColor: axis,
+          bodyColor: cssVar('--text-2'),
+          itemSort: (a, b) => (a.raw ?? Infinity) - (b.raw ?? Infinity),
+          callbacks: {
+            label: (item) => {
+              const v = item.raw;
+              return v != null
+                ? `${item.dataset.label}: ${v.toFixed(2)} ${unit}`
+                : `${item.dataset.label}: —`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+// ── Render tutto ──────────────────────────────────────────────────────────────
+
+function renderAll() {
+  renderRanking();
+  renderHorizon();
+  renderRolling();
+}
+
+// ── Event listeners controlli ─────────────────────────────────────────────────
+
+// Ranking: toggle Tmax/Tmin
+document.getElementById('aff-ranking-card')?.addEventListener('click', e => {
+  const btn = e.target.closest('[data-var]');
+  if (!btn || !btn.closest('.aff-ranking__toggle')) return;
+  const v = btn.dataset.var;
+  if (v === rankingVar) return;
+  rankingVar = v;
+  btn.closest('.aff-ranking__toggle')
+     .querySelectorAll('.aff-ranking__toggle-btn')
+     .forEach(b => b.classList.toggle('is-active', b.dataset.var === rankingVar));
+  renderRanking();
+});
+
+// Horizon: toggle Tmax/Tmin
+document.getElementById('aff-horizon-card')?.addEventListener('click', e => {
+  const btn = e.target.closest('[data-var]');
+  if (!btn || !btn.closest('.aff-ranking__toggle')) return;
+  const v = btn.dataset.var;
+  if (v === horizonVar) return;
+  horizonVar = v;
+  btn.closest('.aff-ranking__toggle')
+     .querySelectorAll('.aff-ranking__toggle-btn')
+     .forEach(b => b.classList.toggle('is-active', b.dataset.var === horizonVar));
+  renderHorizon();
+});
+
+// Rolling: toggle variabile + finestra
+document.getElementById('aff-rolling-card')?.addEventListener('click', e => {
+  // Toggle variabile
+  const varBtn = e.target.closest('[data-var]');
+  if (varBtn && varBtn.closest('.aff-ranking__toggle')) {
+    const v = varBtn.dataset.var;
+    if (v !== rollingVar) {
+      rollingVar = v;
+      varBtn.closest('.aff-ranking__toggle')
+            .querySelectorAll('.aff-ranking__toggle-btn')
+            .forEach(b => b.classList.toggle('is-active', b.dataset.var === rollingVar));
+      renderRolling();
+    }
+    return;
+  }
+  // Toggle finestra
+  const winBtn = e.target.closest('[data-window]');
+  if (winBtn && winBtn.closest('.g-skill__seg')) {
+    const w = parseInt(winBtn.dataset.window, 10);
+    if (w !== rollingWindow) {
+      rollingWindow = w;
+      winBtn.closest('.g-skill__seg')
+            .querySelectorAll('.g-skill__seg-btn')
+            .forEach(b => b.classList.toggle('is-active', parseInt(b.dataset.window, 10) === rollingWindow));
+      renderRolling();
+    }
+  }
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
 
 (async function boot() {
   await Promise.all([loadSkill(), loadHistory()]);
-  if (!affSkillData && !histData) {
+
+  if (!skillData && !histData) {
     showEl('aff-error');
     return;
   }
+
   renderHeaderMeta();
   renderLocationTabs();
-  renderCard();
-  renderHistory();
+  renderAll();
 })();
