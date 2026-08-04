@@ -78,11 +78,10 @@ OM_MODELS: list[str] = [
     "italia_meteo_arpae_icon_2i",  # ItaliaMeteo/ARPAE, 2.2km Italia, 72h, dati assimilati italiani
 ]
 
-# Chunk temporali per evitare timeout lato server: modelli convettivi ad alta
-# risoluzione usano finestre più corte (90gg), gli altri 180gg.
+# Chunk temporali per evitare timeout lato server: tutti i modelli usano 365gg.
 _HIGH_RES_MODELS = {"arome_france", "italia_meteo_arpae_icon_2i"}
 _DEFAULT_CHUNK_DAYS = 365
-_HIGH_RES_CHUNK_DAYS = 90
+_HIGH_RES_CHUNK_DAYS = 365
 
 # Sleep tra chunk consecutivi dello stesso modello.
 # Open-Meteo free tier ha una quota oraria (non per-secondo): i modelli vengono
