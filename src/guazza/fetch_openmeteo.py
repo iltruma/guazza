@@ -78,10 +78,17 @@ OM_MODELS: list[str] = [
     "italia_meteo_arpae_icon_2i",  # ItaliaMeteo/ARPAE, 2.2km Italia, 72h, dati assimilati italiani
 ]
 
-# Chunk temporali per evitare timeout lato server: tutti i modelli usano 365gg.
-_HIGH_RES_MODELS = {"arome_france", "italia_meteo_arpae_icon_2i"}
-_DEFAULT_CHUNK_DAYS = 365
-_HIGH_RES_CHUNK_DAYS = 365
+# Budget celle per HTTP call Open-Meteo (free tier per-minute limit).
+# Tarato su ECMWF multilead (28 vars, 6 loc): 120gg × 24h × 28 × 6 ≈ 483_840.
+_OM_CELL_BUDGET = 483_840
+_OM_N_LOCATIONS = 6  # numero fisso di location del progetto
+
+
+def _chunk_days(n_vars: int) -> int:
+    """Chunk temporale in giorni per non superare _OM_CELL_BUDGET celle per call."""
+    days = _OM_CELL_BUDGET // (24 * n_vars * _OM_N_LOCATIONS)
+    return max(30, days)  # floor 30gg per sicurezza
+
 
 # Sleep tra chunk consecutivi dello stesso modello.
 # Open-Meteo free tier ha una quota oraria (non per-secondo): i modelli vengono
@@ -315,6 +322,7 @@ def _run_historical_model_batch(
     worker: Callable[[str, list[tuple[str, str]], list[str], list[float], list[float], _OnRecords], None],
     on_records: _OnRecords,
     desc: str,
+    var_count: Callable[[str], int],
 ) -> None:
     """Esegue worker per ogni modello in serie su chunk temporali.
 
@@ -324,14 +332,16 @@ def _run_historical_model_batch(
 
     Il worker chiama on_records() dopo ogni chunk: i record vengono flushati
     su DB immediatamente invece di accumularsi in RAM per tutta la durata del job.
+
+    var_count: callable model→int che ritorna il numero di variabili per quel modello;
+               usato per calcolare chunk_days via budget celle (_OM_CELL_BUDGET).
     """
     loc_ids = sorted(locations.keys())
     lats = [locations[lid]["lat"] for lid in loc_ids]
     lons = [locations[lid]["lon"] for lid in loc_ids]
 
     for model in tqdm(models, desc=desc, unit="model", disable=not sys.stderr.isatty()):
-        chunk_days = _HIGH_RES_CHUNK_DAYS if model in _HIGH_RES_MODELS else _DEFAULT_CHUNK_DAYS
-        chunks = _chunk_date_range(start_date, end_date, chunk_days)
+        chunks = _chunk_date_range(start_date, end_date, _chunk_days(var_count(model)))
         worker(model, chunks, loc_ids, lats, lons, on_records)
 
 
@@ -405,6 +415,7 @@ def fetch_openmeteo_historical_batch(
     _run_historical_model_batch(
         models, locations, start_date, end_date,
         _fetch_one_model_historical, on_records, "OM historical batch",
+        var_count=lambda _model: len(_OM_HOURLY_VARS),
     )
 
 
@@ -556,6 +567,7 @@ def fetch_openmeteo_multilead_batch(
     _run_historical_model_batch(
         models, locations, start_date, end_date,
         _fetch_one_model_multilead, on_records, "OM multilead batch",
+        var_count=lambda model: len(_multilead_hourly_params(model)),
     )
 
 
