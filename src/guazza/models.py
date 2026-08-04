@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from guazza.features import ANOMALY_TARGETS, NWP_FEATURE_COLS
+from guazza.features import NWP_FEATURE_COLS
 from guazza.storage import DuckDBClient
 
 _DEFAULT_MODEL_DIR = Path(os.environ.get("MODEL_DIR", "data/models"))
@@ -60,29 +60,17 @@ _TARGET_CLIM_COL: dict[str, str] = {
     "precip_mm": "clim_precip_mean",
 }
 
-# Colonne target in features_daily: absolute (default) vs anomaly.
-# Naming: per un target "tmin_c", absolute = "target_tmin_c", anomaly = "target_tmin_anom_c".
+# Colonne target in features_daily: valore assoluto.
+# Naming: per un target "tmin_c", absolute = "target_tmin_c".
 _TARGET_COL_ABS: dict[str, str] = {
     "tmin_c":    "target_tmin_c",
     "tmax_c":    "target_tmax_c",
     "precip_mm": "target_precip_mm",
 }
-_TARGET_COL_ANOM: dict[str, str] = {
-    "tmin_c":    "target_tmin_anom_c",
-    "tmax_c":    "target_tmax_anom_c",
-    # precip_mm non addestrato in anomalia (climatologia right-skewed)
-}
 
 
-def _target_col(target: str, anomaly_targets: tuple[str, ...] = ANOMALY_TARGETS) -> str:
-    """Colonna target in features_daily per `target` (es. 'tmin_c').
-
-    Per i target in ANOMALY_TARGETS usa la colonna `target_tmin_anom_c`
-    (anomalia rispetto alla clim mensile); altrimenti la colonna assoluta
-    `target_tmin_c`. Vedi features.py per la definizione SQL di queste colonne.
-    """
-    if target in anomaly_targets:
-        return _TARGET_COL_ANOM[target]
+def _target_col(target: str) -> str:
+    """Colonna target in features_daily per `target` (es. 'tmin_c')."""
     return _TARGET_COL_ABS[target]
 
 # Lead time bucket per CQR stratification.
@@ -185,16 +173,11 @@ class TrainingArtifacts:
     trained_at: datetime
     n_train: int
     n_cal: int
-    # Target addestrati in anomalia rispetto alla clim (vuoto = tutti valore assoluto).
-    # Persistito in artifacts.json per sapere a predict time quali target vanno invertiti.
-    anomaly_targets: list[str] = field(default_factory=list)
     # Target allenati con init_score=nwp_mean (il booster predice il residuo).
     # Persistito nel manifest per sapere a predict time quali target vanno sommati.
     init_score_targets: list[str] = field(default_factory=list)
     # Classificatore binario pioggia/no (hurdle model stadio 1). None = non addestrato.
     rain_classifier: ClassifierBundle | None = field(default=None)
-    # Regressore quantile condizionale wet days (hurdle model stadio 2). None = non addestrato.
-    wet_regressor: ModelBundle | None = field(default=None)
 
 
 def load_features(db: DuckDBClient) -> pd.DataFrame:
@@ -385,86 +368,6 @@ def _train_rain_classifier(
         threshold_mm=threshold_mm,
         calibration=calibration,
     )
-
-
-def _train_wet_regressor(
-    X_fit: pd.DataFrame,
-    y_precip_fit: pd.Series,
-    X_cal: pd.DataFrame,
-    y_precip_cal: pd.Series,
-    X_val: pd.DataFrame | None = None,
-    y_precip_val: pd.Series | None = None,
-    threshold_mm: float = RAIN_THRESHOLD_MM,
-) -> ModelBundle:
-    """Allena il regressore quantile condizionale sui soli wet days.
-
-    Stadio 2 dell'hurdle model: predice l'intensità della precipitazione
-    dato che piove (target_precip_mm > threshold_mm). Non usa init_score
-    perché il target è già precipitazione positiva (nessun bias NWP sul
-    subset wet che giustifichi il residuo).
-
-    Args:
-        X_fit: feature del fit set (tutti i giorni, viene filtrato internamente).
-        y_precip_fit: target_precip_mm del fit set (valore grezzo).
-        X_cal: feature del cal set (per CQR).
-        y_precip_cal: target_precip_mm del cal set.
-        X_val: feature del validation set per early stopping (opzionale).
-        y_precip_val: target_precip_mm del validation set (opzionale).
-        threshold_mm: soglia wet day.
-
-    Returns:
-        ModelBundle con 5 modelli quantile e CQR stratificata per bucket.
-
-    Raises:
-        ValueError: se wet days nel fit set < 30.
-    """
-    mask_fit_wet = y_precip_fit > threshold_mm
-    n_wet = int(mask_fit_wet.sum())
-    if n_wet < 30:
-        raise ValueError(
-            f"wet days insufficienti per il regressore condizionale ({n_wet} < 30)"
-        )
-
-    X_wet = X_fit.loc[mask_fit_wet]
-    y_wet = y_precip_fit.loc[mask_fit_wet]
-
-    mask_cal_wet = y_precip_cal > threshold_mm
-    X_cal_wet = X_cal.loc[mask_cal_wet]
-    y_cal_wet = y_precip_cal.loc[mask_cal_wet]
-
-    # Prepara ES val wet (se disponibile)
-    X_val_wet: pd.DataFrame | None = None
-    y_val_wet: pd.Series | None = None
-    if X_val is not None and y_precip_val is not None and len(y_precip_val) > 0:
-        mask_val_wet = y_precip_val > threshold_mm
-        if mask_val_wet.sum() >= 10:
-            X_val_wet = X_val.loc[mask_val_wet]
-            y_val_wet = y_precip_val.loc[mask_val_wet]
-
-    models_q: dict[float, lgb.LGBMRegressor | lgb.Booster] = {}
-    for q in QUANTILES:
-        models_q[q] = _train_lgbm(
-            X_wet, y_wet, q,
-            X_val=X_val_wet, y_val=y_val_wet,
-            # Niente init_score: il target è già precip positiva
-            init_score=None, init_score_val=None,
-        )
-        logger.debug(f"[wet_reg] q={q:.2f} addestrato su {n_wet} wet days")
-
-    # Lead time per CQR: colonna lead_time_h dal DataFrame originale (via indice)
-    lead_h_cal = X_cal.loc[mask_cal_wet, "lead_time_h"] if "lead_time_h" in X_cal.columns else pd.Series(
-        [0] * int(mask_cal_wet.sum()), index=X_cal_wet.index
-    )
-
-    cqr = _compute_cqr(
-        models_q, X_cal_wet, y_cal_wet, lead_h_cal,
-        target="precip_mm", use_init_score=False,
-    )
-    logger.info(
-        f"[wet_reg] addestrato: {n_wet} wet days, "
-        f"CQR D+0 → ci80={cqr['D+0'].ci80:.3f} ci90={cqr['D+0'].ci90:.3f}"
-    )
-    return ModelBundle(models=models_q, cqr=cqr)
 
 
 def _apply_rain_calibration(prob_raw: np.ndarray, calibration: IsotonicCalibration | None) -> np.ndarray:
@@ -724,31 +627,14 @@ def train_all(
         rain_clf = None
         logger.warning("[rain_clf] dati insufficienti per il classificatore, saltato")
 
-    # Regressore quantile condizionale wet days (hurdle model stadio 2)
-    wet_reg: ModelBundle | None = None
-    if mask_precip_fit.sum() >= 30:
-        try:
-            wet_reg = _train_wet_regressor(
-                X_fit=df_fit.loc[mask_precip_fit, FEATURE_COLS],
-                y_precip_fit=df_fit.loc[mask_precip_fit, "target_precip_mm"],
-                X_cal=df_cal.loc[mask_precip_cal, FEATURE_COLS],
-                y_precip_cal=df_cal.loc[mask_precip_cal, "target_precip_mm"],
-                X_val=df_es_val.loc[df_es_val["target_precip_mm"].notna(), FEATURE_COLS] if has_es_val else None,
-                y_precip_val=df_es_val.loc[df_es_val["target_precip_mm"].notna(), "target_precip_mm"] if has_es_val else None,
-            )
-        except ValueError as e:
-            logger.warning(f"[wet_reg] {e}, saltato")
-
     artifacts = TrainingArtifacts(
         targets=bundles,
         rain_classifier=rain_clf,
-        wet_regressor=wet_reg,
         feature_cols=FEATURE_COLS,
         categorical_cols=CATEGORICAL_COLS,
         trained_at=datetime.now(tz=UTC),
         n_train=len(df_fit),
         n_cal=len(df_cal),
-        anomaly_targets=list(ANOMALY_TARGETS),
         init_score_targets=list(TARGETS),
     )
 
@@ -766,7 +652,6 @@ def _save_artifacts(artifacts: TrainingArtifacts, model_dir: Path) -> None:
         "n_cal": artifacts.n_cal,
         "feature_cols": artifacts.feature_cols,
         "categorical_cols": artifacts.categorical_cols,
-        "anomaly_targets": artifacts.anomaly_targets,
         "init_score_targets": artifacts.init_score_targets,
         "targets": {},
     }
@@ -799,21 +684,6 @@ def _save_artifacts(artifacts: TrainingArtifacts, model_dir: Path) -> None:
         }
     else:
         manifest["rain_classifier"] = None
-    if artifacts.wet_regressor is not None:
-        wet_reg = artifacts.wet_regressor
-        wet_model_files: dict[str, str] = {}
-        for q, model in wet_reg.models.items():
-            booster = model.booster_ if isinstance(model, lgb.LGBMRegressor) else model
-            filename = f"wet_reg_q{int(q * 100):02d}.txt"
-            (model_dir / filename).write_text(booster.model_to_string())
-            wet_model_files[str(q)] = filename
-            n_files += 1
-        manifest["wet_regressor"] = {
-            "models": wet_model_files,
-            "cqr": {label: asdict(corr) for label, corr in wet_reg.cqr.items()},
-        }
-    else:
-        manifest["wet_regressor"] = None
     manifest_path = model_dir / "artifacts.json"
     manifest_path.write_text(json.dumps(manifest, indent=2))
     logger.info(f"Artefatti salvati: {manifest_path} (+{n_files} modelli .txt)")
@@ -874,26 +744,14 @@ def load_artifacts(model_dir: Path | None = None) -> TrainingArtifacts:
             calibration=calibration,
         )
 
-    wet_regressor: ModelBundle | None = None
-    wet_reg_entry = manifest.get("wet_regressor")
-    if wet_reg_entry is not None:
-        wet_models: dict[float, lgb.LGBMRegressor | lgb.Booster] = {
-            float(q): lgb.Booster(model_str=(model_dir / fn).read_text())
-            for q, fn in wet_reg_entry["models"].items()
-        }
-        wet_cqr = {label: CQRCorrection(**corr) for label, corr in wet_reg_entry["cqr"].items()}
-        wet_regressor = ModelBundle(models=wet_models, cqr=wet_cqr)
-
     return TrainingArtifacts(
         targets=targets,
         rain_classifier=rain_classifier,
-        wet_regressor=wet_regressor,
         feature_cols=manifest["feature_cols"],
         categorical_cols=manifest["categorical_cols"],
         trained_at=datetime.fromisoformat(manifest["trained_at"]),
         n_train=manifest["n_train"],
         n_cal=manifest["n_cal"],
-        anomaly_targets=manifest.get("anomaly_targets", []),
         init_score_targets=manifest.get("init_score_targets", []),
     )
 
@@ -926,17 +784,6 @@ def _apply_cqr(
         "ci90_lo": ci90_lo,
         "ci90_hi": ci90_hi,
     }
-
-
-def _invert_anomaly(
-    preds: dict[str, float], clim_value: float
-) -> dict[str, float]:
-    """Aggiunge clim_value a tutti i quantili e CI bounds (anomalia → valore assoluto).
-
-    CQR lavora in unità di anomalia (è un offset), quindi si applica prima
-    dell'inversione: l'errore è identico, clim è deterministica.
-    """
-    return {k: v + clim_value for k, v in preds.items()}
 
 
 # Learning rate ACI (γ): D-019 specifica 0.005. Il drift da correggere è
@@ -1141,16 +988,10 @@ def predict(
 ) -> dict[str, dict[str, Any]]:
     """Genera predizioni con CI CQR-aggiustati per una singola riga.
 
-    Per i target in `artifacts.anomaly_targets` (tmin/tmax), il modello lavora
-    in anomalia rispetto alla clim mensile: l'output è riportato in valore
-    assoluto aggiungendo `clim_*_mean` dalla riga di input. Il JSON esposto
-    è identico al caso non-anomaly.
-
     Returns:
         {target: {"p05": ..., "p10": ..., "p50": ..., "p90": ..., "p95": ...,
                   "ci80_lo": ..., "ci80_hi": ..., "ci90_lo": ..., "ci90_hi": ...}}
-        Il target "rain_clf" ha {"prob_rain": float} e opzionalmente
-        {"wet_reg": {"p05": ..., ...}} se il wet_regressor è addestrato.
+        Il target "rain_clf" ha {"prob_rain": float}.
     """
     X = X.copy()
     for col in artifacts.categorical_cols:
@@ -1167,10 +1008,6 @@ def predict(
         sorted_vals = sorted(preds_q[k] for k in _Q_ORDER)
         preds_q = dict(zip(_Q_ORDER, sorted_vals, strict=True))
         pred = _apply_cqr(preds_q, bundle, bucket)
-        if target in artifacts.anomaly_targets:
-            clim_col = _TARGET_CLIM_COL[target]
-            clim_value = float(X[clim_col].iloc[0])
-            pred = _invert_anomaly(pred, clim_value)
         out[target] = pred
 
     if artifacts.rain_classifier is not None:
@@ -1182,25 +1019,6 @@ def predict(
         prob_raw = np.asarray(clf.model.predict(X_clf))
         prob_cal = _apply_rain_calibration(prob_raw, clf.calibration)
         out["rain_clf"] = {"prob_rain": float(np.clip(prob_cal[0], 0.0, 1.0))}
-
-    if artifacts.wet_regressor is not None:
-        X_wet = X.copy()
-        for col in artifacts.categorical_cols:
-            if col in X_wet.columns:
-                X_wet[col] = X_wet[col].astype("category")
-        wet_preds_q = {
-            f"p{int(q*100):02d}": float(_predict_level(model, X_wet, "precip_mm", use_init_score=False)[0])
-            for q, model in artifacts.wet_regressor.models.items()
-        }
-        # Anti-crossing
-        sorted_vals = sorted(wet_preds_q[k] for k in _Q_ORDER)
-        wet_preds_q = dict(zip(_Q_ORDER, sorted_vals, strict=True))
-        wet_pred = _apply_cqr(wet_preds_q, artifacts.wet_regressor, bucket)
-        # Clamp fisico: precip non negativa
-        wet_pred = {k: max(0.0, v) for k, v in wet_pred.items()}
-        if "rain_clf" not in out:
-            out["rain_clf"] = {}
-        out["rain_clf"]["wet_reg"] = wet_pred
 
     return out
 
@@ -1249,47 +1067,17 @@ def predict_frame(
         use_init = target in artifacts.init_score_targets
         q_cols = {f"p{int(q*100):02d}": _predict_level(model, X, target, use_init)
                   for q, model in bundle.models.items()}
-        # Per target in anomaly, prepariamo il vettore clim in un colpo (no loop Python).
-        clim_vals = (
-            np.asarray(X[_TARGET_CLIM_COL[target]], dtype=float)
-            if target in artifacts.anomaly_targets
-            else None
-        )
         for i in range(len(X)):
             preds_q = {k: float(v[i]) for k, v in q_cols.items()}
             # Anti-crossing: ordina i valori predetti prima di passarli a CQR.
             sorted_vals = sorted(preds_q[k] for k in _Q_ORDER)
             preds_q = dict(zip(_Q_ORDER, sorted_vals, strict=True))
             pred = _apply_cqr(preds_q, bundle, buckets[i])
-            if clim_vals is not None:
-                pred = {k: v + float(clim_vals[i]) for k, v in pred.items()}
             out[i][target] = pred
 
     if prob_cal_all is not None:
         for i in range(len(X)):
             out[i]["rain_clf"] = {"prob_rain": float(prob_cal_all[i])}
-
-    # Pre-calcola wet regressor per tutto il frame (una sola predict per quantile).
-    if artifacts.wet_regressor is not None:
-        X_wet = X.copy()
-        for col in artifacts.categorical_cols:
-            if col in X_wet.columns:
-                X_wet[col] = X_wet[col].astype("category")
-        wet_q_cols = {
-            f"p{int(q*100):02d}": _predict_level(model, X_wet, "precip_mm", use_init_score=False)
-            for q, model in artifacts.wet_regressor.models.items()
-        }
-        for i in range(len(X)):
-            wet_preds_q = {k: float(v[i]) for k, v in wet_q_cols.items()}
-            # Anti-crossing
-            sorted_vals = sorted(wet_preds_q[k] for k in _Q_ORDER)
-            wet_preds_q = dict(zip(_Q_ORDER, sorted_vals, strict=True))
-            wet_pred = _apply_cqr(wet_preds_q, artifacts.wet_regressor, buckets[i])
-            # Clamp fisico: precip non negativa
-            wet_pred = {k: max(0.0, v) for k, v in wet_pred.items()}
-            if "rain_clf" not in out[i]:
-                out[i]["rain_clf"] = {}
-            out[i]["rain_clf"]["wet_reg"] = wet_pred
 
     return out
 
@@ -1460,8 +1248,6 @@ def walk_forward_cv(
                 "brier_skill":        None,
                 "brier_skill_vs_nwp": None,
                 "auc":                None,
-                "mae_wet":            None,
-                "skill_wet_mae":      None,
                 "n_test":     int(mask_te.sum()),
             })
 
@@ -1557,47 +1343,7 @@ def walk_forward_cv(
                     "brier_skill": round(bss, 4) if not math.isnan(bss) else None,
                     "brier_skill_vs_nwp": round(bss_vs_nwp, 4) if not math.isnan(bss_vs_nwp) else None,
                     "auc":         round(auc, 4) if not math.isnan(auc) else None,
-                    "mae_wet":            None,
-                    "skill_wet_mae":      None,
                     "n_test":      int(mask_te_clf.sum()),
                 })
-
-        # Wet regressor (hurdle model stadio 2) — metriche MAE condizionale per fold
-        if mask_precip_fit.sum() >= 30:
-            try:
-                wet_reg_fold = _train_wet_regressor(
-                    X_fit=df_train.loc[mask_precip_fit, FEATURE_COLS],
-                    y_precip_fit=df_train.loc[mask_precip_fit, col_precip],
-                    X_cal=df_cal.loc[mask_precip_cal, FEATURE_COLS],
-                    y_precip_cal=df_cal.loc[mask_precip_cal, col_precip],
-                    X_val=df_es_val_fold.loc[df_es_val_fold[col_precip].notna(), FEATURE_COLS] if has_es_val_fold else None,
-                    y_precip_val=df_es_val_fold.loc[df_es_val_fold[col_precip].notna(), col_precip] if has_es_val_fold else None,
-                )
-                # Valuta solo sui wet days del test set
-                mask_te_wet = (df_test[col_precip].notna()) & (df_test[col_precip] > RAIN_THRESHOLD_MM)
-                n_wet_te = int(mask_te_wet.sum())
-                if n_wet_te >= 10:
-                    X_te_wet = df_test.loc[mask_te_wet, FEATURE_COLS].copy()
-                    for col_cat in CATEGORICAL_COLS:
-                        if col_cat in X_te_wet.columns:
-                            X_te_wet[col_cat] = X_te_wet[col_cat].astype("category")
-                    y_te_wet = df_test.loc[mask_te_wet, col_precip].values
-                    wet_pred_te = _predict_level(wet_reg_fold.models[0.50], X_te_wet, "precip_mm", use_init_score=False)
-                    mae_wet_val = float(np.mean(np.abs(y_te_wet - wet_pred_te)))
-                    nwp_wet_vals = df_test.loc[mask_te_wet, "nwp_precip_mean"].values
-                    nwp_wet_mask = ~np.isnan(nwp_wet_vals)
-                    if nwp_wet_mask.sum() > 0:
-                        mae_wet_nwp = float(np.mean(np.abs(y_te_wet[nwp_wet_mask] - nwp_wet_vals[nwp_wet_mask])))
-                        skill_wet = 1.0 - mae_wet_val / mae_wet_nwp if mae_wet_nwp > 0 else float("nan")
-                    else:
-                        skill_wet = float("nan")
-                    # Aggiorna la riga precip_mm nel fold corrente con le metriche wet
-                    for row in reversed(rows):
-                        if row["split"] == i + 1 and row["target"] == "precip_mm":
-                            row["mae_wet"] = round(mae_wet_val, 3)
-                            row["skill_wet_mae"] = round(skill_wet, 3) if not np.isnan(skill_wet) else None
-                            break
-            except ValueError as e:
-                logger.warning(f"[wet_reg fold {i+1}] {e}, saltato")
 
     return pd.DataFrame(rows), pd.DataFrame(rows_per_bucket)
