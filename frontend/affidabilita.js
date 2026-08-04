@@ -4,6 +4,8 @@
 //   1. Ranking compatto (D+1, per-modello da skill_history)
 //   2. MAE per orizzonte D+0..D+7 (Guazza vs NWP-consensus da skill.json)
 //   3. Errore rolling nel tempo (errore giornaliero |forecast−actual| da skill_history)
+//   4. Chi vince sulla temperatura? (Win Rate bar + barre giornaliere vincitore)
+//   5. Chi vince sulle precipitazioni? (stesso schema, solo wet days)
 //
 // Self-contained: nessuna dipendenza da app.js.
 
@@ -65,8 +67,12 @@ let horizonVar     = 'tmax_c';   // tmax_c | tmin_c
 let rollingVar     = 'tmax_c';   // tmax_c | tmin_c | precip_mm
 let rollingWindow  = 90;         // giorni; 0 = totale
 
-let horizonChart = null;
-let rollingChart = null;
+let horizonChart    = null;
+let rollingChart    = null;
+let winnerTempChart = null;
+let winnerPrecipChart = null;
+
+let winnerTempVar = 'tmax_c';   // tmax_c | tmin_c
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -509,6 +515,8 @@ function renderAll() {
   renderRanking();
   renderHorizon();
   renderRolling();
+  renderWinnerTemp();
+  renderWinnerPrecip();
 }
 
 // ── Event listeners controlli ─────────────────────────────────────────────────
@@ -564,8 +572,348 @@ document.getElementById('aff-rolling-card')?.addEventListener('click', e => {
             .querySelectorAll('.g-skill__seg-btn')
             .forEach(b => b.classList.toggle('is-active', parseInt(b.dataset.window, 10) === rollingWindow));
       renderRolling();
+      renderWinnerTemp();
+      renderWinnerPrecip();
     }
   }
+});
+
+// ── Utility: calcola vincitori giornalieri ─────────────────────────────────────
+//
+// Restituisce un array parallelo a `dates` dove ogni elemento è:
+//   { winner: key | null, margin: number, errors: { [key]: number|null } }
+// winner = null se non ci sono almeno 2 modelli con dati in quel giorno.
+// margin = errore del 2° migliore − errore del 1° (>0 significa vittoria netta).
+
+function computeDailyWinners(dates, actual, sourceArrays) {
+  const allKeys = ['guazza', ...NWP_SOURCES];
+  return dates.map((_, i) => {
+    const a = actual[i];
+    if (a == null) return { winner: null, margin: 0, errors: {} };
+
+    const errors = {};
+    for (const k of allKeys) {
+      const f = sourceArrays[k]?.[i];
+      errors[k] = (f != null) ? Math.abs(f - a) : null;
+    }
+
+    const ranked = Object.entries(errors)
+      .filter(([, e]) => e != null)
+      .sort(([, a], [, b]) => a - b);
+
+    if (ranked.length < 1) return { winner: null, margin: 0, errors };
+    const winner = ranked[0][0];
+    const margin = ranked.length >= 2 ? ranked[1][1] - ranked[0][1] : 0;
+    return { winner, margin, errors };
+  });
+}
+
+// Calcola la Win Rate per ogni modello da un array di winners
+function computeWinRate(winners) {
+  const counts = {};
+  let total = 0;
+  for (const w of winners) {
+    if (!w.winner) continue;
+    counts[w.winner] = (counts[w.winner] || 0) + 1;
+    total++;
+  }
+  if (total === 0) return null;
+  const rate = {};
+  for (const k of Object.keys(counts)) {
+    rate[k] = counts[k] / total;
+  }
+  return { rate, total };
+}
+
+// Renderizza la Win Rate stacked bar + legenda in un container
+function renderWinRateBar(barEl, legendEl, winRate) {
+  if (!winRate) { barEl.innerHTML = ''; legendEl.innerHTML = ''; return; }
+
+  const allKeys = ['guazza', ...NWP_SOURCES];
+  // Ordina per win rate decrescente
+  const sorted = allKeys
+    .filter(k => winRate.rate[k] > 0)
+    .sort((a, b) => (winRate.rate[b] || 0) - (winRate.rate[a] || 0));
+
+  barEl.innerHTML = sorted.map(k => {
+    const pct = (winRate.rate[k] * 100).toFixed(1);
+    const color = MODEL_COLORS[k] || 'rgba(148,163,174,0.55)';
+    const label = k === 'guazza' ? 'Guazza' : NWP_LABELS[k] || k;
+    return `<div class="aff-winrate__seg" style="width:${pct}%;background:${color}" title="${label}: ${pct}%"></div>`;
+  }).join('');
+
+  legendEl.innerHTML = sorted.map(k => {
+    const pct = (winRate.rate[k] * 100).toFixed(0);
+    const wins = Math.round(winRate.rate[k] * winRate.total);
+    const color = MODEL_COLORS[k] || 'rgba(148,163,174,0.55)';
+    const label = k === 'guazza' ? 'Guazza ML' : NWP_LABELS[k] || k;
+    return `
+      <span class="aff-winrate__legend-item">
+        <span class="aff-winrate__legend-dot" style="background:${color}"></span>
+        ${label} <span class="aff-winrate__legend-pct">${pct}%</span>
+        <span style="color:var(--text-3)">(${wins}gg)</span>
+      </span>`;
+  }).join('');
+}
+
+// Crea/aggiorna un grafico a barre giornaliere vincitore
+// barAlpha: opacità delle barre nei giorni in cui il vincitore non ha vinto di netto
+function drawWinnerChart(canvasId, chartRef, dates, winners, unit) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || typeof Chart === 'undefined') return chartRef;
+
+  const existing = Chart.getChart(canvas);
+  if (existing) existing.destroy();
+
+  if (!winners.some(w => w.winner)) return null;
+
+  const axis = cssVar('--chart-axis');
+  const grid = cssVar('--chart-grid');
+
+  // Ogni giorno: una barra colorata col vincitore, alta quanto il margine (≥ 0)
+  // Se il margine è 0 (un solo modello disponibile), usiamo 0.01 per rendere la barra visibile
+  const labels = dates.map(d => { const [, m, day] = d.split('-'); return `${day}/${m}`; });
+
+  const barColors = winners.map(w =>
+    w.winner ? (MODEL_COLORS[w.winner] || 'rgba(148,163,174,0.55)') : 'transparent'
+  );
+  const margins = winners.map(w => w.margin > 0 ? w.margin : (w.winner ? 0.01 : null));
+
+  const newChart = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Margine vittoria',
+        data: margins,
+        backgroundColor: barColors,
+        borderWidth: 0,
+        borderRadius: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            color: axis,
+            font: { family: 'JetBrains Mono, monospace', size: 10 },
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 12,
+          },
+        },
+        y: {
+          grid: { color: grid },
+          min: 0,
+          ticks: {
+            color: axis,
+            font: { family: 'JetBrains Mono, monospace', size: 10 },
+            callback: v => v === 0.01 ? '' : `${v.toFixed(1)}${unit}`,
+          },
+          title: { display: true, text: `margine (${unit})`, color: axis, font: { size: 10 } },
+        },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(19,19,19,0.97)',
+          borderColor: 'rgba(255,255,255,0.09)',
+          borderWidth: 1,
+          titleColor: axis,
+          bodyColor: cssVar('--text-2'),
+          callbacks: {
+            title: (items) => {
+              const i = items[0].dataIndex;
+              return dates[i] || '';
+            },
+            label: (item) => {
+              const i = item.dataIndex;
+              const w = winners[i];
+              if (!w?.winner) return 'Dati insufficienti';
+              const winnerLabel = w.winner === 'guazza' ? 'Guazza ML' : (NWP_LABELS[w.winner] || w.winner);
+              const margin = w.margin > 0 ? `  margine +${w.margin.toFixed(2)}${unit}` : '  (unico dato)';
+              return `Vincitore: ${winnerLabel}${margin}`;
+            },
+            afterLabel: (item) => {
+              const i = item.dataIndex;
+              const w = winners[i];
+              if (!w?.errors) return [];
+              // Mostra tutti gli errori ordinati
+              return Object.entries(w.errors)
+                .filter(([, e]) => e != null)
+                .sort(([, a], [, b]) => a - b)
+                .map(([k, e]) => {
+                  const lbl = k === 'guazza' ? 'Guazza ML' : (NWP_LABELS[k] || k);
+                  return `  ${lbl}: ${e.toFixed(2)}${unit}`;
+                });
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return newChart;
+}
+
+// ── 4. Chi vince sulla temperatura? ──────────────────────────────────────────
+
+function renderWinnerTemp() {
+  const loc = histData?.locations?.[affLocId];
+  if (!loc) { hideEl('aff-winner-temp-card'); return; }
+
+  const series = loc[winnerTempVar];
+  if (!series?.dates?.length || !series.actual?.some(v => v != null)) {
+    hideEl('aff-winner-temp-card'); return;
+  }
+  showEl('aff-winner-temp-card');
+
+  // Applica finestra (stessa di rollingWindow)
+  let dates    = series.dates;
+  let actual   = series.actual;
+  const sourceArrays = {};
+  ['guazza', ...NWP_SOURCES].forEach(k => { sourceArrays[k] = series[k]; });
+
+  if (rollingWindow > 0 && dates.length > rollingWindow) {
+    const start = dates.length - rollingWindow;
+    dates = dates.slice(start);
+    actual = actual.slice(start);
+    for (const k of Object.keys(sourceArrays)) {
+      sourceArrays[k] = sourceArrays[k]?.slice(start);
+    }
+  }
+
+  const varLabel = winnerTempVar === 'tmax_c' ? 'T max' : 'T min';
+  const winLabel = rollingWindow === 0 ? 'Totale' : `Ultimi ${rollingWindow}gg`;
+  document.getElementById('winner-temp-sub').textContent =
+    `${varLabel} · lead 24h · ${winLabel} · ${dates.length} giorni`;
+
+  const winners = computeDailyWinners(dates, actual, sourceArrays);
+  const winRate = computeWinRate(winners);
+
+  renderWinRateBar(
+    document.getElementById('winner-temp-winrate-bar'),
+    document.getElementById('winner-temp-winrate-legend'),
+    winRate,
+  );
+
+  winnerTempChart = drawWinnerChart(
+    'aff-winner-temp-chart', winnerTempChart, dates, winners, '°C'
+  );
+
+  const winDays = winners.filter(w => w.winner).length;
+  document.getElementById('winner-temp-caption').textContent =
+    `Ogni barra = un giorno. Colore = modello con errore assoluto minore. ` +
+    `Altezza = vantaggio rispetto al secondo classificato (barre piatte = vittoria risicata). ` +
+    `${winDays} giorni con almeno un modello disponibile su ${dates.length}. ` +
+    `Fonte: skill_history.json lead 24h.`;
+}
+
+// ── 5. Chi vince sulle precipitazioni? ───────────────────────────────────────
+
+function renderWinnerPrecip() {
+  const loc = histData?.locations?.[affLocId];
+  if (!loc) { hideEl('aff-winner-precip-card'); return; }
+
+  const series = loc.precip_mm;
+  if (!series?.dates?.length || !series.actual?.some(v => v != null)) {
+    hideEl('aff-winner-precip-card'); return;
+  }
+  showEl('aff-winner-precip-card');
+
+  // Applica finestra
+  let dates    = series.dates;
+  let actual   = series.actual;
+  const sourceArrays = {};
+  ['guazza', ...NWP_SOURCES].forEach(k => { sourceArrays[k] = series[k]; });
+
+  if (rollingWindow > 0 && dates.length > rollingWindow) {
+    const start = dates.length - rollingWindow;
+    dates = dates.slice(start);
+    actual = actual.slice(start);
+    for (const k of Object.keys(sourceArrays)) {
+      sourceArrays[k] = sourceArrays[k]?.slice(start);
+    }
+  }
+
+  // Filtra wet days: almeno un modello o actual > 0.2mm
+  const WET_THRESHOLD = 0.2;
+  const allKeys = ['guazza', ...NWP_SOURCES];
+  const wetMask = dates.map((_, i) => {
+    if ((actual[i] ?? 0) > WET_THRESHOLD) return true;
+    return allKeys.some(k => (sourceArrays[k]?.[i] ?? 0) > WET_THRESHOLD);
+  });
+
+  const wetDates   = dates.filter((_, i) => wetMask[i]);
+  const wetActual  = actual.filter((_, i) => wetMask[i]);
+  const wetSources = {};
+  for (const k of allKeys) {
+    wetSources[k] = sourceArrays[k]?.filter((_, i) => wetMask[i]) ?? [];
+  }
+
+  const winLabel = rollingWindow === 0 ? 'Totale' : `Ultimi ${rollingWindow}gg`;
+  document.getElementById('winner-precip-sub').textContent =
+    `Precip · lead 24h · ${winLabel} · ${wetDates.length} wet days su ${dates.length}`;
+
+  const chartArea = document.getElementById('winner-precip-chart-area');
+
+  if (!wetDates.length) {
+    // Nessun giorno bagnato nella finestra
+    chartArea.innerHTML = '<div class="aff-wet-empty">Nessun giorno bagnato (≥0.2mm) nel periodo selezionato.</div>';
+    document.getElementById('winner-precip-winrate-bar').innerHTML = '';
+    document.getElementById('winner-precip-winrate-legend').innerHTML = '';
+    document.getElementById('winner-precip-caption').textContent = '';
+    if (winnerPrecipChart) { winnerPrecipChart.destroy(); winnerPrecipChart = null; }
+    return;
+  }
+
+  // Ripristina il canvas se era stato sostituito dal messaggio empty
+  if (!chartArea.querySelector('canvas')) {
+    chartArea.innerHTML = `
+      <div class="aff-winner__chart-scroll">
+        <div class="aff-winner__canvas-wrap">
+          <canvas id="aff-winner-precip-chart"
+            aria-label="Vittorie giornaliere sulle precipitazioni: solo wet days"></canvas>
+        </div>
+      </div>`;
+  }
+
+  const winners = computeDailyWinners(wetDates, wetActual, wetSources);
+  const winRate = computeWinRate(winners);
+
+  renderWinRateBar(
+    document.getElementById('winner-precip-winrate-bar'),
+    document.getElementById('winner-precip-winrate-legend'),
+    winRate,
+  );
+
+  winnerPrecipChart = drawWinnerChart(
+    'aff-winner-precip-chart', winnerPrecipChart, wetDates, winners, 'mm'
+  );
+
+  const winDays = winners.filter(w => w.winner).length;
+  document.getElementById('winner-precip-caption').textContent =
+    `Solo wet days (osservato o almeno un forecast ≥${WET_THRESHOLD}mm). ` +
+    `Colore = modello con errore assoluto minore. Altezza = margine di vittoria. ` +
+    `${winDays} wet days nel periodo · Fonte: skill_history.json lead 24h.`;
+}
+
+// ── Event listener: winner temp toggle ───────────────────────────────────────
+
+document.getElementById('aff-winner-temp-card')?.addEventListener('click', e => {
+  const btn = e.target.closest('[data-var]');
+  if (!btn || !btn.closest('.aff-ranking__toggle')) return;
+  const v = btn.dataset.var;
+  if (v === winnerTempVar) return;
+  winnerTempVar = v;
+  btn.closest('.aff-ranking__toggle')
+     .querySelectorAll('.aff-ranking__toggle-btn')
+     .forEach(b => b.classList.toggle('is-active', b.dataset.var === winnerTempVar));
+  renderWinnerTemp();
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

@@ -334,6 +334,99 @@
       color: var(--text-3);
       margin-top: 1px;
     }
+
+    /* ── Win Rate section ────────────────────────────────────────── */
+
+    /* Stacked bar quota vittorie — 100% orizzontale */
+    .aff-winrate {
+      padding: 14px 20px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-1);
+    }
+    @media (min-width: 768px) {
+      .aff-winrate { padding: 14px 24px 10px; }
+    }
+
+    .aff-winrate__label {
+      font-family: var(--ff-mono);
+      font-size: 0.5625rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-3);
+    }
+
+    .aff-winrate__bar {
+      display: flex;
+      height: 20px;
+      border-radius: var(--r-sm);
+      overflow: hidden;
+      gap: 1px;
+    }
+
+    .aff-winrate__seg {
+      height: 100%;
+      min-width: 2px;
+      transition: opacity var(--dur-fast) var(--ease-out);
+      position: relative;
+    }
+    .aff-winrate__seg:hover { opacity: 0.82; }
+
+    .aff-winrate__legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+    }
+
+    .aff-winrate__legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--ff-mono);
+      font-size: 0.5625rem;
+      color: var(--text-2);
+    }
+
+    .aff-winrate__legend-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .aff-winrate__legend-pct {
+      font-weight: 700;
+      color: var(--text-1);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Canvas area per i grafici giornalieri vittoria */
+    .aff-winner__chart-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    @media (max-width: 767px) {
+      .aff-winner__canvas-wrap { min-width: 560px; }
+    }
+
+    .aff-winner__canvas-wrap {
+      padding: 8px 8px 4px;
+      height: 180px;
+    }
+    @media (min-width: 768px) {
+      .aff-winner__canvas-wrap { height: 200px; }
+    }
+
+    /* Wet-day notice (nessun giorno piovoso nel periodo) */
+    .aff-wet-empty {
+      padding: 20px 24px;
+      font-family: var(--ff-mono);
+      font-size: 0.6875rem;
+      color: var(--text-3);
+      text-align: center;
+    }
   </style>
 </head>
 
@@ -467,6 +560,62 @@
         </div>
       </div>
       <p id="rolling-caption" class="g-skill__caption"></p>
+    </section>
+
+    <!-- 4. CHI VINCE SULLA TEMPERATURA? -->
+    <section id="aff-winner-temp-card" class="g-card hidden">
+      <div class="aff-rolling__header">
+        <div class="aff-title">
+          <span class="aff-title__kicker">Vittorie giornaliere · Temperatura · lead 24h</span>
+          <span class="aff-title__main">Chi vince sulla temperatura?</span>
+          <span id="winner-temp-sub" class="aff-title__sub"></span>
+        </div>
+        <div class="aff-ranking__toggle" role="group" aria-label="Variabile temperatura vittorie">
+          <button class="aff-ranking__toggle-btn is-active" data-var="tmax_c">T max</button>
+          <button class="aff-ranking__toggle-btn" data-var="tmin_c">T min</button>
+        </div>
+      </div>
+      <!-- Win rate stacked bar -->
+      <div id="winner-temp-winrate" class="aff-winrate">
+        <span class="aff-winrate__label">Quota vittorie nel periodo</span>
+        <div id="winner-temp-winrate-bar" class="aff-winrate__bar"></div>
+        <div id="winner-temp-winrate-legend" class="aff-winrate__legend"></div>
+      </div>
+      <!-- Barre giornaliere: colore = vincitore, altezza = margine vittoria -->
+      <div class="aff-winner__chart-scroll">
+        <div class="aff-winner__canvas-wrap">
+          <canvas id="aff-winner-temp-chart"
+            aria-label="Vittorie giornaliere sulla temperatura: colore = modello vincitore, altezza = margine di vittoria"></canvas>
+        </div>
+      </div>
+      <p id="winner-temp-caption" class="g-skill__caption"></p>
+    </section>
+
+    <!-- 5. CHI VINCE SULLE PRECIPITAZIONI? -->
+    <section id="aff-winner-precip-card" class="g-card hidden">
+      <div class="aff-rolling__header">
+        <div class="aff-title">
+          <span class="aff-title__kicker">Vittorie giornaliere · Precipitazioni · lead 24h</span>
+          <span class="aff-title__main">Chi vince sulla pioggia?</span>
+          <span id="winner-precip-sub" class="aff-title__sub"></span>
+        </div>
+      </div>
+      <!-- Win rate stacked bar -->
+      <div id="winner-precip-winrate" class="aff-winrate">
+        <span class="aff-winrate__label">Quota vittorie · solo giorni bagnati (≥0.2mm)</span>
+        <div id="winner-precip-winrate-bar" class="aff-winrate__bar"></div>
+        <div id="winner-precip-winrate-legend" class="aff-winrate__legend"></div>
+      </div>
+      <!-- Barre giornaliere wet days -->
+      <div id="winner-precip-chart-area">
+        <div class="aff-winner__chart-scroll">
+          <div class="aff-winner__canvas-wrap">
+            <canvas id="aff-winner-precip-chart"
+              aria-label="Vittorie giornaliere sulle precipitazioni: solo wet days, colore = modello vincitore"></canvas>
+          </div>
+        </div>
+      </div>
+      <p id="winner-precip-caption" class="g-skill__caption"></p>
     </section>
 
   </main>
