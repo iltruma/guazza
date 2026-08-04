@@ -50,7 +50,8 @@ Fold 1-2 (pre-ott 2024) sono lead=0-only, non rappresentativi del sistema con mu
 
 ## Prossima mossa
 
-Capitolo ML chiuso. Focus su: deploy prod (reset DB + backfill + train) → calibrazione soglie DLE post-30gg → frontend/case study.
+Deploy prod: reset DB schema (cape_jkg), `ingest historical` su k8s, `train run`, `pipeline run`.
+`skill_history.json` si popolerà automaticamente dopo ~1 settimana di operatività in prod.
 
 ---
 
