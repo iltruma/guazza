@@ -9,6 +9,13 @@ Versioning: major per sprint, minor per milestone interne.
 ## [Unreleased]
 
 ### Changed
+- **`fetch_openmeteo.py`**: sostituiti `_DEFAULT_CHUNK_DAYS` / `_HIGH_RES_CHUNK_DAYS` / `_HIGH_RES_MODELS`
+  con `_OM_CELL_BUDGET = 483_840` e `_chunk_days(n_vars)`. Il chunk temporale viene ora calcolato
+  per modello e tipo di fetch in base al numero di variabili richieste, evitando strutturalmente
+  il 429 "Minutely" su ECMWF multilead (28 vars → 120gg) e massimizzando il chunk per modelli
+  leggeri (historical 9 vars → 474gg; AROME multilead 4 vars → 845gg).
+
+### Changed (previous)
 - **Restructured `docs/status.md` come cockpit**: rimosse roadmap sprint
   (unica fonte: `CHANGELOG.md`), rimosse note tecniche operative duplicate
   (già in `decisions.md`/`known_issues.md`/codice), rimosso blocco metriche
