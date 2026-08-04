@@ -43,11 +43,7 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
         "tmin_c":    {"p50": float, "ci80_lo": float, "ci80_hi": float, "ci90_lo": float, "ci90_hi": float},
         "tmax_c":    {"p50": float, ...},
         "precip_mm": {"mean": float, "p50": float, "ci80_lo": float, "ci80_hi": float, "ci90_lo": float, "ci90_hi": float,
-                     "prob_rain": float | null,
-                     "wet_reg": {
-                       "p50": float, "ci80_lo": float, "ci80_hi": float,
-                       "ci90_lo": float, "ci90_hi": float
-                     } | null}
+                     "prob_rain": float | null}
       },
       "indicators": {
         "panni":    {"verdict": "verde|giallo|rosso|grigio", "rule_matched": "green|yellow|red|fallback|unknown", "rule_text": str},
@@ -88,7 +84,6 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 - `nwp_models_hourly[].data[].weather_code` è il codice WMO per quell'ora e modello — `int | null`.
 - `precip_mm.mean` è il valore atteso E[precip] della distribuzione (utile per valutazione economica/rischio). Solo per `precip_mm` — `tmin_c`/`tmax_c` non espongono `mean`.
 - `precip_mm.prob_rain` è la probabilità P(precip > 0.2mm) emessa dal classificatore binario LightGBM calibrato con isotonic regression. `null` se il classificatore non è presente negli artifacts (es. modello vecchio, cold-start). Se presente, questo valore sostituisce anche `P(precip > 0.2mm)` nel SignalBag del DLE.
-- `precip_mm.wet_reg` è la distribuzione quantile del regressore condizionale (hurdle model stadio 2): intensità prevista **dato che piove** (`target_precip_mm > 0.2mm`), con CI CQR stratificata. `null` se il wet regressor non è presente negli artifacts. Tutti i valori sono ≥ 0 (clamp fisico). Va letto congiuntamente a `prob_rain`: il valore atteso combinato è `prob_rain × wet_reg.p50`. Il frontend può usarlo per mostrare "se piove, quanti mm?" separatamente da "pioverà?".
 - `days[].indicators.*.rule_text` è il testo della regola YAML che ha prodotto il verdetto, per debugging e trasparenza.
 - ~~`days[0].intraday`~~ rimosso 2026-06-27: la correzione aritmetica D+0 di Tmin/Tmax con le osservazioni SIR realtime generava valori assurdi in assenza di letture notturne (Tmin = 36°C di pomeriggio). Le card `tmin_c`/`tmax_c` per D+0 sono ora la previsione ML pura, identica al grafico orario. Gli **indicatori DLE** (panni, motorino, gelata) continuano a usare `build_signals_today()` con realtime (decisione D-015).
 - `days[].hourly[].temp_ci80_lo/hi` e `precip_ci80_lo/hi` sono le **bande di confidenza orarie CI 80%** derivate per interpolazione dal forecast daily (rescaling dello stesso profilo NWP grezzo con bound `tmin_c.ci80_lo/hi`, `tmax_c.ci80_lo/hi`, `precip_mm.ci80_lo/hi`). Sono `null` se i bound daily sono assenti (es. cold-start CI o modello NWP). Le bande orarie non esistono per il vento (solo `wind_speed_ms` puntuale). Il frontend le usa per disegnare la fascia d'incertezza nei grafici daily/weekly (toggle "Banda CI 80%").

@@ -1,16 +1,16 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-08-04 (v0.13.0 → v0.14.0-dev)
+> Aggiornato: 2026-08-04 (v0.14.0-dev)
 > Storico sprint → `CHANGELOG.md` · Decisioni → `docs/decisions.md` · Workaround attivi → `docs/known_issues.md`
 
 ## Stato
 
 | | |
 |---|---|
-| Versione | **0.13.0** |
-| Test | 316 verdi (suite completa; `test_models.py` ~3min per LightGBM training) |
+| Versione | **0.14.0-dev** |
+| Test | 36 verdi (`test_models.py`; suite completa ~90s) |
 | Lint / mypy | ✅ puliti |
-| Deploy | k3s astra/nebula, namespace `guazza`, Flux + SOPS |
+| Deploy | k3s astra/nebula, namespace `guazza`, Flux + SOPS — DB prod da resettare (schema `cape_jkg`) |
 
 ## Architettura
 
@@ -18,11 +18,23 @@
 |---|---|
 | Pipeline 6h | `guazza-pipeline` — forecasts → features → predict+DLE+JSON → skill-history → monitor |
 | Ingest | `guazza-ingest historical/daily/realtime` (SIR + Open-Meteo + Netatmo) |
-| Modello | LightGBM quantile + CQR + ACI (AdaptiveConformalizer) |
+| Modello | LightGBM quantile + CQR (cal_days=150) + ACI + rain_clf (hurdle stadio 1) |
 | NWP | 4 modelli: ECMWF IFS, ICON-EU, AROME France, ICON-2I |
 | Location | 6: casa_campi, lavoro_cosimo, lavoro_madda, casa_cesto, casa_nicco, casa_cercina |
 | Frontend | `index.html` + `affidabilita.html` — CSS custom, Chart.js, Leaflet, RainViewer |
 | Schema DB | `schema.sql` unico source of truth (13 tabelle + vista `obs_weighted_daily`) |
+
+## Risultati CV (fold 3-4, unici rappresentativi del sistema in prod)
+
+| Target | Skill MAE vs NWP | Note |
+|---|---|---|
+| tmax_c | +30-32% ✅ | Robusto, model-agnostic — obiettivo raggiunto |
+| tmin_c | +7-25% ✅ | Positivo ma variabile per location (casa_nicco bias~0) |
+| precip_mm | +3-11% ≈0 | Ceiling strutturale (ground truth rumoroso, D-014) |
+| rain_clf | BSS +0.16/+0.28, AUC 0.73-0.79 ✅ | P(pioggia) funziona |
+
+Coverage CI80: 72-76% (target 80%) — ACI corregge in produzione dopo ~30gg warm-up.
+Fold 1-2 (pre-ott 2024) sono lead=0-only, non rappresentativi del sistema con multilead.
 
 ## Coda
 
@@ -38,80 +50,39 @@
 
 ## Prossima mossa
 
-Calibrazione soglie DLE post-30gg `indicator_log` in produzione.
+Capitolo ML chiuso. Focus su: deploy prod (reset DB + backfill + train) → calibrazione soglie DLE post-30gg → frontend/case study.
 
 ---
 
-## Sessione 2026-08-03 — Miglioramento training ML
+## Sessione 2026-08-04 — CV, cleanup ML, LEAD_BUCKETS giornalieri
 
-### Fix chirurgici (commit c5f0af6)
-- **Quantile crossing**: sort anti-crossing (`_Q_ORDER`) in `predict`/`predict_frame`
-- **ACI γ allineato a D-019**: `ACI_LEARNING_RATE = 0.005` (era 0.02 hardcoded — 4× troppo aggressivo per drift stagionale); costante unica condivisa tra `models.py` e `pipeline.py`
-- **Fallback CQR bucket adiacente** (commit c5f0af6): bucket con <10 campioni ora usa il bucket adiacente più vicino con dati sufficienti, non il pool globale (il vecchio fallback produceva CI troppo stretti sui lead lunghi — contribuiva a KI-023)
+### Risultati empirici
 
-### Feature engineering (commit da lanciare in CV per misurare Δ)
-Tre commit incrementali separati per misurare l'effetto di ogni cambiamento:
-
-1. **Commit 1 — feature engineering puro** (`features.py` + `FEATURE_COLS`):
-   - Pressione superficiale NWP (`pressure_hpa_avg`, `pressure_hpa_min`) per modello + ensemble mean/spread — già in `forecasts`, non usata. Proxy del regime sinottico (alta pressione → inversione notturna → Tmin bassa)
-   - Lag-2 obs + gradient termico (`obs_tmin_d2`, `obs_tmax_d2`, `obs_tmin_gradient`, `obs_tmax_gradient`) — inerzia termica del microclima
-   - Cicliche doy (`doy_sin`, `doy_cos`) — elimina la discontinuità gen/dic per LightGBM
-   - `NWP_FEATURE_COLS` ora 28 colonne (4 modelli × 7 variabili, era 20)
-
-2. **Commit 2 — early stopping embargato** (`models.py`):
-   - `n_estimators` 500 → 2000 (tetto)
-   - `_train_lgbm`: early stopping su validation set embargato opzionale (`early_stopping(50)`)
-   - `_es_val_split`: helper condiviso per split `[fit][gap 7d][es_val 30d][gap 7d][cal/test]`
-   - `train_all` e `walk_forward_cv` usano `_es_val_split`
-
-3. **Commit 3 — init_score = nwp_mean** (`models.py`):
-   - Il modello impara il residuo NWP invece del livello assoluto
-   - `_predict_level`: helper unico raw→livello assoluto usato in `_compute_cqr`, `predict`, `predict_frame`, `walk_forward_cv` (evita che la logica sia replicata in 4 punti con rischio di incoerenza)
-   - `_make_init_score`: calcola `nwp_mean` con fallback `clim → 0` (gestisce i NULL)
-   - `TrainingArtifacts.init_score_targets` persistito nel manifest JSON
-
-### 🟡 Da fare: lanciare walk_forward_cv con il nuovo codice
-Richiede riesecuzione su DB produzione (feature_daily rebuild + CV). Misurare Δ MAE/skill per tmin/tmax/precip rispetto alla baseline (tmin +15.6%, tmax +42.6%, precip -2.9%) e metriche classificatore (Brier, BSS, AUC) + `skill_wet_mae` del wet regressor.
-
-### Sessione 2026-08-03 (cont.) — CAPE + hurdle model stadio 2
-
-**Task 2 — CAPE feature convettiva (commit 9c289f9)**
-- `fetch_openmeteo.py`: `cape` → `cape_jkg` in `_OM_HOURLY_VARS`/`_OM_VAR_MAP`
-- `schema.sql`: colonna `cape_jkg DOUBLE` in `forecasts` (null se modello non espone)
-- `storage.py`: `cape_jkg` in INSERT/UPSERT
-- `features.py`: `MAX(cape_jkg) AS cape_max` in `daily_nwp`; `NWP_DAILY_VARS` += `cape_max`; `nwp_cape_mean/spread` in ensemble stats → `NWP_FEATURE_COLS` ora 32 (4×8)
-- `models.py`: `FEATURE_COLS` += `nwp_cape_mean`, `nwp_cape_spread`
-- Verifica empirica: tutti e 4 i modelli NWP espongono CAPE senza null (incl. icon_2i)
-- **Nota deploy**: DB prod va resettato (no migrazione; `cape_jkg` non esiste nella tabella esistente)
-
-**Task 3 — Hurdle model stadio 2 (commit 3a8a0d0)**
-- `_train_wet_regressor()`: 5 quantili LightGBM su wet days (>0.2mm), CQR stratificata per lead bucket, no init_score, `ValueError` se <30 wet days
-- `TrainingArtifacts.wet_regressor: ModelBundle | None` (retrocompatibile, default None)
-- `train_all`: addestra wet_reg dopo rain_clf
-- `_save_artifacts`/`load_artifacts`: 5 file `wet_reg_q{nn}.txt` + manifest
-- `predict`/`predict_frame`: `out["rain_clf"]["wet_reg"]` con anti-crossing e clamp ≥ 0
-- `walk_forward_cv`: metriche `mae_wet`/`skill_wet_mae` su test wet-only
-- `docs/contract.md`: aggiunto `precip_mm.wet_reg` al JSON contract
-
----
-
-## Sessione 2026-08-04 — Ottimizzazione chunk size ingestion Open-Meteo
+- **walk_forward_cv** girata su DB locale riempito con `ingest historical`
+- Identificato che fold 1-2 sono lead=0-only (archivio Open-Meteo `previous_dayN` parte da mar 2024 per ECMWF, gen 2024 AROME, apr 2025 ICON-2I)
+- Archivio multilead frammentato per anno/modello (solo ICON-EU completo nel 2024, ECMWF domina lead lunghi, ICON-2I solo ≤48h)
+- Consensus Oracle: tmax +30% è reale e robusto; precip intensità è ceiling strutturale; capitolo ML chiuso tranne calibrazione CQR
 
 ### Commit
 
-- **fc6ef7f** — `_DEFAULT_CHUNK_DAYS` 180 → 365 (dimezza call historical)
-- **9333c05** — `_HIGH_RES_CHUNK_DAYS` 90 → 365 (allineato, nessun timeout empirico su AROME/ICON-2I)
-- **cca2c9a** — Refactor chunk size da budget-celle (`_OM_CELL_BUDGET = 483_840`): sostituisce le 3 costanti magiche con `_chunk_days(n_vars)` che calcola il chunk ottimale per modello e tipo di fetch. Chunk risultanti: historical 474gg, ECMWF multilead 120gg (fix root cause 429 Minutely), ICON-EU 211gg, AROME 845gg, ICON-2I 423gg.
+- **2dbc4b9** — `LEAD_BUCKETS` ridefiniti giornalieri (D+0..D+5+) — i vecchi bucket orari erano sempre vuoti su features_daily multi-lead
+- **fba2bd0** — `cal_days` 150 (era 90) — cal set più ampio per CQR
+- **5083290** — Rimossi wet regressor (skill negativo in 3/4 fold) e `anomaly_targets` (dead code post-KI-024); 36 test rimasti verdi
 
 ### Note tecniche
 
-- Open-Meteo **non espone header di rate-limit** nelle risposte normali (nemmeno `Retry-After` sul 429). Tracking locale del consumo non realizzabile via API. Il budget-celle è l'unico meccanismo affidabile lato client.
-- Sleep fisso `_OM_CHUNK_SLEEP_S = 5.0` mantenuto: con il nuovo budget-celle il rischio 429 Minutely è già strutturalmente ridotto; sleep adattivo non prioritario senza header di feedback.
-- `_HIGH_RES_MODELS` rimosso: il budget-celle si adatta automaticamente al numero di variabili per modello, rendendo la distinzione high-res/default obsoleta.
+- La coverage CI80 (72-76% vs 80%) è non-stazionarietà train→test, non problema di volume cal set. ACI è il meccanismo corretto per produzione.
+- `walk_forward_cv` e `crps_from_quantiles` restano in `models.py` — strumenti del case study, verranno riusati tra 6 mesi quando ensemble ≤48h si completa.
+- Wet regressor rimosso: skill_wet_mae negativo perché usa stesse FEATURE_COLS del modello globale con meno dati — nessun vantaggio strutturale senza feature termodinamiche aggiuntive specifiche.
+- `anomaly_targets` rimosso: ANOMALY_TARGETS=() da KI-024, tutti i branch erano dead code. Semplificata `_target_col`, rimossa `_invert_anomaly`.
 
-### Prossimi candidati (non implementati)
-- **Esporre `wet_reg` nel frontend** — card "se piove, quanti mm?" distinta da `prob_rain`
-- **`walk_forward_cv` su DB prod** — misurare `skill_wet_mae` e decidere se il wet regressor vale
-- **Target ML vento avg** (verificare disponibilità ground truth SIR per location)
-- **Optuna tuning** LightGBM (dopo feature stabili: `num_leaves` 7-31, `learning_rate` 0.02-0.1)
-- **cal_days 120/180** (verifica coverage per bucket — D-003 richiede ~200 campioni/bucket)
+### Sessione 2026-08-03 — CAPE + hurdle model
+
+- CAPE feature convettiva aggiunta (commit 9c289f9): `cape_jkg` in schema/storage/features, `nwp_cape_mean/spread` in FEATURE_COLS (ora 32, 4×8)
+- rain_clf (hurdle stadio 1): BSS +0.16/+0.28, AUC 0.73-0.79 nei fold rappresentativi ✅
+- Wet regressor (hurdle stadio 2): rimosso in sessione 2026-08-04 (skill negativo)
+
+### Sessione 2026-08-04 — chunk size ingestion Open-Meteo
+
+- Budget-celle `_OM_CELL_BUDGET = 483_840`: chunk ottimale per modello via `_chunk_days(n_vars)`
+- Chunk risultanti: historical 474gg, ECMWF multilead 120gg, ICON-EU 211gg, AROME 845gg, ICON-2I 423gg
