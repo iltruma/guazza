@@ -30,7 +30,7 @@ def _callback() -> None:
 def cmd_run(
     db_path:   Path = DB_OPTION,
     model_dir: Path = typer.Option(_MODEL_DIR, "--model-dir", help="Directory artefatti"),
-    cal_days:  int  = typer.Option(90,         "--cal-days",  help="Giorni calibration set CQR"),
+    cal_days:  int  = typer.Option(150,        "--cal-days",  help="Giorni calibration set CQR"),
     dry_run:   bool = typer.Option(False,      "--dry-run",   help="Carica dati ma non allena"),
 ) -> None:
     """Allena modelli su tutti i dati disponibili e salva artefatti."""

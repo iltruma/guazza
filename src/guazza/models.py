@@ -630,7 +630,7 @@ def _lead_time_bucket(lead_h: int) -> str:
 def train_all(
     db: DuckDBClient,
     model_dir: Path | None = None,
-    cal_days: int = 90,
+    cal_days: int = 150,
 ) -> TrainingArtifacts:
     """Allena modelli su tutti i dati disponibili e calibra CQR.
 
