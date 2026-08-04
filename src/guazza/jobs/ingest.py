@@ -378,6 +378,12 @@ def cmd_daily(
     Schedulare a ~06:00 UTC (SIR pubblica i dati validati del giorno precedente
     tipicamente entro le 03:00-05:00 UTC).
 
+    Dipendenza temporale: schedulare PRIMA della pipeline (es. 06:00 UTC, pipeline
+    alle 02/08/14/20 UTC). La pipeline del run successivo recupera i dati via
+    backfill_prediction_obs — ma skill-history di quella data resta vuota fino al
+    run pipeline dopo l'ingest. Spostare il daily dopo le 08:00 UTC ritarda di un
+    ciclo il backfill.
+
     Usa --netatmo-all per il backfill iniziale di tutti i giorni Netatmo accumulati.
     """
     if only_sir and only_openmeteo:

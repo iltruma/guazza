@@ -7,9 +7,11 @@ Comandi:
 from __future__ import annotations
 
 import os
+from datetime import date
 from pathlib import Path
 
 import typer
+from loguru import logger
 
 from guazza._logging import setup_logging
 from guazza.jobs._common import DB_OPTION, job_run
@@ -43,6 +45,16 @@ def cmd_run(
 
     with job_run("job_train_run") as stats:
         with DuckDBClient(db_path=db_path, read_only=True) as db:
+            row = db.execute("SELECT MAX(target_date) FROM features_daily").fetchone()
+            max_feat_date = row[0] if row and row[0] else None
+            if max_feat_date is None:
+                raise typer.Exit(1)  # vuoto — train_all alzerà ValueError comunque
+            staleness_days = (date.today() - max_feat_date).days
+            if staleness_days > 3:
+                logger.warning(
+                    f"features_daily stantie: max_date={max_feat_date} "
+                    f"({staleness_days}gg fa). Il training procede ma potrebbe usare dati vecchi."
+                )
             artifacts = train_all(db, model_dir=model_dir, cal_days=cal_days)
         stats.rows = artifacts.n_train
         stats.summary = f"n_train:{artifacts.n_train} n_cal:{artifacts.n_cal}"

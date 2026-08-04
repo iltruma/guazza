@@ -30,7 +30,8 @@ from loguru import logger
 
 from guazza._logging import setup_logging
 from guazza.jobs._common import CONFIG_DIR_OPTION, DB_OPTION, OUTPUT_DIR_OPTION, job_run
-from guazza.models import _TARGET_NWP_MEAN, FEATURE_COLS, _train_lgbm
+from guazza.models import _TARGET_NWP_MEAN, FEATURE_COLS, train_lgbm
+from guazza.storage import DuckDBClient
 
 app = typer.Typer(help="Curva di skill Guazza vs NWP per lead.")
 
@@ -108,10 +109,10 @@ def run(
     with job_run("job_skill") as stats:
         stations = _primary_stations(config_dir)
 
-        con = duckdb.connect(str(db), read_only=True)
-        df = _load_features(con)
-        primary = _load_primary_obs(con, stations)
-        con.close()
+        with DuckDBClient(db_path=db, read_only=True) as db_client:
+            assert db_client._conn is not None
+            df = _load_features(db_client._conn)
+            primary = _load_primary_obs(db_client._conn, stations)
 
         win_start = pd.to_datetime(window_start).date()
         cutoff = (pd.Timestamp(win_start) - pd.Timedelta(days=embargo_days)).date()
@@ -121,7 +122,7 @@ def run(
         for var in SKILL_VARS:
             col = f"target_{var}"
             mask = train[col].notna()
-            models[var] = _train_lgbm(train.loc[mask, FEATURE_COLS], train.loc[mask, col], 0.50)
+            models[var] = train_lgbm(train.loc[mask, FEATURE_COLS], train.loc[mask, col], 0.50)
         logger.info(f"Train q=0.50: {len(train)} righe ≤ {cutoff} | test ≥ {win_start}")
 
         test = df[df["target_date"] >= win_start].copy()

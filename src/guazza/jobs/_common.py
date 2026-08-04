@@ -35,15 +35,26 @@ OUTPUT_DIR_OPTION = typer.Option(
 )
 
 
-def ping_healthchecks(status: str = "") -> None:
-    """Invia ping a Healthchecks.io se HEALTHCHECKS_URL è configurato (altrimenti skip).
+def _resolve_healthchecks_url(job_name: str) -> str:
+    """Risolve l'URL Healthchecks.io per il job: prima HEALTHCHECKS_URL_{JOB_NAME_UPPER},
+    poi HEALTHCHECKS_URL come fallback. Restituisce stringa vuota se nessuna è configurata.
+    """
+    specific = os.environ.get(f"HEALTHCHECKS_URL_{job_name.upper()}", "").strip()
+    if specific:
+        return specific
+    return os.environ.get("HEALTHCHECKS_URL", "").strip()
+
+
+def ping_healthchecks(status: str = "", base_url: str = "") -> None:
+    """Invia ping a Healthchecks.io se l'URL è configurato (altrimenti skip).
 
     status: "" = ok, "/fail" = fail, "/start" = start.
+    base_url: se vuoto, legge HEALTHCHECKS_URL dall'env (backward-compatible).
     """
-    base_url = os.environ.get("HEALTHCHECKS_URL", "").strip()
-    if not base_url:
+    resolved = base_url.strip() or os.environ.get("HEALTHCHECKS_URL", "").strip()
+    if not resolved:
         return
-    url = base_url.rstrip("/") + status
+    url = resolved.rstrip("/") + status
     try:
         httpx.get(url, timeout=5)
         logger.debug(f"Healthchecks ping: {url}")
@@ -66,8 +77,12 @@ def job_run(job_name: str) -> Generator[JobStats]:
     Ingresso: ping /start. Uscita ok: log_scrape(job_name, "ok", rows), ping ok,
     echo del riepilogo con tempo trascorso. Eccezione: log ERROR con traceback,
     ping /fail, exit code 1.
+
+    L'URL Healthchecks.io viene risolto con HEALTHCHECKS_URL_{JOB_NAME_UPPER} come
+    primo candidato, con fallback a HEALTHCHECKS_URL.
     """
-    ping_healthchecks("/start")
+    hc_url = _resolve_healthchecks_url(job_name)
+    ping_healthchecks("/start", base_url=hc_url)
     t0 = time.monotonic()
     stats = JobStats()
     try:
@@ -76,10 +91,10 @@ def job_run(job_name: str) -> Generator[JobStats]:
         raise
     except Exception as e:
         logger.exception(f"{job_name} fallito: {e}")
-        ping_healthchecks("/fail")
+        ping_healthchecks("/fail", base_url=hc_url)
         raise typer.Exit(1) from e
     elapsed = time.monotonic() - t0
     log_scrape(job_name, "ok", rows=stats.rows)
-    ping_healthchecks()
+    ping_healthchecks(base_url=hc_url)
     suffix = f" — {stats.summary}" if stats.summary else ""
     typer.echo(f"{job_name} completato in {elapsed:.0f}s{suffix}")

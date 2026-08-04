@@ -2,7 +2,8 @@
 
 Workaround KI-001: DuckDB ammette un solo writer alla volta.
 Usiamo fcntl.flock() su un lock file per serializzare le aperture in write mode.
-In read-only mode il lock non è necessario.
+In read-only mode acquisisce LOCK_SH: i reader non si bloccano tra loro,
+ma vengono bloccati da un writer attivo (LOCK_EX).
 
 Uso tipico:
     with DuckDBClient() as db:
@@ -45,10 +46,10 @@ class DuckDBClient:
     def __enter__(self) -> DuckDBClient:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if not self.read_only:
-            self._lock_fd = os.open(str(self._lock_path), os.O_CREAT | os.O_WRONLY)
-            fcntl.flock(self._lock_fd, fcntl.LOCK_EX)
-            logger.debug(f"Lock acquisito: {self._lock_path}")
+        lock_mode = fcntl.LOCK_SH if self.read_only else fcntl.LOCK_EX
+        self._lock_fd = os.open(str(self._lock_path), os.O_CREAT | os.O_WRONLY)
+        fcntl.flock(self._lock_fd, lock_mode)
+        logger.debug(f"Lock acquisito ({'SH' if self.read_only else 'EX'}): {self._lock_path}")
 
         self._conn = duckdb.connect(str(self.db_path), read_only=self.read_only)
         logger.debug(f"DuckDB aperto: {self.db_path} (read_only={self.read_only})")

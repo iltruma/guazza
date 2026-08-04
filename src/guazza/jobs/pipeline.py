@@ -34,7 +34,6 @@ from guazza.jobs._common import (
     DB_OPTION,
     OUTPUT_DIR_OPTION,
     job_run,
-    ping_healthchecks,
 )
 from guazza.models import (
     ACI_LEARNING_RATE,
@@ -71,6 +70,20 @@ from guazza.weights import load_configs, refresh_station_weights, refresh_upstre
 app = typer.Typer(help="Pipeline 6h: forecasts → features → predict → skill-history.")
 
 _MODEL_DIR = Path(os.environ.get("MODEL_DIR", "/var/lib/guazza/models"))
+
+
+def _ping_monitor_alert() -> None:
+    """Invia ping a HEALTHCHECKS_URL_MONITOR se configurata, altrimenti solo warning."""
+    url = os.environ.get("HEALTHCHECKS_URL_MONITOR", "").strip()
+    if not url:
+        logger.warning("HEALTHCHECKS_URL_MONITOR non configurata — drift ACI non notificato")
+        return
+    try:
+        import httpx
+        httpx.get(url.rstrip("/") + "/fail", timeout=5)
+        logger.info(f"Monitor alert inviato: {url}/fail")
+    except Exception as e:
+        logger.warning(f"Monitor alert ping fallito: {e}")
 
 
 @app.callback()
@@ -184,6 +197,8 @@ def cmd_run(
 
             # ── 3. Predict ──────────────────────────────────────────────────
             if not dry_run:
+                # Retroattivo: popola *_obs sui giorni passati quando ingest daily è già girato
+                # (daily a 06:00 UTC → questo run delle 08:00+ ha i dati; run delle 02:00 no).
                 n_backfilled = db.backfill_prediction_obs()
                 if n_backfilled:
                     logger.info(f"pipeline obs backfill: {n_backfilled} predictions")
@@ -204,11 +219,7 @@ def cmd_run(
                 SELECT *
                 FROM features_daily
                 WHERE target_date >= CURRENT_DATE
-                QUALIFY ROW_NUMBER() OVER (
-                    PARTITION BY location_id, target_date
-                    ORDER BY lead_time_h ASC
-                ) = 1
-                ORDER BY location_id, target_date
+                ORDER BY location_id, target_date, lead_time_h ASC
             """).df()
 
             if df_all.empty:
@@ -228,10 +239,15 @@ def cmd_run(
 
                 aci_cache: dict[tuple[str, str], tuple] = {}
 
+                # Prima riga per target_date = lead minimo (query già ordinata per lead_time_h ASC)
+                min_lead_indices: set[int] = set(
+                    loc_df.groupby("target_date").apply(lambda g: g.index[0]).tolist()
+                )
+
                 for i, row in loc_df.iterrows():
                     target_date_obj = _to_date(row["target_date"])
-                    lead_time_h = lead_times[i]
-                    pred = preds[i]
+                    lead_time_h = lead_times[int(i)]
+                    pred = preds[int(i)]
                     bucket = _lead_time_bucket(lead_time_h)
 
                     if not dry_run:
@@ -250,42 +266,58 @@ def cmd_run(
                             pred[target]["ci90_lo"] = new_lo90
                             pred[target]["ci90_hi"] = new_hi90
 
-                    if target_date_obj == date.today():
-                        current_obs = get_current_conditions(db, location_id)
-                        signals = build_signals_today(pred, row, obs_summary, current_obs)
-                    else:
-                        signals = build_signals(pred, row, obs_summary)
-                    results = evaluate_all(indicators_cfg, signals, location_id)
-
                     logger.info(
-                        f"[{location_id}] {target_date_obj} lead={lead_time_h}h "
-                        + " ".join(f"{r.indicator_id}={r.verdict[0]}" for r in results)
+                        f"[{location_id}] {target_date_obj} lead={lead_time_h}h"
                     )
 
-                    hourly = compute_hourly_profile(
-                        db, location_id, str(target_date_obj),
-                        tmin_p50=pred["tmin_c"].get("p50"),
-                        tmax_p50=pred["tmax_c"].get("p50"),
-                        precip_anchor=expected_precip(pred["precip_mm"]),
-                        tmin_ci80_lo=pred["tmin_c"].get("ci80_lo"),
-                        tmin_ci80_hi=pred["tmin_c"].get("ci80_hi"),
-                        tmax_ci80_lo=pred["tmax_c"].get("ci80_lo"),
-                        tmax_ci80_hi=pred["tmax_c"].get("ci80_hi"),
-                        precip_ci80_lo=pred["precip_mm"].get("ci80_lo"),
-                        precip_ci80_hi=pred["precip_mm"].get("ci80_hi"),
-                    )
-                    nwp_comparison = get_nwp_model_comparison(db, location_id, str(target_date_obj))
-                    weather_code = get_daily_weather_code(db, location_id, str(target_date_obj))
+                    is_min_lead = int(i) in min_lead_indices
 
-                    day_entries.append({
-                        "target_date":    str(target_date_obj),
-                        "lead_time_h":    lead_time_h,
-                        "pred":           pred,
-                        "indicators":     results,
-                        "hourly":         hourly,
-                        "nwp_comparison": nwp_comparison,
-                        "weather_code":   weather_code,
-                    })
+                    if is_min_lead:
+                        if target_date_obj == date.today():
+                            current_obs = get_current_conditions(db, location_id)
+                            signals = build_signals_today(pred, row, obs_summary, current_obs)
+                        else:
+                            signals = build_signals(pred, row, obs_summary)
+                        results = evaluate_all(indicators_cfg, signals, location_id)
+
+                        hourly = compute_hourly_profile(
+                            db, location_id, str(target_date_obj),
+                            tmin_p50=pred["tmin_c"].get("p50"),
+                            tmax_p50=pred["tmax_c"].get("p50"),
+                            precip_anchor=expected_precip(pred["precip_mm"]),
+                            tmin_ci80_lo=pred["tmin_c"].get("ci80_lo"),
+                            tmin_ci80_hi=pred["tmin_c"].get("ci80_hi"),
+                            tmax_ci80_lo=pred["tmax_c"].get("ci80_lo"),
+                            tmax_ci80_hi=pred["tmax_c"].get("ci80_hi"),
+                            precip_ci80_lo=pred["precip_mm"].get("ci80_lo"),
+                            precip_ci80_hi=pred["precip_mm"].get("ci80_hi"),
+                        )
+                        nwp_comparison = get_nwp_model_comparison(db, location_id, str(target_date_obj))
+                        weather_code = get_daily_weather_code(db, location_id, str(target_date_obj))
+
+                        day_entries.append({
+                            "target_date":    str(target_date_obj),
+                            "lead_time_h":    lead_time_h,
+                            "pred":           pred,
+                            "indicators":     results,
+                            "hourly":         hourly,
+                            "nwp_comparison": nwp_comparison,
+                            "weather_code":   weather_code,
+                        })
+
+                        if not dry_run:
+                            db.upsert_benchmark_forecasts([{
+                                "source":      cmp["source"],
+                                "location_id": location_id,
+                                "target_date": target_date_obj,
+                                "lead_time_h": lead_time_h,
+                                "tmin_c":      cmp["tmin_c"],
+                                "tmax_c":      cmp["tmax_c"],
+                                "precip_mm":   cmp["precip_mm"],
+                            } for cmp in nwp_comparison])
+                            log_results(db, results, input_summary={
+                                k: v for k, v in signals.items() if v is not None
+                            })
 
                     if dry_run:
                         continue
@@ -294,15 +326,6 @@ def cmd_run(
                         target_date_obj.year, target_date_obj.month, target_date_obj.day,
                         tzinfo=None,
                     )
-                    db.upsert_benchmark_forecasts([{
-                        "source":      cmp["source"],
-                        "location_id": location_id,
-                        "target_date": target_date_obj,
-                        "lead_time_h": lead_time_h,
-                        "tmin_c":      cmp["tmin_c"],
-                        "tmax_c":      cmp["tmax_c"],
-                        "precip_mm":   cmp["precip_mm"],
-                    } for cmp in nwp_comparison])
                     db.upsert_predictions([{
                         "model_version": model_version,
                         "location_id":   location_id,
@@ -312,9 +335,6 @@ def cmd_run(
                         "tmax_c":        pred["tmax_c"],
                         "precip_mm":     pred["precip_mm"],
                     }])
-                    log_results(db, results, input_summary={
-                        k: v for k, v in signals.items() if v is not None
-                    })
 
                 if dry_run:
                     continue
@@ -350,7 +370,7 @@ def cmd_run(
             else:
                 n_alerts = check_and_log(coverage_results)
                 if n_alerts > 0 and not dry_run:
-                    ping_healthchecks("/fail")
+                    _ping_monitor_alert()
                     logger.warning(f"pipeline monitor: drift su {n_alerts} combinazioni — healthchecks /fail")
 
         stats.rows = len(json_paths)

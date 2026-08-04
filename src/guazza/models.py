@@ -213,7 +213,7 @@ def _lgbm_params(quantile: float) -> dict[str, Any]:
     }
 
 
-def _train_lgbm(
+def train_lgbm(
     X: pd.DataFrame,
     y: pd.Series,
     quantile: float,
@@ -591,13 +591,13 @@ def train_all(
                 mask_val = df_es_val[col].notna()
                 X_val_es = df_es_val.loc[mask_val, FEATURE_COLS]
                 y_val_es = df_es_val.loc[mask_val, col]
-                models_q[q] = _train_lgbm(
+                models_q[q] = train_lgbm(
                     X_tr, y_tr, q,
                     X_val=X_val_es, y_val=y_val_es,
                     init_score=init_tr, init_score_val=init_val,
                 )
             else:
-                models_q[q] = _train_lgbm(X_tr, y_tr, q, init_score=init_tr)
+                models_q[q] = train_lgbm(X_tr, y_tr, q, init_score=init_tr)
             logger.debug(f"[{target}] q={q:.2f} addestrato")
 
         X_cal = df_cal[FEATURE_COLS]
@@ -1175,13 +1175,13 @@ def walk_forward_cv(
                     mask_val = df_es_val_fold[col].notna()
                     X_val_es = df_es_val_fold.loc[mask_val, FEATURE_COLS]
                     y_val_es = df_es_val_fold.loc[mask_val, col]
-                    models_q[q] = _train_lgbm(
+                    models_q[q] = train_lgbm(
                         X_tr, y_tr, q,
                         X_val=X_val_es, y_val=y_val_es,
                         init_score=init_tr, init_score_val=init_val_fold,
                     )
                 else:
-                    models_q[q] = _train_lgbm(X_tr, y_tr, q, init_score=init_tr)
+                    models_q[q] = train_lgbm(X_tr, y_tr, q, init_score=init_tr)
 
             cqr = _compute_cqr(models_q, df_cal[FEATURE_COLS], df_cal[col], df_cal["lead_time_h"], target=target, use_init_score=True)
 
