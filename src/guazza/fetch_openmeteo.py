@@ -8,7 +8,6 @@ from __future__ import annotations
 import sys
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -78,6 +77,22 @@ OM_MODELS: list[str] = [
     "arome_france",
     "italia_meteo_arpae_icon_2i",  # ItaliaMeteo/ARPAE, 2.2km Italia, 72h, dati assimilati italiani
 ]
+
+# Chunk temporali per evitare timeout lato server: modelli convettivi ad alta
+# risoluzione usano finestre più corte (90gg), gli altri 180gg.
+_HIGH_RES_MODELS = {"arome_france", "italia_meteo_arpae_icon_2i"}
+_DEFAULT_CHUNK_DAYS = 180
+_HIGH_RES_CHUNK_DAYS = 90
+
+# Sleep tra chunk consecutivi dello stesso modello.
+# Open-Meteo free tier ha una quota oraria (non per-secondo): i modelli vengono
+# eseguiti in serie per non triplicare il consumo di quota. 5s tra chunk
+# mantiene il rate basso senza impattare significativamente la durata totale.
+_OM_CHUNK_SLEEP_S = 5.0
+
+# Callback invocato dopo ogni chunk con i record parsati.
+# Permette il flush immediato su DB invece di accumulare tutto lo storico in RAM.
+_OnRecords = Callable[[list[dict[str, Any]]], None]
 
 
 def _infer_ts_run(model: str, now_utc: datetime) -> datetime:
@@ -234,12 +249,10 @@ def fetch_openmeteo_forecast_batch(
     if now_utc is None:
         now_utc = datetime.now(tz=UTC)
 
-    # Inizializza risultati: {loc_id: {model: []}}
     results: dict[str, dict[str, list[dict[str, Any]]]] = {
         loc_id: {model: [] for model in models} for loc_id in locations
     }
 
-    # Ordine stabile per le location
     loc_ids = sorted(locations.keys())
     lats = [locations[lid]["lat"] for lid in loc_ids]
     lons = [locations[lid]["lon"] for lid in loc_ids]
@@ -259,12 +272,11 @@ def fetch_openmeteo_forecast_batch(
             data = _fetch_om_json(_OM_FORECAST_URL, params)
 
             # Se abbiamo più coordinate, Open-Meteo restituisce una LISTA di oggetti
-            if isinstance(data, list):
-                responses = data
-            else:
-                responses = [data]
+            responses = data if isinstance(data, list) else [data]
 
             for lid, resp in zip(loc_ids, responses, strict=True):
+                if not isinstance(resp, dict):
+                    continue
                 records = _parse_om_response(resp, model, lid, ts_run)
                 results[lid][model] = records
                 log_scrape(f"openmeteo_forecast:{lid}:{model}", "ok", rows=len(records))
@@ -277,66 +289,6 @@ def fetch_openmeteo_forecast_batch(
         time.sleep(0.5)
 
     return results
-
-
-def _fetch_one_model_historical(
-    model: str,
-    chunks: list[tuple[str, str]],
-    loc_ids: list[str],
-    lats: list[float],
-    lons: list[float],
-    results: dict[str, dict[str, list[dict[str, Any]]]],
-) -> None:
-    """Fetch storico per un singolo modello su tutti i chunk.
-
-    Scrive direttamente su results[lid][model] — thread-safe perche
-    ogni modello ha la propria chiave nel dict annidato.
-    """
-    for c_start, c_end in chunks:
-        params: dict[str, str | int | float | list[str]] = {
-            "latitude": ",".join(map(str, lats)),
-            "longitude": ",".join(map(str, lons)),
-            "hourly": ",".join(_OM_HOURLY_VARS),
-            "models": model,
-            "start_date": c_start,
-            "end_date": c_end,
-            "timezone": "UTC",
-            "wind_speed_unit": "ms",
-        }
-        try:
-            data = _fetch_om_json_historical(_OM_HISTORICAL_URL, params)
-            responses = data if isinstance(data, list) else [data]
-
-            for lid, resp in zip(loc_ids, responses, strict=True):
-                records = _parse_om_response(resp, model, lid, ts_run=None)
-                results[lid][model].extend(records)
-                log_scrape(
-                    f"openmeteo_historical:{lid}:{model}",
-                    "ok",
-                    rows=len(records),
-                    detail=f"{c_start} to {c_end}",
-                )
-        except Exception as e:
-            logger.error(f"Open-Meteo historical batch [{model}] [{c_start}→{c_end}] fallito: {e}")
-            for lid in loc_ids:
-                log_scrape(f"openmeteo_historical:{lid}:{model}", "fail", detail=str(e))
-
-        time.sleep(3.0)
-
-
-# Chunk temporali per evitare timeout lato server: modelli convettivi ad alta
-# risoluzione usano finestre più corte (90gg), gli altri 180gg.
-_HIGH_RES_MODELS = {"arome_france", "italia_meteo_arpae_icon_2i"}
-_DEFAULT_CHUNK_DAYS = 180
-_HIGH_RES_CHUNK_DAYS = 90
-
-# Worker per-modello: scrive in results[lid][model], thread-safe perché ogni
-# modello ha la propria chiave nel dict annidato.
-_ModelBatchWorker = Callable[
-    [str, list[tuple[str, str]], list[str], list[float], list[float],
-     dict[str, dict[str, list[dict[str, Any]]]]],
-    None,
-]
 
 
 def _chunk_date_range(start_date: str, end_date: str, chunk_days: int) -> list[tuple[str, str]]:
@@ -357,43 +309,73 @@ def _run_historical_model_batch(
     locations: dict[str, Any],
     start_date: str,
     end_date: str,
-    worker: _ModelBatchWorker,
+    worker: Callable[[str, list[tuple[str, str]], list[str], list[float], list[float], _OnRecords], None],
+    on_records: _OnRecords,
     desc: str,
-) -> dict[str, dict[str, list[dict[str, Any]]]]:
-    """Esegue `worker` per ogni modello in parallelo (ThreadPool 3) su chunk temporali.
+) -> None:
+    """Esegue worker per ogni modello in serie su chunk temporali.
 
-    Condiviso da historical e multilead batch: stessa orchestrazione, worker diverso.
+    I modelli vengono processati sequenzialmente per rispettare la quota oraria
+    del free tier Open-Meteo (il parallelismo moltiplicava il consumo di quota
+    causando HTTP 429 "Hourly API request limit exceeded").
+
+    Il worker chiama on_records() dopo ogni chunk: i record vengono flushati
+    su DB immediatamente invece di accumularsi in RAM per tutta la durata del job.
     """
-    results: dict[str, dict[str, list[dict[str, Any]]]] = {
-        loc_id: {model: [] for model in models} for loc_id in locations
-    }
     loc_ids = sorted(locations.keys())
     lats = [locations[lid]["lat"] for lid in loc_ids]
     lons = [locations[lid]["lon"] for lid in loc_ids]
-    model_chunks = {
-        model: _chunk_date_range(
-            start_date, end_date,
-            _HIGH_RES_CHUNK_DAYS if model in _HIGH_RES_MODELS else _DEFAULT_CHUNK_DAYS,
-        )
-        for model in models
-    }
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {
-            executor.submit(worker, model, model_chunks[model], loc_ids, lats, lons, results): model
-            for model in models
+    for model in tqdm(models, desc=desc, unit="model", disable=not sys.stderr.isatty()):
+        chunk_days = _HIGH_RES_CHUNK_DAYS if model in _HIGH_RES_MODELS else _DEFAULT_CHUNK_DAYS
+        chunks = _chunk_date_range(start_date, end_date, chunk_days)
+        worker(model, chunks, loc_ids, lats, lons, on_records)
+
+
+def _fetch_one_model_historical(
+    model: str,
+    chunks: list[tuple[str, str]],
+    loc_ids: list[str],
+    lats: list[float],
+    lons: list[float],
+    on_records: _OnRecords,
+) -> None:
+    """Fetch storico per un singolo modello su tutti i chunk."""
+    for c_start, c_end in chunks:
+        params: dict[str, str | int | float | list[str]] = {
+            "latitude": ",".join(map(str, lats)),
+            "longitude": ",".join(map(str, lons)),
+            "hourly": ",".join(_OM_HOURLY_VARS),
+            "models": model,
+            "start_date": c_start,
+            "end_date": c_end,
+            "timezone": "UTC",
+            "wind_speed_unit": "ms",
         }
-        for future in tqdm(
-            as_completed(futures),
-            total=len(futures),
-            desc=desc,
-            unit="model",
-            disable=not sys.stderr.isatty(),
-        ):
-            # Propaga eccezioni — se un modello fallisce, tutto fallisce
-            future.result()
+        try:
+            data = _fetch_om_json_historical(_OM_HISTORICAL_URL, params)
+            responses = data if isinstance(data, list) else [data]
 
-    return results
+            chunk_records: list[dict[str, Any]] = []
+            for lid, resp in zip(loc_ids, responses, strict=True):
+                if not isinstance(resp, dict):
+                    continue
+                records = _parse_om_response(resp, model, lid, ts_run=None)
+                chunk_records.extend(records)
+                log_scrape(
+                    f"openmeteo_historical:{lid}:{model}",
+                    "ok",
+                    rows=len(records),
+                    detail=f"{c_start} to {c_end}",
+                )
+            if chunk_records:
+                on_records(chunk_records)
+        except Exception as e:
+            logger.error(f"Open-Meteo historical batch [{model}] [{c_start}→{c_end}] fallito: {e}")
+            for lid in loc_ids:
+                log_scrape(f"openmeteo_historical:{lid}:{model}", "fail", detail=str(e))
+
+        time.sleep(_OM_CHUNK_SLEEP_S)
 
 
 def fetch_openmeteo_historical_batch(
@@ -401,17 +383,25 @@ def fetch_openmeteo_historical_batch(
     start_date: str,
     end_date: str,
     models: list[str] | None = None,
-) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    on_records: _OnRecords | None = None,
+) -> None:
     """Fetch storico forecast da Open-Meteo Historical Forecast API in batch.
 
-    Returns:
-        Dict {location_id: {model: [record_wide, ...]}}
+    Itera i modelli in serie (non in parallelo) per rispettare la quota oraria
+    del free tier. I record vengono flushati su DB dopo ogni chunk via on_records.
+
+    Args:
+        on_records: callback chiamato dopo ogni chunk con i record parsati.
+                    Tipicamente db.upsert_forecasts. Se None, i record vengono scartati
+                    (utile per dry-run o test).
     """
     if models is None:
         models = OM_MODELS
-    return _run_historical_model_batch(
+    if on_records is None:
+        on_records = lambda _: None  # noqa: E731
+    _run_historical_model_batch(
         models, locations, start_date, end_date,
-        _fetch_one_model_historical, "OM historical batch",
+        _fetch_one_model_historical, on_records, "OM historical batch",
     )
 
 
@@ -498,7 +488,7 @@ def _fetch_one_model_multilead(
     loc_ids: list[str],
     lats: list[float],
     lons: list[float],
-    results: dict[str, dict[str, list[dict[str, Any]]]],
+    on_records: _OnRecords,
 ) -> None:
     """Fetch multi-lead per un singolo modello su tutti i chunk."""
     hourly_vars = _multilead_hourly_params(model)
@@ -518,20 +508,27 @@ def _fetch_one_model_multilead(
         try:
             data = _fetch_om_json_historical(_OM_HISTORICAL_URL, params)
             responses = data if isinstance(data, list) else [data]
+
+            chunk_records: list[dict[str, Any]] = []
             for lid, resp in zip(loc_ids, responses, strict=True):
+                if not isinstance(resp, dict):
+                    continue
                 records = _parse_om_multilead(resp, model, lid)
-                results[lid][model].extend(records)
+                chunk_records.extend(records)
                 log_scrape(
                     f"openmeteo_multilead:{lid}:{model}",
                     "ok",
                     rows=len(records),
                     detail=f"{c_start} to {c_end}",
                 )
+            if chunk_records:
+                on_records(chunk_records)
         except Exception as e:
             logger.error(f"Open-Meteo multilead [{model}] [{c_start}→{c_end}] fallito: {e}")
             for lid in loc_ids:
                 log_scrape(f"openmeteo_multilead:{lid}:{model}", "fail", detail=str(e))
-        time.sleep(3.0)
+
+        time.sleep(_OM_CHUNK_SLEEP_S)
 
 
 def fetch_openmeteo_multilead_batch(
@@ -539,20 +536,23 @@ def fetch_openmeteo_multilead_batch(
     start_date: str,
     end_date: str,
     models: list[str] | None = None,
-) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    on_records: _OnRecords | None = None,
+) -> None:
     """Backfill multi-lead D+1…D+7 da Open-Meteo (variabili `*_previous_dayN`).
 
-    Stessa struttura di fetch_openmeteo_historical_batch (chunk + ThreadPool(3)),
-    ma richiede i run precedenti. Salta i modelli senza orizzonte archiviato.
+    Stessa struttura di fetch_openmeteo_historical_batch (serie + chunk + flush per chunk).
+    Salta i modelli senza orizzonte archiviato.
 
-    Returns:
-        Dict {location_id: {model: [record_wide, ...]}}
+    Args:
+        on_records: callback chiamato dopo ogni chunk. Tipicamente db.upsert_forecasts.
     """
     if models is None:
         models = [m for m in OM_MODELS if _OM_PREVIOUS_DAY_MAX.get(m, 0) > 0]
-    return _run_historical_model_batch(
+    if on_records is None:
+        on_records = lambda _: None  # noqa: E731
+    _run_historical_model_batch(
         models, locations, start_date, end_date,
-        _fetch_one_model_multilead, "OM multilead batch",
+        _fetch_one_model_multilead, on_records, "OM multilead batch",
     )
 
 
@@ -569,5 +569,3 @@ def fetch_openmeteo_all_locations(
         forecast_days=forecast_days,
         now_utc=now_utc,
     )
-
-

@@ -319,29 +319,36 @@ def cmd_historical(
                 ).isoformat()
                 if om_end_date != end_date:
                     typer.echo(f"Open-Meteo: end_date cappato a {om_end_date} (archivio arriva a oggi-2gg)")
-                results_all = fetch_openmeteo_historical_batch(
+
+                om_hist_total = 0
+
+                def _on_hist(records: list[dict]) -> None:
+                    nonlocal om_hist_total
+                    om_hist_total += db.upsert_forecasts(records)
+
+                fetch_openmeteo_historical_batch(
                     locations=locations,
                     start_date=start_date,
                     end_date=om_end_date,
                     models=om_model or None,
+                    on_records=_on_hist,
                 )
-                for model_results in results_all.values():
-                    for records in model_results.values():
-                        if records:
-                            om_total += db.upsert_forecasts(records)
-                typer.echo(f"Open-Meteo historical: {om_total} record inseriti")
+                om_total += om_hist_total
+                typer.echo(f"Open-Meteo historical: {om_hist_total} record inseriti")
 
                 typer.echo("\n--- Open-Meteo multilead (batch) ---")
-                ml_results = fetch_openmeteo_multilead_batch(
+                ml_total = 0
+
+                def _on_ml(records: list[dict]) -> None:
+                    nonlocal ml_total
+                    ml_total += db.upsert_forecasts(records)
+
+                fetch_openmeteo_multilead_batch(
                     locations=locations,
                     start_date=start_date,
                     end_date=om_end_date,
+                    on_records=_on_ml,
                 )
-                ml_total = 0
-                for model_results in ml_results.values():
-                    for records in model_results.values():
-                        if records:
-                            ml_total += db.upsert_forecasts(records)
                 om_total += ml_total
                 typer.echo(f"Open-Meteo multilead: {ml_total} record inseriti")
 
@@ -413,29 +420,35 @@ def cmd_daily(
 
             if run_om:
                 # OM historical: lead=0 (best-estimate retroattivo)
-                results_all = fetch_openmeteo_historical_batch(
+                om_hist_total = 0
+
+                def _on_hist_daily(records: list[dict]) -> None:
+                    nonlocal om_hist_total
+                    om_hist_total += db.upsert_forecasts(records)
+
+                fetch_openmeteo_historical_batch(
                     locations=locations,
                     start_date=date,
                     end_date=date,
                     models=om_model or None,
+                    on_records=_on_hist_daily,
                 )
-                for model_results in results_all.values():
-                    for records in model_results.values():
-                        if records:
-                            om_total += db.upsert_forecasts(records)
-                logger.info(f"daily Open-Meteo historical: {om_total} record")
+                om_total += om_hist_total
+                logger.info(f"daily Open-Meteo historical: {om_hist_total} record")
 
                 # OM multilead: lead 24-168h (cosa i modelli prevedevano per ieri)
-                ml_results = fetch_openmeteo_multilead_batch(
+                ml_total = 0
+
+                def _on_ml_daily(records: list[dict]) -> None:
+                    nonlocal ml_total
+                    ml_total += db.upsert_forecasts(records)
+
+                fetch_openmeteo_multilead_batch(
                     locations=locations,
                     start_date=date,
                     end_date=date,
+                    on_records=_on_ml_daily,
                 )
-                ml_total = 0
-                for model_results in ml_results.values():
-                    for records in model_results.values():
-                        if records:
-                            ml_total += db.upsert_forecasts(records)
                 om_total += ml_total
                 logger.info(f"daily Open-Meteo multilead: {ml_total} record")
 
