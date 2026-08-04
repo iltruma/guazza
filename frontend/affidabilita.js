@@ -929,4 +929,5 @@ document.getElementById('aff-winner-temp-card')?.addEventListener('click', e => 
   renderHeaderMeta();
   renderLocationTabs();
   renderAll();
+  twemoji.parse(document.querySelector('.g-header'), { folder: 'svg', ext: '.svg' });
 })();

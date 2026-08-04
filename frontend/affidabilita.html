@@ -10,424 +10,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous" defer></script>
   <link rel="stylesheet" href="style.css">
 
-  <style>
-    /* ── Ranking hero ────────────────────────────────────────────── */
-    .aff-ranking {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-    }
-
-    .aff-ranking__header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 16px 20px 14px;
-      border-bottom: 1px solid var(--border-1);
-      flex-wrap: wrap;
-    }
-    @media (min-width: 768px) {
-      .aff-ranking__header { padding: 16px 24px 14px; }
-    }
-
-    .aff-ranking__title-group { display: flex; flex-direction: column; gap: 2px; }
-
-    .aff-ranking__toggle {
-      display: inline-flex;
-      background: var(--surface-2);
-      border: 1px solid var(--border-1);
-      border-radius: var(--r-md);
-      padding: 2px;
-      flex-shrink: 0;
-    }
-    .aff-ranking__toggle-btn {
-      font-family: var(--ff-mono);
-      font-size: 0.6875rem;
-      font-weight: 500;
-      color: var(--text-3);
-      background: transparent;
-      border: none;
-      border-radius: var(--r-sm);
-      padding: 4px 12px;
-      min-height: 28px;
-      cursor: pointer;
-      transition: color .15s, background .15s;
-    }
-    .aff-ranking__toggle-btn.is-active {
-      color: var(--text-1);
-      background: var(--surface-1);
-    }
-
-    .aff-ranking__cards {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      padding: 16px 20px;
-    }
-    @media (min-width: 768px) {
-      .aff-ranking__cards { padding: 16px 24px; gap: 10px; }
-    }
-
-    .aff-rank-card {
-      flex: 1 1 140px;
-      min-width: 120px;
-      max-width: 220px;
-      background: var(--surface-2);
-      border: 1px solid var(--border-1);
-      border-radius: var(--r-lg);
-      padding: 12px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      position: relative;
-      transition: background var(--dur-fast) var(--ease-out);
-    }
-    .aff-rank-card:hover { background: var(--surface-3); }
-
-    /* Guazza card: accent border top */
-    .aff-rank-card--guazza {
-      background: rgba(107,127,212,0.07);
-      border-color: rgba(107,127,212,0.28);
-    }
-    .aff-rank-card--guazza:hover { background: rgba(107,127,212,0.12); }
-
-    /* Best model: verde */
-    .aff-rank-card--best {
-      border-color: rgba(52,211,153,0.28);
-    }
-
-    .aff-rank-card__badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-family: var(--ff-mono);
-      font-size: 0.5625rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.10em;
-      padding: 2px 7px;
-      border-radius: 999px;
-      align-self: flex-start;
-    }
-    .aff-rank-card__badge--guazza {
-      background: var(--accent-soft);
-      border: 1px solid var(--accent-line);
-      color: var(--accent);
-    }
-    .aff-rank-card__badge--best {
-      background: var(--verde-bg);
-      border: 1px solid var(--verde-bd);
-      color: var(--verde);
-    }
-
-    .aff-rank-card__name {
-      font-family: var(--ff-sans);
-      font-size: 0.8125rem;
-      font-weight: 600;
-      color: var(--text-1);
-      line-height: 1.2;
-    }
-    .aff-rank-card--guazza .aff-rank-card__name { color: var(--accent); }
-
-    .aff-rank-card__mae {
-      font-family: var(--ff-mono);
-      font-size: 1.375rem;
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-      color: var(--text-1);
-      line-height: 1;
-    }
-
-    .aff-rank-card__rank {
-      font-family: var(--ff-mono);
-      font-size: 0.5625rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.10em;
-      color: var(--text-3);
-    }
-
-    .aff-rank-card__bar {
-      width: 100%;
-      height: 3px;
-      background: var(--border-1);
-      border-radius: 2px;
-      overflow: hidden;
-      margin-top: 4px;
-    }
-    .aff-rank-card__bar-fill {
-      height: 100%;
-      border-radius: 2px;
-      transition: width 0.5s var(--ease-out);
-    }
-    .aff-rank-card--guazza .aff-rank-card__bar-fill { background: var(--accent); }
-    .aff-rank-card--best  .aff-rank-card__bar-fill { background: var(--verde); }
-
-    .aff-ranking__caption {
-      padding: 0 20px 14px;
-      font-family: var(--ff-mono);
-      font-size: 0.5625rem;
-      line-height: 1.5;
-      color: var(--text-3);
-    }
-    @media (min-width: 768px) {
-      .aff-ranking__caption { padding: 0 24px 16px; }
-    }
-
-    /* ── MAE per orizzonte ───────────────────────────────────────── */
-    .aff-horizon {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-    }
-
-    .aff-horizon__header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 16px 20px 14px;
-      border-bottom: 1px solid var(--border-1);
-      flex-wrap: wrap;
-    }
-    @media (min-width: 768px) {
-      .aff-horizon__header { padding: 16px 24px 14px; }
-    }
-
-    .aff-horizon__title-group { display: flex; flex-direction: column; gap: 2px; }
-
-    .aff-horizon__legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px 16px;
-      align-items: center;
-      padding: 10px 20px 0;
-    }
-    @media (min-width: 768px) {
-      .aff-horizon__legend { padding: 10px 24px 0; }
-    }
-
-    .aff-horizon__chart-scroll {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    @media (max-width: 767px) {
-      .aff-horizon__canvas-wrap { min-width: 540px; }
-    }
-
-    .aff-horizon__canvas-wrap {
-      padding: 8px 8px 4px;
-      height: 260px;
-    }
-    @media (min-width: 768px) {
-      .aff-horizon__canvas-wrap { height: 300px; }
-    }
-
-    /* ── Rolling error chart ─────────────────────────────────────── */
-    .aff-rolling {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-    }
-
-    .aff-rolling__header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 16px 20px 14px;
-      border-bottom: 1px solid var(--border-1);
-      flex-wrap: wrap;
-    }
-    @media (min-width: 768px) {
-      .aff-rolling__header { padding: 16px 24px 14px; }
-    }
-
-    .aff-rolling__controls {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .aff-rolling__legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 16px;
-      align-items: center;
-      padding: 10px 20px 0;
-    }
-    @media (min-width: 768px) {
-      .aff-rolling__legend { padding: 10px 24px 0; }
-    }
-
-    .aff-rolling__chart-scroll {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    @media (max-width: 767px) {
-      .aff-rolling__canvas-wrap { min-width: 580px; }
-    }
-
-    .aff-rolling__canvas-wrap {
-      padding: 8px 8px 4px;
-      height: 260px;
-    }
-    @media (min-width: 768px) {
-      .aff-rolling__canvas-wrap { height: 300px; }
-    }
-
-    /* Legend items con dot colorato */
-    .aff-legend-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-family: var(--ff-mono);
-      font-size: 0.6rem;
-      color: var(--text-3);
-      white-space: nowrap;
-    }
-    .aff-legend-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .aff-legend-dash {
-      width: 12px;
-      height: 2px;
-      flex-shrink: 0;
-      border-top: 2px dashed currentColor;
-    }
-
-    /* Colori modelli */
-    .aff-legend-dot--guazza  { background: #6B7FD4; }
-    .aff-legend-dot--ecmwf   { background: #F97316; }
-    .aff-legend-dot--iconeu  { background: #34D399; }
-    .aff-legend-dot--arome   { background: #FBBF24; }
-    .aff-legend-dot--icon2i  { background: #A78BFA; }
-    .aff-legend-dot--nwp     { background: rgba(148,163,174,0.55); }
-
-    /* Section title group */
-    .aff-title { display: flex; flex-direction: column; gap: 2px; }
-    .aff-title__kicker {
-      font-family: var(--ff-mono);
-      font-size: 0.5625rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: var(--text-3);
-    }
-    .aff-title__main {
-      font-family: var(--ff-sans);
-      font-size: 0.9375rem;
-      font-weight: 600;
-      color: var(--text-1);
-      letter-spacing: -0.01em;
-    }
-    .aff-title__sub {
-      font-family: var(--ff-mono);
-      font-size: 0.5625rem;
-      color: var(--text-3);
-      margin-top: 1px;
-    }
-
-    /* ── Win Rate section ────────────────────────────────────────── */
-
-    /* Stacked bar quota vittorie — 100% orizzontale */
-    .aff-winrate {
-      padding: 14px 20px 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      border-bottom: 1px solid var(--border-1);
-    }
-    @media (min-width: 768px) {
-      .aff-winrate { padding: 14px 24px 10px; }
-    }
-
-    .aff-winrate__label {
-      font-family: var(--ff-mono);
-      font-size: 0.5625rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--text-3);
-    }
-
-    .aff-winrate__bar {
-      display: flex;
-      height: 20px;
-      border-radius: var(--r-sm);
-      overflow: hidden;
-      gap: 1px;
-    }
-
-    .aff-winrate__seg {
-      height: 100%;
-      min-width: 2px;
-      transition: opacity var(--dur-fast) var(--ease-out);
-      position: relative;
-    }
-    .aff-winrate__seg:hover { opacity: 0.82; }
-
-    .aff-winrate__legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px 14px;
-    }
-
-    .aff-winrate__legend-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-family: var(--ff-mono);
-      font-size: 0.5625rem;
-      color: var(--text-2);
-    }
-
-    .aff-winrate__legend-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .aff-winrate__legend-pct {
-      font-weight: 700;
-      color: var(--text-1);
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* Canvas area per i grafici giornalieri vittoria */
-    .aff-winner__chart-scroll {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    @media (max-width: 767px) {
-      .aff-winner__canvas-wrap { min-width: 560px; }
-    }
-
-    .aff-winner__canvas-wrap {
-      padding: 8px 8px 4px;
-      height: 180px;
-    }
-    @media (min-width: 768px) {
-      .aff-winner__canvas-wrap { height: 200px; }
-    }
-
-    /* Wet-day notice (nessun giorno piovoso nel periodo) */
-    .aff-wet-empty {
-      padding: 20px 24px;
-      font-family: var(--ff-mono);
-      font-size: 0.6875rem;
-      color: var(--text-3);
-      text-align: center;
-    }
-  </style>
 </head>
 
 <body>
@@ -462,15 +47,15 @@
 
     <!-- 1. RANKING COMPATTO (hero section) -->
     <section id="aff-ranking-card" class="g-card hidden">
-      <div class="aff-ranking__header">
+      <div class="g-card__header aff-ranking__header">
         <div class="aff-title">
-          <span class="aff-title__kicker">Ranking modelli · D+1</span>
+          <span class="g-section__kicker aff-title__kicker">Ranking modelli · D+1</span>
           <span class="aff-title__main">Chi sbaglia di meno?</span>
           <span id="ranking-sub" class="aff-title__sub"></span>
         </div>
-        <div class="aff-ranking__toggle" role="group" aria-label="Variabile ranking">
-          <button class="aff-ranking__toggle-btn is-active" data-var="tmax_c">T max</button>
-          <button class="aff-ranking__toggle-btn" data-var="tmin_c">T min</button>
+        <div class="aff-ranking__toggle g-skill__seg" role="group" aria-label="Variabile ranking">
+          <button class="aff-ranking__toggle-btn g-skill__seg-btn is-active" data-var="tmax_c">T max</button>
+          <button class="aff-ranking__toggle-btn g-skill__seg-btn" data-var="tmin_c">T min</button>
         </div>
       </div>
       <div id="ranking-cards" class="aff-ranking__cards" role="list"></div>
@@ -479,29 +64,29 @@
 
     <!-- 2. MAE PER ORIZZONTE D+0 → D+7 -->
     <section id="aff-horizon-card" class="g-card hidden">
-      <div class="aff-horizon__header">
+      <div class="g-card__header aff-horizon__header">
         <div class="aff-title">
-          <span class="aff-title__kicker">Errore per orizzonte · D+0 → D+7</span>
+          <span class="g-section__kicker aff-title__kicker">Errore per orizzonte · D+0 → D+7</span>
           <span class="aff-title__main">Guazza migliora col tempo?</span>
           <span id="horizon-sub" class="aff-title__sub"></span>
         </div>
-        <div class="aff-ranking__toggle" role="group" aria-label="Variabile orizzonte">
-          <button class="aff-ranking__toggle-btn is-active" data-var="tmax_c">T max</button>
-          <button class="aff-ranking__toggle-btn" data-var="tmin_c">T min</button>
+        <div class="aff-ranking__toggle g-skill__seg" role="group" aria-label="Variabile orizzonte">
+          <button class="aff-ranking__toggle-btn g-skill__seg-btn is-active" data-var="tmax_c">T max</button>
+          <button class="aff-ranking__toggle-btn g-skill__seg-btn" data-var="tmin_c">T min</button>
         </div>
       </div>
       <div class="aff-horizon__legend" id="horizon-legend" aria-hidden="true">
-        <span class="aff-legend-item">
-          <span class="aff-legend-dot aff-legend-dot--guazza"></span>Guazza ML
+        <span class="g-chart-legend__item aff-legend-item">
+          <span class="g-chart-legend__dot aff-legend-dot aff-legend-dot--guazza"></span>Guazza ML
         </span>
-        <span class="aff-legend-item" style="color:var(--text-3)">
+        <span class="g-chart-legend__item aff-legend-item" style="color:var(--text-3)">
           <span class="aff-legend-dash" style="color:rgba(148,163,174,0.55)"></span>NWP consensus
         </span>
-        <span class="aff-legend-item" style="font-size:0.5rem;color:var(--text-3)">
+        <span class="g-chart-legend__item aff-legend-item" style="font-size:0.5rem;color:var(--text-3)">
           Più in basso = più accurato
         </span>
       </div>
-      <div class="aff-horizon__chart-scroll">
+      <div class="g-chart-scroll aff-horizon__chart-scroll">
         <div class="aff-horizon__canvas-wrap">
           <canvas id="aff-horizon-chart"
             aria-label="MAE Guazza vs consensus NWP per orizzonte da D+0 a D+7"></canvas>
@@ -512,18 +97,18 @@
 
     <!-- 3. ERRORE ROLLING NEL TEMPO -->
     <section id="aff-rolling-card" class="g-card hidden">
-      <div class="aff-rolling__header">
+      <div class="g-card__header aff-rolling__header">
         <div class="aff-title">
-          <span class="aff-title__kicker">Errore nel tempo · lead 24h</span>
+          <span class="g-section__kicker aff-title__kicker">Errore nel tempo · lead 24h</span>
           <span class="aff-title__main">I modelli migliorano?</span>
           <span id="rolling-sub" class="aff-title__sub"></span>
         </div>
-        <div class="aff-rolling__controls">
+        <div class="aff-rolling__controls" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <!-- Toggle variabile -->
-          <div class="aff-ranking__toggle" role="group" aria-label="Variabile rolling">
-            <button class="aff-ranking__toggle-btn is-active" data-var="tmax_c">T max</button>
-            <button class="aff-ranking__toggle-btn" data-var="tmin_c">T min</button>
-            <button class="aff-ranking__toggle-btn" data-var="precip_mm">Precip</button>
+          <div class="aff-ranking__toggle g-skill__seg" role="group" aria-label="Variabile rolling">
+            <button class="aff-ranking__toggle-btn g-skill__seg-btn is-active" data-var="tmax_c">T max</button>
+            <button class="aff-ranking__toggle-btn g-skill__seg-btn" data-var="tmin_c">T min</button>
+            <button class="aff-ranking__toggle-btn g-skill__seg-btn" data-var="precip_mm">Precip</button>
           </div>
           <!-- Toggle finestra -->
           <div class="g-skill__seg" role="group" aria-label="Finestra temporale">
@@ -534,26 +119,26 @@
         </div>
       </div>
       <div class="aff-rolling__legend" id="rolling-legend" aria-hidden="true">
-        <span class="aff-legend-item" style="color:var(--text-1);font-weight:600">
-          <span class="aff-legend-dot aff-legend-dot--guazza"></span>Guazza ML
+        <span class="g-chart-legend__item aff-legend-item" style="color:var(--text-1);font-weight:600">
+          <span class="g-chart-legend__dot aff-legend-dot aff-legend-dot--guazza"></span>Guazza ML
         </span>
-        <span class="aff-legend-item">
-          <span class="aff-legend-dot aff-legend-dot--ecmwf"></span>ECMWF IFS
+        <span class="g-chart-legend__item aff-legend-item">
+          <span class="g-chart-legend__dot aff-legend-dot aff-legend-dot--ecmwf"></span>ECMWF IFS
         </span>
-        <span class="aff-legend-item">
-          <span class="aff-legend-dot aff-legend-dot--iconeu"></span>ICON-EU
+        <span class="g-chart-legend__item aff-legend-item">
+          <span class="g-chart-legend__dot aff-legend-dot aff-legend-dot--iconeu"></span>ICON-EU
         </span>
-        <span class="aff-legend-item">
-          <span class="aff-legend-dot aff-legend-dot--arome"></span>AROME
+        <span class="g-chart-legend__item aff-legend-item">
+          <span class="g-chart-legend__dot aff-legend-dot aff-legend-dot--arome"></span>AROME
         </span>
-        <span class="aff-legend-item">
-          <span class="aff-legend-dot aff-legend-dot--icon2i"></span>ICON-2I
+        <span class="g-chart-legend__item aff-legend-item">
+          <span class="g-chart-legend__dot aff-legend-dot aff-legend-dot--icon2i"></span>ICON-2I
         </span>
-        <span class="aff-legend-item" style="font-size:0.5rem;color:var(--text-3)">
+        <span class="g-chart-legend__item aff-legend-item" style="font-size:0.5rem;color:var(--text-3)">
           Errore giornaliero |forecast − osservato|
         </span>
       </div>
-      <div class="aff-rolling__chart-scroll">
+      <div class="g-chart-scroll aff-rolling__chart-scroll">
         <div class="aff-rolling__canvas-wrap">
           <canvas id="aff-rolling-chart"
             aria-label="Errore assoluto giornaliero per ogni modello nel tempo"></canvas>
@@ -564,15 +149,15 @@
 
     <!-- 4. CHI VINCE SULLA TEMPERATURA? -->
     <section id="aff-winner-temp-card" class="g-card hidden">
-      <div class="aff-rolling__header">
+      <div class="g-card__header aff-rolling__header">
         <div class="aff-title">
-          <span class="aff-title__kicker">Vittorie giornaliere · Temperatura · lead 24h</span>
+          <span class="g-section__kicker aff-title__kicker">Vittorie giornaliere · Temperatura · lead 24h</span>
           <span class="aff-title__main">Chi vince sulla temperatura?</span>
           <span id="winner-temp-sub" class="aff-title__sub"></span>
         </div>
-        <div class="aff-ranking__toggle" role="group" aria-label="Variabile temperatura vittorie">
-          <button class="aff-ranking__toggle-btn is-active" data-var="tmax_c">T max</button>
-          <button class="aff-ranking__toggle-btn" data-var="tmin_c">T min</button>
+        <div class="aff-ranking__toggle g-skill__seg" role="group" aria-label="Variabile temperatura vittorie">
+          <button class="aff-ranking__toggle-btn g-skill__seg-btn is-active" data-var="tmax_c">T max</button>
+          <button class="aff-ranking__toggle-btn g-skill__seg-btn" data-var="tmin_c">T min</button>
         </div>
       </div>
       <!-- Win rate stacked bar -->
@@ -582,7 +167,7 @@
         <div id="winner-temp-winrate-legend" class="aff-winrate__legend"></div>
       </div>
       <!-- Barre giornaliere: colore = vincitore, altezza = margine vittoria -->
-      <div class="aff-winner__chart-scroll">
+      <div class="g-chart-scroll aff-winner__chart-scroll">
         <div class="aff-winner__canvas-wrap">
           <canvas id="aff-winner-temp-chart"
             aria-label="Vittorie giornaliere sulla temperatura: colore = modello vincitore, altezza = margine di vittoria"></canvas>
@@ -593,9 +178,9 @@
 
     <!-- 5. CHI VINCE SULLE PRECIPITAZIONI? -->
     <section id="aff-winner-precip-card" class="g-card hidden">
-      <div class="aff-rolling__header">
+      <div class="g-card__header aff-rolling__header">
         <div class="aff-title">
-          <span class="aff-title__kicker">Vittorie giornaliere · Precipitazioni · lead 24h</span>
+          <span class="g-section__kicker aff-title__kicker">Vittorie giornaliere · Precipitazioni · lead 24h</span>
           <span class="aff-title__main">Chi vince sulla pioggia?</span>
           <span id="winner-precip-sub" class="aff-title__sub"></span>
         </div>
@@ -608,7 +193,7 @@
       </div>
       <!-- Barre giornaliere wet days -->
       <div id="winner-precip-chart-area">
-        <div class="aff-winner__chart-scroll">
+        <div class="g-chart-scroll aff-winner__chart-scroll">
           <div class="aff-winner__canvas-wrap">
             <canvas id="aff-winner-precip-chart"
               aria-label="Vittorie giornaliere sulle precipitazioni: solo wet days, colore = modello vincitore"></canvas>

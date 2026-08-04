@@ -40,6 +40,7 @@
   --warm-bg: rgba(249,115,22,0.08);
   --cold: #60A5FA;
   --cold-bg: rgba(96,165,250,0.08);
+  --viola: #A78BFA;
 
   /* Chart series — full palette nominata per il data viz (vedi DESIGN.md §Chart) */
   --chart-temp:   #F97316;             /* = --warm */
@@ -112,6 +113,9 @@ input[type="range"]:focus-visible {
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .hidden { display: none !important; }
+
+/* Utility */
+.g-title-group { display: flex; flex-direction: column; gap: 2px; }
 
 /* === Twemoji === */
 img.emoji {
@@ -1748,3 +1752,343 @@ img.emoji {
 
 /* [data-tip] clickable indicator */
 [data-tip] { cursor: pointer; }
+
+/* ── affidabilita.html ───────────────────────────────────────────────────── */
+
+/* ── Ranking hero ────────────────────────────────────────────── */
+.aff-ranking {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Override: g-card__header non ha flex-wrap */
+.aff-ranking__header { flex-wrap: wrap; }
+
+/* Overrides rispetto a g-skill__seg / g-skill__seg-btn */
+.aff-ranking__toggle-btn {
+  font-family: var(--ff-mono);
+  font-size: 0.6875rem;
+  min-height: 28px;
+  padding: 4px 12px;
+}
+
+.aff-ranking__cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 20px;
+}
+@media (min-width: 768px) {
+  .aff-ranking__cards { padding: 16px 24px; gap: 10px; }
+}
+
+.aff-rank-card {
+  flex: 1 1 140px;
+  min-width: 120px;
+  max-width: 220px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--r-lg);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.aff-rank-card:hover { background: var(--surface-3); }
+
+/* Guazza card: accent border top */
+.aff-rank-card--guazza {
+  background: rgba(107,127,212,0.07);
+  border-color: rgba(107,127,212,0.28);
+}
+.aff-rank-card--guazza:hover { background: rgba(107,127,212,0.12); }
+
+/* Best model: verde */
+.aff-rank-card--best {
+  border-color: rgba(52,211,153,0.28);
+}
+
+.aff-rank-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--ff-mono);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  align-self: flex-start;
+}
+.aff-rank-card__badge--guazza {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+}
+.aff-rank-card__badge--best {
+  background: var(--verde-bg);
+  border: 1px solid var(--verde-bd);
+  color: var(--verde);
+}
+
+.aff-rank-card__name {
+  font-family: var(--ff-sans);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-1);
+  line-height: 1.2;
+}
+.aff-rank-card--guazza .aff-rank-card__name { color: var(--accent); }
+
+.aff-rank-card__mae {
+  font-family: var(--ff-mono);
+  font-size: 1.375rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+  line-height: 1;
+}
+
+.aff-rank-card__rank {
+  font-family: var(--ff-mono);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-3);
+}
+
+.aff-rank-card__bar {
+  width: 100%;
+  height: 3px;
+  background: var(--border-1);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.aff-rank-card__bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s var(--ease-out);
+}
+.aff-rank-card--guazza .aff-rank-card__bar-fill { background: var(--accent); }
+.aff-rank-card--best  .aff-rank-card__bar-fill { background: var(--verde); }
+
+.aff-ranking__caption {
+  padding: 0 20px 14px;
+  font-family: var(--ff-mono);
+  font-size: 0.5625rem;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+@media (min-width: 768px) {
+  .aff-ranking__caption { padding: 0 24px 16px; }
+}
+
+/* ── MAE per orizzonte ───────────────────────────────────────── */
+.aff-horizon {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Override: align-items flex-start (titolo multiriga) + flex-wrap */
+.aff-horizon__header {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.aff-horizon__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+  padding: 10px 20px 0;
+}
+@media (min-width: 768px) {
+  .aff-horizon__legend { padding: 10px 24px 0; }
+}
+
+@media (max-width: 767px) {
+  .aff-horizon__canvas-wrap { min-width: 540px; }
+}
+
+.aff-horizon__canvas-wrap {
+  padding: 8px 8px 4px;
+  height: 260px;
+}
+@media (min-width: 768px) {
+  .aff-horizon__canvas-wrap { height: 300px; }
+}
+
+/* ── Rolling error chart ─────────────────────────────────────── */
+.aff-rolling {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Override: g-card__header non ha flex-wrap */
+.aff-rolling__header { flex-wrap: wrap; }
+
+.aff-rolling__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 10px 20px 0;
+}
+@media (min-width: 768px) {
+  .aff-rolling__legend { padding: 10px 24px 0; }
+}
+
+@media (max-width: 767px) {
+  .aff-rolling__canvas-wrap { min-width: 580px; }
+}
+
+.aff-rolling__canvas-wrap {
+  padding: 8px 8px 4px;
+  height: 260px;
+}
+@media (min-width: 768px) {
+  .aff-rolling__canvas-wrap { height: 300px; }
+}
+
+/* Legend items con dot colorato — overrides su g-chart-legend__item / __dot */
+.aff-legend-item {
+  font-size: 0.6rem;
+  white-space: nowrap;
+}
+.aff-legend-dot {
+  width: 7px;
+  height: 7px;
+}
+.aff-legend-dash {
+  width: 12px;
+  height: 2px;
+  flex-shrink: 0;
+  border-top: 2px dashed currentColor;
+}
+
+/* Colori modelli */
+.aff-legend-dot--guazza  { background: #6B7FD4; }
+.aff-legend-dot--ecmwf   { background: #F97316; }
+.aff-legend-dot--iconeu  { background: #34D399; }
+.aff-legend-dot--arome   { background: #FBBF24; }
+.aff-legend-dot--icon2i  { background: var(--viola); }
+.aff-legend-dot--nwp     { background: rgba(148,163,174,0.55); }
+
+/* Section title group */
+.aff-title { display: flex; flex-direction: column; gap: 2px; }
+/* Override rispetto a g-section__kicker: no padding, inline, size leggermente diverso */
+.aff-title__kicker {
+  font-size: 0.5625rem;
+  padding: 0;
+  display: inline;
+}
+.aff-title__main {
+  font-family: var(--ff-sans);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-1);
+  letter-spacing: -0.01em;
+}
+.aff-title__sub {
+  font-family: var(--ff-mono);
+  font-size: 0.5625rem;
+  color: var(--text-3);
+  margin-top: 1px;
+}
+
+/* ── Win Rate section ────────────────────────────────────────── */
+
+/* Stacked bar quota vittorie — 100% orizzontale */
+.aff-winrate {
+  padding: 14px 20px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-1);
+}
+@media (min-width: 768px) {
+  .aff-winrate { padding: 14px 24px 10px; }
+}
+
+.aff-winrate__label {
+  font-family: var(--ff-mono);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+
+.aff-winrate__bar {
+  display: flex;
+  height: 20px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  gap: 1px;
+}
+
+.aff-winrate__seg {
+  height: 100%;
+  min-width: 2px;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  position: relative;
+}
+.aff-winrate__seg:hover { opacity: 0.82; }
+
+.aff-winrate__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.aff-winrate__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--ff-mono);
+  font-size: 0.5625rem;
+  color: var(--text-2);
+}
+
+.aff-winrate__legend-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.aff-winrate__legend-pct {
+  font-weight: 700;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Canvas area per i grafici giornalieri vittoria */
+@media (max-width: 767px) {
+  .aff-winner__canvas-wrap { min-width: 560px; }
+}
+
+.aff-winner__canvas-wrap {
+  padding: 8px 8px 4px;
+  height: 180px;
+}
+@media (min-width: 768px) {
+  .aff-winner__canvas-wrap { height: 200px; }
+}
+
+/* Wet-day notice (nessun giorno piovoso nel periodo) */
+.aff-wet-empty {
+  padding: 20px 24px;
+  font-family: var(--ff-mono);
+  font-size: 0.6875rem;
+  color: var(--text-3);
+  text-align: center;
+}
