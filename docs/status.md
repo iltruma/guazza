@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-08-03 (v0.13.0 → v0.14.0-dev)
+> Aggiornato: 2026-08-04 (v0.13.0 → v0.14.0-dev)
 > Storico sprint → `CHANGELOG.md` · Decisioni → `docs/decisions.md` · Workaround attivi → `docs/known_issues.md`
 
 ## Stato
@@ -92,6 +92,22 @@ Richiede riesecuzione su DB produzione (feature_daily rebuild + CV). Misurare Δ
 - `predict`/`predict_frame`: `out["rain_clf"]["wet_reg"]` con anti-crossing e clamp ≥ 0
 - `walk_forward_cv`: metriche `mae_wet`/`skill_wet_mae` su test wet-only
 - `docs/contract.md`: aggiunto `precip_mm.wet_reg` al JSON contract
+
+---
+
+## Sessione 2026-08-04 — Ottimizzazione chunk size ingestion Open-Meteo
+
+### Commit
+
+- **fc6ef7f** — `_DEFAULT_CHUNK_DAYS` 180 → 365 (dimezza call historical)
+- **9333c05** — `_HIGH_RES_CHUNK_DAYS` 90 → 365 (allineato, nessun timeout empirico su AROME/ICON-2I)
+- **cca2c9a** — Refactor chunk size da budget-celle (`_OM_CELL_BUDGET = 483_840`): sostituisce le 3 costanti magiche con `_chunk_days(n_vars)` che calcola il chunk ottimale per modello e tipo di fetch. Chunk risultanti: historical 474gg, ECMWF multilead 120gg (fix root cause 429 Minutely), ICON-EU 211gg, AROME 845gg, ICON-2I 423gg.
+
+### Note tecniche
+
+- Open-Meteo **non espone header di rate-limit** nelle risposte normali (nemmeno `Retry-After` sul 429). Tracking locale del consumo non realizzabile via API. Il budget-celle è l'unico meccanismo affidabile lato client.
+- Sleep fisso `_OM_CHUNK_SLEEP_S = 5.0` mantenuto: con il nuovo budget-celle il rischio 429 Minutely è già strutturalmente ridotto; sleep adattivo non prioritario senza header di feedback.
+- `_HIGH_RES_MODELS` rimosso: il budget-celle si adatta automaticamente al numero di variabili per modello, rendendo la distinzione high-res/default obsoleta.
 
 ### Prossimi candidati (non implementati)
 - **Esporre `wet_reg` nel frontend** — card "se piove, quanti mm?" distinta da `prob_rain`
