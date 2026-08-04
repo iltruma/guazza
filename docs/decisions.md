@@ -617,3 +617,49 @@ D-022 (allertameteo) = allerte ufficiali 24-48h ahead. Insieme coprono
 "sta arrivando" + "è previsto".
 
 **Stato**: accettata, da implementare (coda `status.md` §D-022).
+
+---
+
+## D-023 — Fold 1-2 esclusi dalla CV: benchmark eterogeneo, non dati mancanti
+
+**Contesto**: La walk-forward CV a 4 fold mostra fold 1-2 (2023-2024) con
+`lead_time_h=0` per tutti i modelli tranne ICON-EU. Il multilead storico
+(`previous_dayN`) parte da nov 2022 per ICON-EU, feb 2024 per ECMWF IFS 0.25°,
+gen 2024 per AROME France, apr 2025 per ICON-2I.
+
+**Il problema non è tecnico ma metodologico**: fold 1-2 misurano skill vs
+ICON-EU singolo (unico modello con multilead pre-2024); fold 3-4 misurano skill
+vs consensus ensemble a 4 modelli. L'ensemble a 4 modelli è una baseline più
+forte (error averaging) → aggregare i fold produce una metrica non interpretabile
+che mischia benchmark eterogenei.
+
+Nota: i dati ICON-EU multilead 2022-2023 **esistono nel DB** e vengono già usati
+nel training set (`train_all` usa tutto `features_daily`). Il problema riguarda
+solo la *valutazione CV*, non il fitting del modello.
+
+**Opzioni considerate**:
+1. Scaricare ECMWF IFS 0.4° (da nov 2022): collineare con 0.25° + distribution
+   shift tra cicli ECMWF (47R2→50R1) → scartato
+2. Reintrodurre GFS (da mar 2021): rimosso per KI-025 (6.7% null) → scartato
+3. ARPEGE Europe come 5° modello storico: collinearità con ECMWF, cascade su 8
+   blocchi ensemble in features.py, ensemble ancora diverso da prod → scartato
+4. Missingness indicator (`has_ecmwf`, `has_arome`, `has_icon2i`): valido
+   concettualmente se il training include pre-2024; marginale se il training
+   parte da quando l'ensemble è stabile. Riaprire quando si decide la finestra
+   temporale del training definitivo.
+5. Script `analysis/` separato "skill vs ICON-EU singolo 2022-2023": opzionale
+   per il case study, zero impatto su schema/modello.
+
+**Decisione**: riportare solo fold 3-4 come rappresentativi del sistema in
+produzione. Wording canonico per il case study:
+> "Walk-forward CV su 24 mesi (ott 2024 – ago 2026) con ensemble multilead
+> parziale. Fold precedenti esclusi: archivio `previous_dayN` Open-Meteo
+> disponibile solo da 2024 per ECMWF/AROME (ICON-EU da nov 2022), rendendo
+> il benchmark non comparabile con il regime operativo a 4 modelli."
+
+**Conseguenze**:
+- La claim di skill è conservativa (baseline ensemble più forte dei fold legacy)
+- Il sistema continua ad addestrarsi su tutto `features_daily` incluso il pre-2024
+- La nota di esclusione è obbligatoria per onestà scientifica nel case study
+
+**Stato**: accettata (sessione 2026-08-04, council multi-modello unanime).
