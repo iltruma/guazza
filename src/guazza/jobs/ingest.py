@@ -322,7 +322,7 @@ def cmd_historical(
 
                 om_hist_total = 0
 
-                def _on_hist(records: list[dict]) -> None:
+                def _on_hist(records: list[dict[str, Any]]) -> None:
                     nonlocal om_hist_total
                     om_hist_total += db.upsert_forecasts(records)
 
@@ -339,7 +339,7 @@ def cmd_historical(
                 typer.echo("\n--- Open-Meteo multilead (batch) ---")
                 ml_total = 0
 
-                def _on_ml(records: list[dict]) -> None:
+                def _on_ml(records: list[dict[str, Any]]) -> None:
                     nonlocal ml_total
                     ml_total += db.upsert_forecasts(records)
 
@@ -422,7 +422,7 @@ def cmd_daily(
                 # OM historical: lead=0 (best-estimate retroattivo)
                 om_hist_total = 0
 
-                def _on_hist_daily(records: list[dict]) -> None:
+                def _on_hist_daily(records: list[dict[str, Any]]) -> None:
                     nonlocal om_hist_total
                     om_hist_total += db.upsert_forecasts(records)
 
@@ -439,7 +439,7 @@ def cmd_daily(
                 # OM multilead: lead 24-168h (cosa i modelli prevedevano per ieri)
                 ml_total = 0
 
-                def _on_ml_daily(records: list[dict]) -> None:
+                def _on_ml_daily(records: list[dict[str, Any]]) -> None:
                     nonlocal ml_total
                     ml_total += db.upsert_forecasts(records)
 

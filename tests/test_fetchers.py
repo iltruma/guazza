@@ -18,10 +18,14 @@ from guazza.fetch_netatmo import (
     save_netatmo_to_db,
 )
 from guazza.fetch_openmeteo import (
+    _discard_records,
+    _fetch_one_model_historical,
+    _fetch_one_model_multilead,
     _infer_ts_run,
     _multilead_hourly_params,
     _parse_om_multilead,
     _parse_om_response,
+    fetch_openmeteo_historical_batch,
 )
 from guazza.fetch_sir import fetch_sir_historical, fetch_sir_realtime
 from guazza.storage import DuckDBClient
@@ -905,4 +909,141 @@ def test_fetch_sir_bulk_realtime_handles_offline_station(monkeypatch: Any) -> No
     results = fetch_sir_bulk_realtime({"TOS01000001"})
     assert "TOS01000001" in results
     assert results["TOS01000001"]["temp_c"] is None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Open-Meteo — batch historical/multilead: callback e serializzazione
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Risposta mock multilead per ecmwf_ifs (max_n=7): 1 ora valida, 2 lead
+# (day1 e day2) per tenere il mock piccolo. I lead rimasti (3-7) non sono
+# definiti → il parser li salta (all-None).
+_OM_MULTILEAD_MOCK: dict[str, Any] = {
+    "latitude": 43.76,
+    "longitude": 11.19,
+    "timezone": "UTC",
+    "hourly": {
+        "time": ["2026-05-20T12:00"],
+        "temperature_2m_previous_day1": [22.0],
+        "precipitation_previous_day1": [0.0],
+        "relative_humidity_2m_previous_day1": [55.0],
+        "wind_speed_10m_previous_day1": [2.5],
+        "temperature_2m_previous_day2": [21.0],
+        "precipitation_previous_day2": [0.0],
+        "relative_humidity_2m_previous_day2": [58.0],
+        "wind_speed_10m_previous_day2": [2.0],
+        # day3-day7: assenti → tutti None → saltati dal parser
+    },
+}
+
+
+def test_fetch_one_model_historical_calls_on_records_per_chunk() -> None:
+    """on_records viene chiamato una volta per chunk (2 chunk → 2 chiamate)."""
+    chunks = [("2026-05-01", "2026-05-03"), ("2026-05-04", "2026-05-06")]
+    loc_ids = ["loc_a"]
+    lats = [43.8]
+    lons = [11.1]
+
+    collected: list[list[dict[str, Any]]] = []
+
+    with (
+        patch("guazza.fetch_openmeteo._fetch_om_json_historical", return_value=_OM_HISTORICAL_MOCK),
+        patch("time.sleep"),
+    ):
+        _fetch_one_model_historical(
+            "ecmwf_ifs", chunks, loc_ids, lats, lons,
+            on_records=lambda recs: collected.append(recs),
+        )
+
+    assert len(collected) == 2, f"attesi 2 call, ricevuti {len(collected)}"
+    for call_recs in collected:
+        assert len(call_recs) > 0, "ogni chunk deve produrre almeno un record"
+
+
+def test_fetch_one_model_historical_on_records_none_does_not_raise() -> None:
+    """_discard_records come on_records non solleva eccezioni."""
+    chunks = [("2026-05-01", "2026-05-01")]
+    loc_ids = ["loc_a"]
+    lats = [43.8]
+    lons = [11.1]
+
+    with (
+        patch("guazza.fetch_openmeteo._fetch_om_json_historical", return_value=_OM_HISTORICAL_MOCK),
+        patch("time.sleep"),
+    ):
+        _fetch_one_model_historical(
+            "ecmwf_ifs", chunks, loc_ids, lats, lons,
+            on_records=_discard_records,
+        )
+
+
+def test_fetch_openmeteo_historical_batch_models_in_series() -> None:
+    """2 modelli × 1 giorno (1 chunk) → 2 chiamate HTTP, on_records ≥ 2 volte."""
+    locations: dict[str, Any] = {
+        "loc_a": {"lat": 43.8, "lon": 11.1},
+        "loc_b": {"lat": 43.9, "lon": 11.2},
+    }
+    models = ["ecmwf_ifs", "icon_eu"]
+    # 2 location → risposta lista
+    mock_response = [_OM_HISTORICAL_MOCK, _OM_HISTORICAL_MOCK]
+
+    on_records_calls: list[list[dict[str, Any]]] = []
+
+    with (
+        patch("guazza.fetch_openmeteo._fetch_om_json_historical", return_value=mock_response) as mock_fetch,
+        patch("time.sleep"),
+    ):
+        fetch_openmeteo_historical_batch(
+            locations, "2026-05-01", "2026-05-01",
+            models=models,
+            on_records=lambda recs: on_records_calls.append(recs),
+        )
+
+    assert mock_fetch.call_count == 2, (
+        f"attese 2 chiamate HTTP (1 per modello × 1 chunk), ricevute {mock_fetch.call_count}"
+    )
+    assert len(on_records_calls) >= 2, (
+        f"on_records deve essere chiamato almeno 2 volte (una per modello), "
+        f"ricevuto {len(on_records_calls)}"
+    )
+
+
+def test_fetch_openmeteo_historical_batch_no_on_records() -> None:
+    """fetch_openmeteo_historical_batch senza on_records non solleva eccezioni."""
+    locations: dict[str, Any] = {"loc_a": {"lat": 43.8, "lon": 11.1}}
+
+    with (
+        patch("guazza.fetch_openmeteo._fetch_om_json_historical", return_value=_OM_HISTORICAL_MOCK),
+        patch("time.sleep"),
+    ):
+        fetch_openmeteo_historical_batch(
+            locations, "2026-05-01", "2026-05-01",
+            models=["ecmwf_ifs"],
+        )
+
+
+def test_fetch_one_model_multilead_calls_on_records() -> None:
+    """_fetch_one_model_multilead con ecmwf_ifs chiama on_records e produce lead 24h/48h."""
+    chunks = [("2026-05-20", "2026-05-20")]
+    loc_ids = ["loc_a"]
+    lats = [43.8]
+    lons = [11.1]
+
+    collected: list[list[dict[str, Any]]] = []
+
+    with (
+        patch("guazza.fetch_openmeteo._fetch_om_json_historical", return_value=_OM_MULTILEAD_MOCK),
+        patch("time.sleep"),
+    ):
+        _fetch_one_model_multilead(
+            "ecmwf_ifs", chunks, loc_ids, lats, lons,
+            on_records=lambda recs: collected.append(recs),
+        )
+
+    assert len(collected) >= 1, "on_records deve essere chiamato almeno una volta"
+    all_records = [r for batch in collected for r in batch]
+    lead_values = {r["lead_time_h"] for r in all_records}
+    # day1 → 24h, day2 → 48h (le uniche definite nel mock)
+    assert 24 in lead_values, f"atteso lead 24h, trovati {lead_values}"
+    assert 48 in lead_values, f"atteso lead 48h, trovati {lead_values}"
 

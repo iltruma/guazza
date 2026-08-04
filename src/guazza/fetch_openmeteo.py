@@ -95,6 +95,10 @@ _OM_CHUNK_SLEEP_S = 5.0
 _OnRecords = Callable[[list[dict[str, Any]]], None]
 
 
+def _discard_records(_: list[dict[str, Any]]) -> None:
+    """Callback no-op: scarta i record senza scriverli (usato per dry-run/test)."""
+
+
 def _infer_ts_run(model: str, now_utc: datetime) -> datetime:
     """Stima ts_run = ultimo run completato prima di now_utc per il modello dato.
 
@@ -398,7 +402,7 @@ def fetch_openmeteo_historical_batch(
     if models is None:
         models = OM_MODELS
     if on_records is None:
-        on_records = lambda _: None  # noqa: E731
+        on_records = _discard_records
     _run_historical_model_batch(
         models, locations, start_date, end_date,
         _fetch_one_model_historical, on_records, "OM historical batch",
@@ -549,7 +553,7 @@ def fetch_openmeteo_multilead_batch(
     if models is None:
         models = [m for m in OM_MODELS if _OM_PREVIOUS_DAY_MAX.get(m, 0) > 0]
     if on_records is None:
-        on_records = lambda _: None  # noqa: E731
+        on_records = _discard_records
     _run_historical_model_batch(
         models, locations, start_date, end_date,
         _fetch_one_model_multilead, on_records, "OM multilead batch",
