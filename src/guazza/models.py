@@ -85,14 +85,17 @@ def _target_col(target: str, anomaly_targets: tuple[str, ...] = ANOMALY_TARGETS)
         return _TARGET_COL_ANOM[target]
     return _TARGET_COL_ABS[target]
 
-# Lead time bucket per CQR stratification
+# Lead time bucket per CQR stratification.
+# features_daily ha lead_time_h in multipli di 24h (0, 24, 48, ..., 168):
+# i bucket sono quindi giornalieri, non orari. Bucket orari produrrebbero
+# strati sempre vuoti con fallback sistematico al bucket adiacente.
 LEAD_BUCKETS: dict[str, tuple[int, int]] = {
-    "0-6h":   (0, 6),
-    "6-12h":  (6, 12),
-    "12-24h": (12, 24),
-    "24-48h": (24, 48),
-    "48-72h": (48, 72),
-    "72h+":   (72, 9999),
+    "D+0":  (0,   1),      # lead_time_h == 0 (nowcast)
+    "D+1":  (1,  36),      # 24h
+    "D+2":  (36, 60),      # 48h
+    "D+3":  (60, 84),      # 72h
+    "D+4":  (84, 108),     # 96h
+    "D+5+": (108, 9999),   # 120h, 144h, 168h
 }
 
 FEATURE_COLS: list[str] = [
@@ -459,7 +462,7 @@ def _train_wet_regressor(
     )
     logger.info(
         f"[wet_reg] addestrato: {n_wet} wet days, "
-        f"CQR 0-6h → ci80={cqr['0-6h'].ci80:.3f} ci90={cqr['0-6h'].ci90:.3f}"
+        f"CQR D+0 → ci80={cqr['D+0'].ci80:.3f} ci90={cqr['D+0'].ci90:.3f}"
     )
     return ModelBundle(models=models_q, cqr=cqr)
 
@@ -700,7 +703,7 @@ def train_all(
 
         cqr = _compute_cqr(models_q, X_cal, y_cal, lead_h, target=target, use_init_score=True)
         logger.info(
-            f"[{target}] CQR 0-6h → ci80={cqr['0-6h'].ci80:.3f} ci90={cqr['0-6h'].ci90:.3f}"
+            f"[{target}] CQR D+0 → ci80={cqr['D+0'].ci80:.3f} ci90={cqr['D+0'].ci90:.3f}"
         )
 
         bundles[target] = ModelBundle(models=models_q, cqr=cqr)
@@ -908,7 +911,7 @@ def _apply_cqr(
     Forziamo `ci90_lo = min(ci90_lo, ci80_lo)` e `ci90_hi = max(...)` per
     rispettare la proprietà teorica del CQR nested.
     """
-    corr = bundle.cqr.get(bucket, bundle.cqr["0-6h"])
+    corr = bundle.cqr.get(bucket, bundle.cqr["D+0"])
     ci80_lo = preds_q["p10"] - corr.ci80
     ci80_hi = preds_q["p90"] + corr.ci80
     ci90_lo = preds_q["p05"] - corr.ci90

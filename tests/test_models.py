@@ -185,11 +185,13 @@ def _insert_features(db: DuckDBClient, n_days: int = 400, n_locations: int = 2) 
 
 
 def test_lead_time_bucket() -> None:
-    assert _lead_time_bucket(0) == "0-6h"
-    assert _lead_time_bucket(5) == "0-6h"
-    assert _lead_time_bucket(6) == "6-12h"
-    assert _lead_time_bucket(24) == "24-48h"
-    assert _lead_time_bucket(100) == "72h+"
+    assert _lead_time_bucket(0)   == "D+0"
+    assert _lead_time_bucket(24)  == "D+1"
+    assert _lead_time_bucket(48)  == "D+2"
+    assert _lead_time_bucket(72)  == "D+3"
+    assert _lead_time_bucket(96)  == "D+4"
+    assert _lead_time_bucket(120) == "D+5+"
+    assert _lead_time_bucket(168) == "D+5+"
 
 
 def test_cqr_q_hat_coverage() -> None:
@@ -236,7 +238,7 @@ def test_train_all_models_have_all_quantiles(db: DuckDBClient, tmp_path: Path) -
 
     for target, bundle in artifacts.targets.items():
         assert set(bundle.models.keys()) == set(QUANTILES), f"{target}: quantili mancanti"
-        assert "0-6h" in bundle.cqr, f"{target}: bucket 0-6h mancante"
+        assert "D+0" in bundle.cqr, f"{target}: bucket D+0 mancante"
 
 
 def test_load_artifacts_roundtrip(db: DuckDBClient, tmp_path: Path) -> None:
@@ -282,11 +284,11 @@ def test_apply_cqr_enforces_nested_ci() -> None:
         models={0.05: FakeModel(0.10), 0.10: FakeModel(0.20),
                 0.50: FakeModel(0.50), 0.90: FakeModel(0.90),
                 0.95: FakeModel(0.95)},
-        cqr={"0-6h": CQRCorrection(ci80=0.32, ci90=0.14, n_cal=120)},
+        cqr={"D+0": CQRCorrection(ci80=0.32, ci90=0.14, n_cal=120)},
     )
 
     preds_q = {"p05": 0.10, "p10": 0.20, "p50": 0.50, "p90": 1.20, "p95": 1.30}
-    out = _apply_cqr(preds_q, bundle, "0-6h")
+    out = _apply_cqr(preds_q, bundle, "D+0")
     # Senza enforcement: ci80_hi = 1.20+0.32=1.52, ci90_hi = 1.30+0.14=1.44 (VIOLATO)
     # Con enforcement: ci90_hi = max(1.44, 1.52) = 1.52 (nested CI rispettato)
     assert out["ci80_hi"] == pytest.approx(1.52)
@@ -418,8 +420,8 @@ def test_walk_forward_cv_cqr_per_row(db: DuckDBClient) -> None:
         db, n_splits=3, min_train_days=180, embargo_days=7
     )
 
-    assert "0-6h" in set(per_bucket["lead_bucket"])
-    # Il dataset sintetico ha tutti lead=0 → solo il bucket 0-6h è popolato.
+    assert "D+0" in set(per_bucket["lead_bucket"])
+    # Il dataset sintetico ha tutti lead=0 → solo il bucket D+0 è popolato.
     # La presenza del breakdown per bucket è ciò che conta qui; la copertura
     # per-bucket con lead misti è testata dal test_run end-to-end.
     assert per_bucket["lead_bucket"].nunique() >= 1
@@ -965,7 +967,7 @@ def test_wet_regressor_trains() -> None:
 
     assert isinstance(bundle, ModelBundle)
     assert len(bundle.models) == 5
-    assert set(bundle.cqr.keys()) == {"0-6h", "6-12h", "12-24h", "24-48h", "48-72h", "72h+"}
+    assert set(bundle.cqr.keys()) == {"D+0", "D+1", "D+2", "D+3", "D+4", "D+5+"}
 
 
 def test_wet_regressor_insufficient_data() -> None:
