@@ -255,8 +255,7 @@ def cmd_historical(
         # Tutte le sorgenti, tutte le location
         historical --start-date 2022-01-01
     """
-    exclusive = sum([only_sir, only_openmeteo])
-    if exclusive > 1:
+    if only_sir and only_openmeteo:
         typer.echo("Errore: --only-sir e --only-openmeteo sono mutualmente esclusivi.")
         raise typer.Exit(1)
     if om_model:
@@ -361,7 +360,6 @@ def cmd_historical(
 
         stats.rows = sir_total + om_total
         stats.summary = f"SIR:{sir_total} OM:{om_total}"
-
 
 
 @app.command("daily")
