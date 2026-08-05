@@ -1,15 +1,21 @@
-"""Monitor copertura ACI: calcola coverage_30d e rileva drift.
+"""Monitor copertura ACI: calcola coverage_30d, rileva drift, aggiorna stato ACI.
 
-Usato dalla pipeline 6h come ultimo passo dopo predict.
+Usato da review (giornaliero) e forecast (ogni 6h).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pandas as pd
 from loguru import logger
 
-from guazza.models import _lead_time_bucket
+from guazza.models import (
+    ACI_LEARNING_RATE,
+    LEAD_BUCKETS,
+    AdaptiveConformalizer,
+    _lead_time_bucket,
+)
 from guazza.storage import DuckDBClient
 
 DRIFT_TOLERANCE_PP: float = 0.05
@@ -87,3 +93,59 @@ def check_and_log(results: list[CoverageResult]) -> int:
         else:
             logger.info(msg)
     return n_alerts
+
+
+def update_aci_from_history(db: DuckDBClient) -> int:
+    """Ricalcola lo stato ACI da tutta la history di predictions con obs.
+
+    Legge tutte le righe predictions con *_obs valorizzato, ricostruisce
+    gli AdaptiveConformalizer per ogni (target, lead_bucket) e persiste
+    lo stato aggiornato in aci_state.
+
+    Returns:
+        Numero di coppie (target, bucket) aggiornate.
+    """
+    rows = db.execute("""
+        SELECT ts_valid, lead_time_h,
+               tmin_p10, tmin_p90, tmin_p05, tmin_p95, tmin_obs,
+               tmax_p10, tmax_p90, tmax_p05, tmax_p95, tmax_obs,
+               precip_p10, precip_p90, precip_p05, precip_p95, precip_obs
+        FROM predictions
+        WHERE tmin_obs IS NOT NULL OR tmax_obs IS NOT NULL OR precip_obs IS NOT NULL
+        ORDER BY ts_valid
+    """).df()
+
+    if rows.empty:
+        return 0
+
+    target_obs = {
+        "tmin_c":    ("tmin_obs",   "tmin_p10",   "tmin_p90",   "tmin_p05",   "tmin_p95"),
+        "tmax_c":    ("tmax_obs",   "tmax_p10",   "tmax_p90",   "tmax_p05",   "tmax_p95"),
+        "precip_mm": ("precip_obs", "precip_p10", "precip_p90", "precip_p05", "precip_p95"),
+    }
+
+    rows = rows.assign(_bucket=rows["lead_time_h"].apply(_lead_time_bucket))
+
+    n_updated = 0
+    for target, (obs_col, p10_col, p90_col, p05_col, p95_col) in target_obs.items():
+        for bucket in LEAD_BUCKETS:
+            aci_80 = AdaptiveConformalizer(alpha_target=0.20, learning_rate=ACI_LEARNING_RATE)
+            aci_90 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=ACI_LEARNING_RATE)
+            for _, row in rows.iterrows():
+                if row["_bucket"] != bucket:
+                    continue
+                actual = row[obs_col]
+                if pd.isna(actual):
+                    continue
+                if pd.isna(row[p10_col]) or pd.isna(row[p90_col]) or pd.isna(row[p05_col]) or pd.isna(row[p95_col]):
+                    continue
+                aci_80.update(bool(row[p10_col] <= actual <= row[p90_col]))
+                aci_90.update(bool(row[p05_col] <= actual <= row[p95_col]))
+            db.upsert_aci_state(
+                target, bucket,
+                aci_80.alpha_t, aci_90.alpha_t,
+                aci_80.n_updates,
+                aci_80.err_sum, aci_90.err_sum,
+            )
+            n_updated += 1
+    return n_updated
