@@ -11,18 +11,17 @@ di riferimento pesante scaricato on-demand:
 - `docs/decisions.md` — decisioni scientifiche in dettaglio
 - `docs/known_issues.md` — workaround non ovvi (KI risolti in `docs/archive/known_issues_resolved.md`)
 - `DESIGN.md` — design system frontend (librerie CDN in §7)
-- `README.md` — albero directory completo e lista comandi operativi con tutti i flag
+- `README.md` — albero directory completo, lista comandi operativi, struttura repo
+- `codemap.md` — mappa moduli, data flow, entry point (leggi prima di task non banali)
+- `config/locations.yaml` — 6 location: coordinate, stazioni SIR primarie/secondarie, upstream pluvio
 
 ## Progetto
 
-**Guazza** è un sistema ML di post-processing meteo iper-locale per microclimi toscani. Duplice scopo:
+**Guazza** — post-processing ML iper-locale per microclimi toscani. 6 location, LightGBM quantile su NWP multi-modello + osservazioni SIR.
 
-1. **Strumento personale** — previsioni affinate per 6 location con indicatori operativi diretti (panni, motorino, gelata, ecc.)
-2. **Case study pubblicabile** — articolo LinkedIn/Medium con metodologia rigorosa, bibliografia scientifica, repo pubblico
+**Tesi**: le previsioni pubbliche sbagliano sistematicamente sui microclimi specifici. Dimostrarlo con dati, fare meglio, ammettere onestamente dove si fallisce.
 
-**Tesi**: le previsioni pubbliche (ECMWF, LAMMA, 3BMeteo, ecc.) sbagliano sistematicamente sui microclimi specifici. Dimostrarlo con dati e fare meglio, ammettendo onestamente dove si fallisce.
-
-Progetto personale con ambizioni scientifiche, sviluppato in spare time a sprint irregolari su orizzonte 12-18 mesi.
+Duplice output: strumento personale operativo + case study pubblicabile (articolo con metodologia rigorosa, repo pubblico).
 
 ## Utente
 
@@ -34,11 +33,6 @@ Cloud Architect e Solution Architect con background ML applicato. Programmatore 
 - Non spiegare cose ovvie
 - Preferisce SQL diretto su DuckDB per query ad-hoc
 
-## Le 6 location
-
-Vedi `config/locations.yaml` — coordinate complete, stazioni SIR primarie e secondarie,
-stazioni upstream pluvio per ogni location.
-
 ## Stack blindato
 
 Scelte validate da debate multi-modello. **Non proporre alternative** a meno che un bug tecnico reale le imponga. Tabella completa (13 voci) → `README.md` §Architettura.
@@ -48,7 +42,7 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 | Server | NixOS baremetal (homelab astra, host `nebula`); Guazza è un tenant k3s | — |
 | Scheduling | cron Linux o k8s CronJob | CLI idempotenti, orchestrator-agnostic |
 | Storage analitico | DuckDB | Single-writer, PVC RWO su k8s |
-| ML core | LightGBM quantile | no GPU, no deep learning |
+| ML core | LightGBM quantile | — |
 | CI calibrazione | CQR (Romano 2019) | Stratificato per lead time bucket |
 
 ### Anti-pattern — non proporre mai
@@ -57,9 +51,6 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 - Prefect, Dagster, Airflow, Celery accoppiati alla logica applicativa (l'app deve restare orchestrator-agnostic)
 - PostgreSQL, MySQL, Redis, MongoDB
 - GitHub Actions come orchestratore runtime di job
-- ERA5 come predittore di forecast (solo come climatologia statica)
-- Embargo < 7 giorni nella cross-validation
-- Valori puntuali nudi senza confidence interval
 - Deep learning come modello core (confronto benchmark OK, core no)
 - Raspberry Pi in produzione
 - Streamlit o Gradio per il frontend
@@ -67,13 +58,9 @@ Scelte validate da debate multi-modello. **Non proporre alternative** a meno che
 
 Se uno di questi appare come dipendenza necessaria, segnalarlo e proporre alternativa conforme allo stack.
 
-**Invariante deploy**: i job sono CLI idempotenti invocabili da qualsiasi scheduler
-(cron, k8s CronJob, systemd). Deployare Guazza come namespace k8s con DB in PVC è una
-scelta legittima del homelab — l'anti-pattern vieta l'*accoppiamento* dell'app a un
-orchestratore, non il *target* di deploy. Vincoli tecnici se si va su k8s: DuckDB è
-single-writer (`concurrencyPolicy: Forbid` sui CronJob writer), PVC `ReadWriteOnce` su
-storage local-path (`flock` inaffidabile su NFS/Ceph), backup `cp`/snapshot in un CronJob
-dedicato.
+(Divieti scientifici → §Decisioni scientifiche — blindate)
+
+**Invariante deploy**: i job sono CLI idempotenti invocabili da qualsiasi scheduler (cron, k8s CronJob, systemd). L'anti-pattern vieta l'*accoppiamento* dell'app a un orchestratore, non il *target* di deploy. Dettagli vincoli k8s → `README.md §Deploy`.
 
 ## Decisioni scientifiche — blindate
 
@@ -87,14 +74,9 @@ Se devi proporre un cambiamento a una di queste, prima leggi `docs/decisions.md`
 
 ## Sorgenti dati
 
-- **Open-Meteo Forecast + Historical Forecast API** — 4 modelli NWP: ECMWF IFS, ICON-EU, AROME France, ICON-2I (2.2km, assimila osservazioni italiane). `ecmwf_aifs025` rimosso: restituisce null su tutte le variabili; GFS rimosso in v0.11.1; ICON-D2 rimosso.
+- **Open-Meteo Forecast + Historical Forecast API** — 4 modelli NWP: ECMWF IFS, ICON-EU, AROME France, ICON-2I (2.2km, assimila osservazioni italiane).
 - **SIR Toscana** — storici osservativi validati. 34 stazioni: 21 operative, 13 upstream pluvio (ring features)
 - **RainViewer** — radar precipitazioni (solo frontend, Sprint 7)
-
-## Struttura repo
-
-Package flat in `src/guazza/`, CLI in `jobs/`. Albero e mappa moduli
-→ `README.md` §Repository layout.
 
 ## Guardrail operativi
 
@@ -134,6 +116,34 @@ Quando uno script va in errore:
 
 Non fare reverse engineering autonomo su API o sistemi esterni quando uno script fallisce.
 
+## Regole di modifica del codice
+
+### Minimal modification doctrine
+La modifica minima che risolve il problema è l'unica corretta. Se un bug si risolve in 3 righe, farne 4 è un fallimento.
+
+- Non toccare codice adiacente non richiesto: no rinomine "di passaggio", no riformattazioni, no riordino import.
+- Refactoring e cleanup sono task separati, richiesti esplicitamente. Non mescolarli a fix o feature.
+- Se durante il lavoro noti codice migliorabile fuori scope: segnalalo in una riga, non modificarlo.
+
+### Diff-first
+Le modifiche si propongono come blocchi `oldString`/`newString` (o unified diff), mai come file interi riscritti. Riscrivere un file intero è ammesso solo per file nuovi o quando >70% delle righe cambia.
+
+### Gate analisi funzionale (modifiche strutturali)
+Per modifiche che toccano >1 file o alterano logica esistente, prima di scrivere codice:
+
+1. **Funzione attuale** — cosa fa oggi il modulo/funzione: input → trasformazione → output, side effect.
+2. **Piano** — file toccati, cosa cambia in ciascuno, perché in quel punto.
+3. **Attendere conferma** prima di scrivere.
+
+Salta il gate solo per: fix a file singolo senza cambi di firma/contratto; istruzione esplicita "vai"/"implementa direttamente".
+
+### Gold standard files (pattern di riferimento)
+Quando scrivi nuovo codice, usa questi file come riferimento per i pattern consolidati:
+- `src/guazza/fetch_openmeteo.py` — fetcher + retry + `_log_scrape` pattern
+- `src/guazza/_logging.py` — `setup_logging()` pattern
+- `src/guazza/features.py` — SQL-first design pattern
+- `tests/test_models.py` — test pattern per suite ML
+
 ## Regole di commit
 
 Valgono le **Git Commit Guidelines globali** (`~/.config/opencode/AGENTS.md`: formato, regole,
@@ -149,6 +159,29 @@ staging selettivo, atomicità). Override e aggiunte specifiche di questo progett
 - **Commit**: l'agente può committare dopo aver proposto (messaggio + stat). Nessuna
   attesa di conferma esplicita per il commit stesso.
 - **Push**: mai dall'agente.
+
+### Commit: proporre al completamento di ogni task
+
+Trigger: task completato con test verdi e lint pulito; aggiornamento `docs/status.md` o
+`docs/known_issues.md`; aggiunta/modifica di `config/*.yaml`; milestone intermedia stabile
+(schema DuckDB, primo fetcher funzionante). Preferire commit atomici (un task = un commit;
+se ha sotto-step, un commit per sotto-step).
+
+### Tag versione + CHANGELOG — fine sessione significativa
+
+Alla fine di una sessione che include almeno uno tra: nuova location/sorgente/modello NWP;
+nuovo modulo o feat in `src/guazza/`; frontend redesign o modifica al JSON contract;
+refactoring che tocca schema DuckDB o rimuove codice obsoleto; 5+ commit feat/fix —
+**chiedere all'utente** se serve bump versione + CHANGELOG. Aggiornare sempre insieme:
+`pyproject.toml` (version), `CHANGELOG.md`, `docs/status.md` (header data), `README.md`
+(roadmap/comandi/struttura se cambiati). Non eseguire bump/tag senza conferma esplicita.
+Saltare la proposta per: fix banali, lint, test, refactor interni, doc fix, sessioni di
+soli chore/dipendenze.
+
+### Push e hook
+
+- `git push` non va **mai** eseguito. L'utente gestisce il push manualmente.
+- Se un pre-commit hook fallisce: non usare `--no-verify`. Fermarsi, mostrare l'errore, aspettare istruzioni.
 
 ## Procedure di sync (matrice evento → write primario)
 
@@ -175,64 +208,20 @@ Mai copiare la stessa tabella in due file.
 
 **Anti-pattern**: NON aggiornare `README.md` / `PRODUCT.md` / `DESIGN.md` salvo trigger esplicito (cambia UX repo, identità prodotto, design system). Il fan-out a 7 file per ogni feature è il principale fonte di drift.
 
-### Commit: proporre al completamento di ogni task
-
-Trigger: task completato con test verdi e lint pulito; aggiornamento `docs/status.md` o
-`docs/known_issues.md`; aggiunta/modifica di `config/*.yaml`; milestone intermedia stabile
-(schema DuckDB, primo fetcher funzionante). Preferire commit atomici (un task = un commit;
-se ha sotto-step, un commit per sotto-step).
-
-### Tag versione + CHANGELOG — fine sessione significativa
-
-Alla fine di una sessione che include almeno uno tra: nuova location/sorgente/modello NWP;
-nuovo modulo o feat in `src/guazza/`; frontend redesign o modifica al JSON contract;
-refactoring che tocca schema DuckDB o rimuove codice obsoleto; 5+ commit feat/fix —
-**chiedere all'utente** se serve bump versione + CHANGELOG. Aggiornare sempre insieme:
-`pyproject.toml` (version), `CHANGELOG.md`, `docs/status.md` (header data), `README.md`
-(roadmap/comandi/struttura se cambiati). Non eseguire bump/tag senza conferma esplicita.
-Saltare la proposta per: fix banali, lint, test, refactor interni, doc fix, sessioni di
-soli chore/dipendenze.
-
-### Push e hook
-
-- `git push` non va **mai** eseguito. L'utente gestisce il push manualmente.
-- Se un pre-commit hook fallisce: non usare `--no-verify`. Fermarsi, mostrare l'errore, aspettare istruzioni.
-
 ## Come lavorare
 
 1. **Leggere `docs/status.md`** a inizio sessione
-2. **Risposte dirette, senza preambolo** — niente "Certo! Ecco come possiamo procedere...",
-   niente riepilogo di ciò che hai appena fatto, niente spiegazioni ovvie. Dai subito la
-   risposta o proponi subito il piano. Se il codice è nei file, non ripeterlo nel testo.
-3. **Un task alla volta** — non saltare avanti se ci sono dipendenze non risolte
-4. **Fermarsi sui punti aperti** — non inventare valori per soglie, coordinate, o endpoint non testati. Segnalare e proporre un default. Aspettare conferma se bloccante.
-5. **Test prima di considerare completato** — almeno happy path + edge case principale
-6. **Codice tipato** — type hints ovunque, mypy deve passare. `pydantic v2` solo ai
-   boundary di sistema (validazione config YAML in ingresso, JSON di output verso il
-   frontend); `@dataclass` per gli oggetti interni fidati — non validare codice interno
-7. **Aggiornare `docs/known_issues.md`** se si trovano workaround non ovvi
-8. **Suggerire aggiornamento a `docs/status.md`** a fine sessione
-9. Non assumere che l'ambiente sia pulito — verificare che i test passino prima di nuove feature
-10. **Protocollo fine sessione** — riepilogo breve (3-5 righe) in 3 punti: **Fatto** (file,
-    commit, tag) · **Non fatto / Bloccato** (cosa è rimasto e perché) · **Prossimo suggerito**
-    (un passo logico). Non ripetere dettagli già nel commit o nel codice.
+2. **Un task alla volta** — non saltare avanti se ci sono dipendenze non risolte
+3. **Fermarsi sui punti aperti** — non inventare valori per soglie, coordinate, o endpoint non testati. Segnalare e proporre un default. Aspettare conferma se bloccante.
+4. **Test prima di considerare completato** — almeno 1 happy path + 1 edge case (input vuoto/malformato o boundary numerico)
+5. **Aggiornare `docs/known_issues.md`** se si trovano workaround non ovvi
+6. **Suggerire aggiornamento a `docs/status.md`** a fine sessione
+7. Non assumere che l'ambiente sia pulito — verificare che i test passino prima di nuove feature
+8. **Protocollo fine sessione** — riepilogo breve (3-5 righe) in 3 punti: **Fatto** (file,
+   commit, tag) · **Non fatto / Bloccato** (cosa è rimasto e perché) · **Prossimo suggerito**
+   (un passo logico). Non ripetere dettagli già nel commit o nel codice.
 
-### Spiegazione obbligatoria prima di modificare file
-
-Per ogni modifica non banale a qualsiasi file del progetto (codice, docs, config YAML,
-README), spiegare e **aspettare conferma**:
-
-1. **Cosa cambia** — il problema tecnico concreto che la modifica risolve (non astratto)
-2. **Come** — le scelte implementative rilevanti: cosa hai considerato, cosa hai scartato e perché
-3. **Impatto** — cosa cambia per chi legge o modifica il codice dopo
-
-L'obiettivo non è validare la scelta, ma permettere all'utente di capire, valutare e
-mantenere il codice in autonomia.
-
-Eccezioni (procedere direttamente): fix banali (typo, 1-2 righe senza effetti collaterali);
-istruzione esplicita "vai"/"implementa direttamente"; correzioni lint/mypy/test che non
-cambiano semantica; `docs/known_issues.md` e `docs/status.md` a fine sessione (routine — ma
-comunicare cosa si scrive prima di farlo).
+Per modifiche strutturali: vedi §Regole di modifica del codice — Gate analisi funzionale.
 
 ## Logging — regole obbligatorie
 
@@ -265,12 +254,13 @@ retry: log ERROR, ping fail, non crashare — il prossimo cron riprova.
   Estrarre una funzione solo quando il riuso è concreto e immediato.
 - **Commenti solo sul "perché"**: non sul "cosa" (il codice lo dice già). Un commento che
   descrive ciò che fa la riga è rumore — va rimosso.
+- **Boundary di validazione**: `pydantic v2` solo ai boundary di sistema (config YAML in ingresso, JSON di output verso frontend); `@dataclass` per oggetti interni fidati — non validare codice interno.
 
 ### Checklist completamento task
 
-- [ ] Codice tipato, mypy passa
-- [ ] Test pytest scritti e verdi (`uv run python -m pytest`)
-- [ ] `ruff check` passa (zero warning)
+- [ ] Mai considerare completo senza: `uv run python -m pytest` verde
+- [ ] Mai considerare completo senza: `ruff check` zero warning
+- [ ] Mai considerare completo senza: type hints presenti e mypy pulito
 - [ ] `setup_logging()` chiamato in ogni nuovo job CLI
 - [ ] Healthchecks.io ping se è un job cron
 - [ ] Nessun dead code, nessun codice sperimentale residuo
@@ -304,6 +294,4 @@ uv run ruff check src/ && uv run mypy src/   # lint + type check
 - **Batchare tool calls** in ogni turno quando possibile (chiamate indipendenti in parallelo)
 - **Mai loop di ricerca** su API o scraping senza limite; 3 tentativi max con backoff
 - **Preferire Read/Grep** a sub-agenti per ricerche in <5 file
-- **Non riscrivere file interi** se Edit può modificare il blocco rilevante
 - **Commit atomici** a ogni milestone stabile per evitare perdita lavoro
-- **Evitare risposte lunghe** — codice nei file, non nel testo della chat
