@@ -1,7 +1,6 @@
 """Skill history: append giornaliero e dump JSON per il frontend.
 
-Funzioni pure usate da jobs/pipeline.py (ogni 6h) e da guazza-skill-history
-per backfill manuale.
+Funzioni pure usate da jobs/review.py (ogni 6h) per backfill e dump giornaliero.
 """
 
 from __future__ import annotations
