@@ -1,7 +1,7 @@
 # Guazza — crontab template (SOLO install dev / server senza k8s)
 #
 # In produzione i job girano come CronJob k8s (namespace `guazza`, repo astra —
-# vedi docs/status.md P6). Questo template serve per install locali.
+# vedi docs/status.md). Questo template serve per install locali.
 #
 # Installazione su server dev:
 #   crontab deploy/crontab.template
@@ -29,29 +29,20 @@ DB_PATH=/var/lib/guazza/guazza.duckdb
 
 # ── Ogni 15 min: realtime (SIR actions.php + Netatmo) ─────────────────────────
 # SIR aggiorna ogni ~15 min, Netatmo ogni ~10 min.
-# Offset :02 per evitare il minuto esatto (carico infrastruttura)
-# Include QC inline (post-ingest automatico dal refactor v0.12.0).
+# Offset :02 per evitare il minuto esatto (carico infrastruttura).
 2,17,32,47 * * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.ingest realtime >> /var/log/guazza/realtime.jsonl 2>&1
 
-# ── Ogni 6 ore: pipeline completa (forecasts → features → predict → monitor) ──
+# ── Ogni 6 ore: forecast (NWP live → features → predict → JSON) ───────────────
 # Allineato ai run ECMWF (00/06/12/18 UTC) + lag ~2h per disponibilità dati.
-# Include in un'unica connessione DuckDB: forecast NWP, feature build,
-# predict + DLE + JSON, skill-history, monitor ACI. Sostituisce i tre job
-# separati (ingest forecasts, qc, monitor) rimossi nel refactor v0.12.0.
-# Esecuzione a 02:10, 08:10, 14:10, 20:10 UTC.
-10 2,8,14,20 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.pipeline run >> /var/log/guazza/pipeline.jsonl 2>&1
+# Gira a 02:10, 08:10, 14:10, 20:10 UTC.
+10 2,8,14,20 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.forecast run >> /var/log/guazza/forecast.jsonl 2>&1
 
-# ── Ogni giorno alle 06:00 UTC: delta giornaliero (SIR CSV + Open-Meteo ieri) ─
+# ── Ogni giorno alle 06:10 UTC: review (obs ieri + ACI + skill-history + train) ─
 # SIR pubblica i dati validati del giorno precedente entro le 03:00-05:00 UTC.
-# Include QC inline (post-ingest automatico dal refactor v0.12.0).
-0 6 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.ingest daily >> /var/log/guazza/daily.jsonl 2>&1
+# Il train è condizionale: gira solo se gli artefatti hanno > 7 giorni.
+# Offset :10 per lasciare margine al forecast delle 06:00 (non presente) e al
+# precedente forecast delle 20:10 che è già finito da ore.
+10 6 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.review run >> /var/log/guazza/review.jsonl 2>&1
 
-# ── FUTURI (decommentare quando implementati) ─────────────────────────────────
-
-# Backup DuckDB → Cloudflare R2 (ogni notte alle 03:00)
+# ── Backup DuckDB → Cloudflare R2 (ogni notte alle 03:00) ─────────────────────
 # 0 3 * * *   cd $GUAZZA_DIR && uv run python -m guazza.jobs.backup >> /var/log/guazza/backup.jsonl 2>&1
-
-# Retraining LightGBM (domenica notte 02:00) — ACI corregge la confidenza ma non
-# il modello stesso: il modello resta addestrato sui dati storici finché non
-# rifit. Settimanale è un buon compromesso.
-# 0 2 * * 0   cd $GUAZZA_DIR && uv run python -m guazza.jobs.train run >> /var/log/guazza/retrain.jsonl 2>&1

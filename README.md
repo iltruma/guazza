@@ -139,9 +139,6 @@ Motivazioni delle scelte in `docs/decisions.md`.
 # Backfill storico one-shot (SIR + Open-Meteo historical lead=0 + multilead lead 24-168h, 2022→oggi)
 uv run python -m guazza.jobs.ingest historical
 
-# Delta giornaliero — schedulare a 06:00 UTC (SIR + OM historical + OM multilead + Netatmo daily)
-uv run python -m guazza.jobs.ingest daily
-
 # Backfill Netatmo daily su tutti i giorni accumulati (one-shot, prima esecuzione):
 uv run python -m guazza.jobs.ingest daily --netatmo-all
 
@@ -149,15 +146,15 @@ uv run python -m guazza.jobs.ingest daily --netatmo-all
 uv run python -m guazza.jobs.ingest realtime
 ```
 
-### Pipeline 6h (forecasts → features → predict → skill-history)
+### Forecast 6h (NWP live → features → predict → JSON)
 
 ```bash
-# Pipeline completa ogni 6h (schedulare a 02/08/14/20 UTC)
-uv run python -m guazza.jobs.pipeline run --db data/guazza.duckdb \
+# Forecast completo ogni 6h (schedulare a 02:10/08:10/14:10/20:10 UTC)
+uv run python -m guazza.jobs.forecast run --db data/guazza.duckdb \
     --model-dir data/models --output-dir data/output
 
 # Dry-run: mostra cosa farebbe senza scrivere
-uv run python -m guazza.jobs.pipeline run --dry-run
+uv run python -m guazza.jobs.forecast run --dry-run
 ```
 
 Output: `data/output/{location_id}.json` con CI80/CI90 per tmin/tmax/precip,
@@ -169,12 +166,15 @@ modelli con data ultimo run.
 > **Nota locale**: prima del forecast eseguire `ingest realtime` per avere
 > il campo `current` popolato. In produzione il cron ogni 30 min lo mantiene fresco.
 
-### Training (condizionale in review, o forzato)
+### Review giornaliero (obs ieri + ACI + skill-history + train)
 
 ```bash
-# Il train gira automaticamente dentro guazza-review se gli artefatti hanno > 7 giorni.
-# Per forzarlo manualmente:
-uv run python -m guazza.jobs.review run --db data/guazza.duckdb --model-dir data/models --force-train
+# Review completo 1×/giorno (schedulare a 06:10 UTC)
+uv run python -m guazza.jobs.review run --db data/guazza.duckdb \
+    --model-dir data/models --output-dir data/output
+
+# Dry-run: solo monitor, nessuna scrittura
+uv run python -m guazza.jobs.review run --dry-run
 ```
 
 ### Skill history backfill manuale
@@ -306,15 +306,13 @@ DB_PATH=/var/lib/guazza/guazza.duckdb uv run python -m guazza.storage init-schem
 # 4. Backfill storico (lento — SIR + Open-Meteo 2022→oggi)
 uv run python -m guazza.jobs.ingest historical
 
-# 5. Pesi stazioni + ring upstream (gestiti automaticamente dalla pipeline)
+# 5. Training modello (o lasciare che review lo faccia al primo run)
+uv run python -m guazza.jobs.review run --force-train
 
-# 6. Training modello
-uv run python -m guazza.jobs.train run
+# 6. Primo forecast (include feature build, predict, DLE+JSON)
+uv run python -m guazza.jobs.forecast run
 
-# 7. Prima pipeline (include feature build, predict, DLE+JSON, monitor)
-uv run python -m guazza.jobs.pipeline run
-
-# 8. In produzione i job girano come CronJob k8s (namespace `guazza`, repo astra).
+# 7. In produzione i job girano come CronJob k8s (namespace `guazza`, repo astra).
 #    Solo per install dev: crontab deploy/crontab.template
 ```
 
