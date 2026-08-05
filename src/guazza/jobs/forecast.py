@@ -184,9 +184,7 @@ def cmd_run(
                         f"[{location_id}] {target_date_obj} lead={lead_time_h}h"
                     )
 
-                    is_min_lead = int(i) in min_lead_indices
-
-                    if is_min_lead:
+                    if int(i) in min_lead_indices:
                         if target_date_obj == date.today():
                             current_obs = get_current_conditions(db, location_id)
                             signals = build_signals_today(pred, row, obs_summary, current_obs)

@@ -8,6 +8,15 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-08-05
+
+### Changed
+- **`forecast.py`**: inline variabile `is_min_lead` (single-use, nessun impatto comportamentale).
+- **Test suite**: ridotti dataset sintetici in `test_models.py` al minimo viabile — `n_days` da 400-800 a 120-250, `n_locations` da 2 a 1 dove non necessario. Suite da ~117s a ~41s. Nessun test rimosso, comportamento invariato.
+
+### Removed
+- Tutti i file `codemap.md` (8 file nelle sottodirectory) — generati da tooling AI, non parte del repo.
+
 ## [0.14.0] - 2026-08-05
 
 ### Added
