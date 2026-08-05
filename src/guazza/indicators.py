@@ -154,7 +154,20 @@ def evaluate_indicator(
 
     costs = cfg.get("costs", {"fn": 1, "fp": 1})
     alpha = _compute_alpha(costs)
+    cost_fn, cost_fp = float(costs["fn"]), float(costs["fp"])
     logic: dict[str, str] = cfg.get("logic", {})
+
+    def _result(verdict: str, rule_matched: str, rule_text: str) -> IndicatorResult:
+        return IndicatorResult(
+            indicator_id=indicator_id,
+            location_id=location_id,
+            verdict=verdict,
+            rule_matched=rule_matched,
+            rule_text=rule_text,
+            alpha=alpha,
+            cost_fn=cost_fn,
+            cost_fp=cost_fp,
+        )
 
     static_thresholds = {k: float(v) for k, v in cfg.get("thresholds", {}).items()}
     effective_signals: SignalBag = {**signals, **static_thresholds}
@@ -164,45 +177,18 @@ def evaluate_indicator(
     # → falso "verde nella norma", oppure (segnale assente) cadrebbe nel fallback giallo.
     required: list[str] = cfg.get("requires", [])
     if any(effective_signals.get(s) is None for s in required):
-        return IndicatorResult(
-            indicator_id=indicator_id,
-            location_id=location_id,
-            verdict="grigio",
-            rule_matched="unknown",
-            rule_text="Dato non disponibile",
-            alpha=alpha,
-            cost_fn=float(costs["fn"]),
-            cost_fp=float(costs["fp"]),
-        )
+        return _result("grigio", "unknown", "Dato non disponibile")
 
+    verdict_by_rule = {"green": "verde", "yellow": "giallo", "red": "rosso"}
     for rule in ("red", "yellow", "green"):
         condition = logic.get(rule, "")
         if condition and _eval_condition(condition, effective_signals):
-            verdict_it = {"green": "verde", "yellow": "giallo", "red": "rosso"}[rule]
-            return IndicatorResult(
-                indicator_id=indicator_id,
-                location_id=location_id,
-                verdict=verdict_it,
-                rule_matched=rule,
-                rule_text=logic.get(f"{rule}_desc", condition),
-                alpha=alpha,
-                cost_fn=float(costs["fn"]),
-                cost_fp=float(costs["fp"]),
-            )
+            return _result(verdict_by_rule[rule], rule, logic.get(f"{rule}_desc", condition))
 
     logger.warning(
         f"[{location_id}] {indicator_id}: nessuna condizione soddisfatta → fallback giallo"
     )
-    return IndicatorResult(
-        indicator_id=indicator_id,
-        location_id=location_id,
-        verdict="giallo",
-        rule_matched="fallback",
-        rule_text="Nessuna condizione soddisfatta",
-        alpha=alpha,
-        cost_fn=float(costs["fn"]),
-        cost_fp=float(costs["fp"]),
-    )
+    return _result("giallo", "fallback", "Nessuna condizione soddisfatta")
 
 
 def evaluate_all(
@@ -211,12 +197,10 @@ def evaluate_all(
     location_id: str,
 ) -> list[IndicatorResult]:
     """Valuta tutti gli indicatori applicabili per una location."""
-    results: list[IndicatorResult] = []
-    for ind_id, cfg in indicators.items():
-        result = evaluate_indicator(ind_id, cfg, signals, location_id)
-        if result is not None:
-            results.append(result)
-    return results
+    return [
+        r for ind_id, cfg in indicators.items()
+        if (r := evaluate_indicator(ind_id, cfg, signals, location_id)) is not None
+    ]
 
 
 def log_results(
