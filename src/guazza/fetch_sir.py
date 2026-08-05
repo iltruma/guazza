@@ -26,15 +26,9 @@ from tenacity import (
 from tqdm import tqdm
 
 from guazza._logging import log_scrape
-from guazza.fetch_common import (
-    CET as _CET,
-)
-from guazza.fetch_common import (
-    UA as _UA,
-)
-from guazza.fetch_common import (
-    is_retryable_http as _is_retryable_http,
-)
+from guazza.fetch_common import CET as _CET
+from guazza.fetch_common import UA as _UA
+from guazza.fetch_common import is_retryable_http as _is_retryable_http
 
 # ── Costanti SIR CSV ──────────────────────────────────────────────────────────
 
@@ -160,7 +154,6 @@ def fetch_sir_historical(
 
     text = _fetch_sir_csv(station_id, sensor_type)
     variables: list[tuple[str, str]] = schema["variables"]
-    has_flag_col: bool = schema["flag_col"]
 
     lines = text.splitlines()
     data_start = 0
@@ -185,12 +178,6 @@ def fetch_sir_historical(
             logger.debug(f"Data non parsabile: {date_str!r}")
             continue
 
-        if has_flag_col and len(row) >= len(variables) + 2:
-            raw_flag = row[len(variables) + 1].strip()
-            row_flag = _FLAG_MAP.get(raw_flag, "ok")
-        else:
-            row_flag = None
-
         record: dict[str, Any] = {
             "source": "sir_toscana",
             "station_id": station_id,
@@ -204,17 +191,7 @@ def fetch_sir_historical(
             raw = row[col_idx].strip() if col_idx < len(row) else ""
             value = _parse_value(raw, var_name)
 
-            if has_flag_col:
-                flag = row_flag if value is not None else "missing"
-            else:
-                flag = "ok" if value is not None else "missing"
-
             record[var_name] = value
-            # level_m e precip_mm hanno un flag implicito: non lo salviamo in observations wide
-            # perché non c'è colonna flag per variabile. Se serve, va aggiunta una colonna generica.
-            # Per ora, se flag != 'ok' e value is not None, lasciamo il valore (downstream QC).
-            if value is None and flag == "missing":
-                record[var_name] = None
 
         records.append(record)
 

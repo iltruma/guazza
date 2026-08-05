@@ -313,6 +313,14 @@ def fetch_netatmo_location(
     return results
 
 
+_OBS_COLS = [
+    "source", "station_id", "location_id", "ts", "granularity",
+    "temp_c", "tmin_c", "tmax_c", "humidity_pct", "precip_mm", "precip_interval_h",
+    "wind_speed_ms", "wind_dir_deg", "wind_gust_ms", "pressure_hpa", "level_m",
+    "weight", "qc_pass",
+]
+
+
 def save_netatmo_to_db(
     db: DuckDBClient,
     location_id: str,
@@ -371,12 +379,6 @@ def save_netatmo_to_db(
         ])
 
     if obs_rows:
-        _OBS_COLS = [
-            "source", "station_id", "location_id", "ts", "granularity",
-            "temp_c", "tmin_c", "tmax_c", "humidity_pct", "precip_mm", "precip_interval_h",
-            "wind_speed_ms", "wind_dir_deg", "wind_gust_ms", "pressure_hpa", "level_m",
-            "weight", "qc_pass",
-        ]
         df_obs = pd.DataFrame(obs_rows, columns=_OBS_COLS)
         db.register_df("_stg_nmo", df_obs)
         db.execute("""
