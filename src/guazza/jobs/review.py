@@ -143,14 +143,13 @@ def _run_skill_curve(
     stations = _primary_stations(config_dir)
 
     with DuckDBClient(db_path=db_path, read_only=True) as db_client:
-        assert db_client._conn is not None
-        df = db_client._conn.execute("SELECT * FROM features_daily").df()
+        df = db_client.execute("SELECT * FROM features_daily").df()
         df["location_id"] = df["location_id"].astype("category")
         df["target_date"] = pd.to_datetime(df["target_date"]).dt.date
         df = df.sort_values("target_date").reset_index(drop=True)
 
         values = ", ".join(f"('{loc}','{st}')" for loc, st in stations.items())
-        primary = db_client._conn.execute(f"""
+        primary = db_client.execute(f"""
             WITH st(location_id, station_id) AS (VALUES {values})
             SELECT st.location_id, o.ts::date AS target_date,
                    o.tmin_c AS prim_tmin_c, o.tmax_c AS prim_tmax_c
