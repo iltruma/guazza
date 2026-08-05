@@ -221,13 +221,10 @@ def build_signals(
         if hw_pairs else 0.5
     )
 
+    prob_rain = pred.get("rain_clf", {}).get("prob_rain")
     return {
         # Precipitazione (ML quantile → CDF inversa lineare, o classificatore diretto)
-        "P(precip > 0.2mm)": (
-            pred.get("rain_clf", {}).get("prob_rain")
-            if pred.get("rain_clf", {}).get("prob_rain") is not None
-            else _prob_exceeds(precip_q, 0.2)
-        ),
+        "P(precip > 0.2mm)": prob_rain if prob_rain is not None else _prob_exceeds(precip_q, 0.2),
         "P(precip > 3mm)":   _prob_exceeds(precip_q, 3.0),
         "P(precip > 5mm/h)": _prob_exceeds(precip_q, 5.0),  # proxy: daily mm ≈ intensità
 
@@ -864,7 +861,10 @@ def compute_hourly_profile(
     )
 
     result: list[dict[str, float | int | None]] = []
-    has_temp_band = tmin_ci80_lo is not None and tmax_ci80_lo is not None and tmin_ci80_hi is not None and tmax_ci80_hi is not None
+    has_temp_band = (
+        tmin_ci80_lo is not None and tmax_ci80_lo is not None
+        and tmin_ci80_hi is not None and tmax_ci80_hi is not None
+    )
     for h in range(24):
         if h in hour_data:
             t_raw, hum, p_raw, prob, wind = hour_data[h]
