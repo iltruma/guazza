@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime
-from typing import Any
 
 from loguru import logger
 
@@ -18,29 +16,24 @@ def setup_logging(level: str = "INFO") -> None:
     Call only from CLI entry points, not at module level.
     """
     logger.remove()
-    if sys.stderr.isatty():
-        logger.add(
-            sys.stderr,
-            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}",
-            colorize=True,
-            level=level,
-        )
-    else:
-        logger.add(sys.stdout, serialize=True, level=level)
+    sink, colorize = (sys.stderr, True) if sys.stderr.isatty() else (sys.stdout, False)
+    logger.add(
+        sink,
+        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}",
+        colorize=colorize,
+        level=level,
+    )
 
 
 def log_scrape(scraper: str, status: str, rows: int | None = None, detail: str = "") -> None:
-    """Emette un log JSON strutturato per ogni run scraper/job.
+    """Emits a structured log event for each scraper/job run.
 
-    Formato: {"scraper": ..., "status": "ok|fail", "ts": ..., "rows": N}
+    Fields land in record.extra (JSON sink) or inline message (TTY).
+    Format: scraper=<src>:<id> status=ok|fail [rows=N] [detail=...]
     """
-    payload: dict[str, Any] = {
-        "scraper": scraper,
-        "status": status,
-        "ts": datetime.now(tz=UTC).isoformat(),
-    }
+    bound = logger.bind(scraper=scraper, status=status)
     if rows is not None:
-        payload["rows"] = rows
+        bound = bound.bind(rows=rows)
     if detail:
-        payload["detail"] = detail
-    logger.info(payload)
+        bound = bound.bind(detail=detail)
+    bound.info(f"scrape {scraper} {status}" + (f" rows={rows}" if rows is not None else ""))
