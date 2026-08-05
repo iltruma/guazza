@@ -32,6 +32,7 @@ from loguru import logger
 from tqdm import tqdm
 
 from guazza._logging import log_scrape, setup_logging
+from guazza.features import build_features_daily
 from guazza.fetch_netatmo import fetch_netatmo_all_locations
 from guazza.fetch_openmeteo import (
     OM_MODELS,
@@ -354,6 +355,9 @@ def cmd_historical(
 
             qc = compute_quality_flags(db)
             typer.echo(f"QC: {qc['total']} flag ({', '.join(f'{k}={v}' for k, v in qc.items() if k != 'total')})")
+
+            n_features = build_features_daily(db)
+            typer.echo(f"Features: {n_features} righe in features_daily")
 
         stats.rows = sir_total + om_total
         stats.summary = f"SIR:{sir_total} OM:{om_total}"

@@ -1,27 +1,27 @@
-"""Job CLI: pipeline 6h — forecasts → features → predict → skill-history.
+"""Job CLI: forecast — NWP live → features → predict → JSON location.
 
-Unico CronJob schedulato ogni 6h (suggerito: 02/08/14/20 UTC, ~2h dopo i run ECMWF).
-Sostituisce i job separati guazza-predict, guazza-features, guazza-skill-history.
+Gira ogni 6h (02/08/14/20 UTC, ~2h dopo i run ECMWF).
+Risponde a: "cosa prevedo per oggi e i prossimi 7 giorni?"
 
 Passi in sequenza sulla stessa connessione DuckDB:
-  1. Open-Meteo forecast (tutti i modelli, 7 giorni)
-  2. build_features_daily()
-  3. predizioni ML + ACI + DLE + JSON output
-  4. skill-history append (ieri) + dump JSON
+  1. Refresh pesi stazione→location da config (idempotente)
+  2. Fetch forecast NWP live Open-Meteo (4 modelli, 7 giorni)
+  3. build_features_daily()
+  4. load_artifacts() — carica modello allenato da review
+  5. Predict su tutte le righe future (tutti i lead) → upsert predictions + benchmark + JSON
 
 Uso:
-    uv run python -m guazza.jobs.pipeline run
-    uv run python -m guazza.jobs.pipeline run --dry-run
+    uv run python -m guazza.jobs.forecast run
+    uv run python -m guazza.jobs.forecast run --dry-run
 """
 
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 import typer
 from loguru import logger
 
@@ -36,17 +36,13 @@ from guazza.jobs._common import (
     job_run,
 )
 from guazza.models import (
-    ACI_LEARNING_RATE,
-    LEAD_BUCKETS,
     TARGETS,
-    AdaptiveConformalizer,
     _lead_time_bucket,
     apply_aci_correction,
     get_aci_pair,
     load_artifacts,
     predict_frame,
 )
-from guazza.monitor import check_and_log, compute_coverage
 from guazza.output import (
     build_signals,
     build_signals_today,
@@ -58,32 +54,12 @@ from guazza.output import (
     get_nwp_model_comparison,
     write_location_json,
 )
-from guazza.skill_history import (
-    DEFAULT_DUMP_PATH,
-    append_one,
-    atomic_write_json,
-    dump_payload,
-)
 from guazza.storage import DuckDBClient
 from guazza.weights import load_configs, refresh_station_weights, refresh_upstream_rings
 
-app = typer.Typer(help="Pipeline 6h: forecasts → features → predict → skill-history.")
+app = typer.Typer(help="Forecast 6h: NWP live → features → predict → JSON.")
 
 _MODEL_DIR = Path(os.environ.get("MODEL_DIR", "/var/lib/guazza/models"))
-
-
-def _ping_monitor_alert() -> None:
-    """Invia ping a HEALTHCHECKS_URL_MONITOR se configurata, altrimenti solo warning."""
-    url = os.environ.get("HEALTHCHECKS_URL_MONITOR", "").strip()
-    if not url:
-        logger.warning("HEALTHCHECKS_URL_MONITOR non configurata — drift ACI non notificato")
-        return
-    try:
-        import httpx
-        httpx.get(url.rstrip("/") + "/fail", timeout=5)
-        logger.info(f"Monitor alert inviato: {url}/fail")
-    except Exception as e:
-        logger.warning(f"Monitor alert ping fallito: {e}")
 
 
 @app.callback()
@@ -106,65 +82,17 @@ def _to_date(val: Any) -> Any:
     return val.date() if hasattr(val, "date") else val
 
 
-def _aci_update_from_history(db: DuckDBClient) -> int:
-    rows = db.execute("""
-        SELECT ts_valid, lead_time_h,
-               tmin_p10, tmin_p90, tmin_p05, tmin_p95, tmin_obs,
-               tmax_p10, tmax_p90, tmax_p05, tmax_p95, tmax_obs,
-               precip_p10, precip_p90, precip_p05, precip_p95, precip_obs
-        FROM predictions
-        WHERE tmin_obs IS NOT NULL OR tmax_obs IS NOT NULL OR precip_obs IS NOT NULL
-        ORDER BY ts_valid
-    """).df()
-
-    if rows.empty:
-        return 0
-
-    target_obs = {
-        "tmin_c":    ("tmin_obs",   "tmin_p10",   "tmin_p90",   "tmin_p05",   "tmin_p95"),
-        "tmax_c":    ("tmax_obs",   "tmax_p10",   "tmax_p90",   "tmax_p05",   "tmax_p95"),
-        "precip_mm": ("precip_obs", "precip_p10", "precip_p90", "precip_p05", "precip_p95"),
-    }
-
-    rows = rows.assign(_bucket=rows["lead_time_h"].apply(_lead_time_bucket))
-
-    n_updated = 0
-    for target, (obs_col, p10_col, p90_col, p05_col, p95_col) in target_obs.items():
-        for bucket in LEAD_BUCKETS:
-            aci_80 = AdaptiveConformalizer(alpha_target=0.20, learning_rate=ACI_LEARNING_RATE)
-            aci_90 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=ACI_LEARNING_RATE)
-            for _, row in rows.iterrows():
-                if row["_bucket"] != bucket:
-                    continue
-                actual = row[obs_col]
-                if pd.isna(actual):
-                    continue
-                if pd.isna(row[p10_col]) or pd.isna(row[p90_col]) or pd.isna(row[p05_col]) or pd.isna(row[p95_col]):
-                    continue
-                aci_80.update(bool(row[p10_col] <= actual <= row[p90_col]))
-                aci_90.update(bool(row[p05_col] <= actual <= row[p95_col]))
-            db.upsert_aci_state(
-                target, bucket,
-                aci_80.alpha_t, aci_90.alpha_t,
-                aci_80.n_updates,
-                aci_80.err_sum, aci_90.err_sum,
-            )
-            n_updated += 1
-    return n_updated
-
-
 @app.command("run")
 def cmd_run(
-    db_path:      Path = DB_OPTION,
-    config_dir:   Path = CONFIG_DIR_OPTION,
-    model_dir:    Path = typer.Option(_MODEL_DIR, "--model-dir", help="Directory artefatti modello"),
-    output_dir:   Path = OUTPUT_DIR_OPTION,
-    forecast_days: int = typer.Option(7, "--forecast-days", help="Giorni di forecast Open-Meteo (1-16)"),
-    skill_output: Path = typer.Option(DEFAULT_DUMP_PATH, "--skill-output", help="Path skill_history.json"),
-    dry_run:      bool = typer.Option(False, "--dry-run", help="Non scrive su disco né in DB"),
+    db_path:       Path = DB_OPTION,
+    config_dir:    Path = CONFIG_DIR_OPTION,
+    model_dir:     Path = typer.Option(_MODEL_DIR, "--model-dir", help="Directory artefatti modello"),
+    output_dir:    Path = OUTPUT_DIR_OPTION,
+    forecast_days: int  = typer.Option(7, "--forecast-days", help="Giorni di forecast Open-Meteo (1-16)"),
+    dry_run:       bool = typer.Option(False, "--dry-run", help="Non scrive su disco né in DB"),
 ) -> None:
-    """Pipeline 6h: forecasts → features → predict → skill-history append + dump."""
-    with job_run("job_pipeline") as stats:
+    """Forecast 6h: NWP live → features → predict → JSON."""
+    with job_run("job_forecast") as stats:
         locations, stations = load_configs(config_dir)
 
         with DuckDBClient(db_path=db_path) as db:
@@ -172,8 +100,7 @@ def cmd_run(
 
             # ── 0. Pesi stazione→location (prerequisito features/predict) ────
             # Ricalcolati da config ad ogni run: idempotente (DELETE+INSERT),
-            # costo ~0 (nessun fetch esterno). Elimina il refresh manuale
-            # richiesto su DB nuovo o dopo modifiche a locations/stations.yaml.
+            # costo ~0 (nessun fetch esterno).
             if not dry_run:
                 refresh_station_weights(db, locations, stations)
                 refresh_upstream_rings(db, locations, stations)
@@ -189,29 +116,16 @@ def cmd_run(
                     for records in model_results.values():
                         if records:
                             fc_total += db.upsert_forecasts(records)
-                logger.info(f"pipeline forecasts: {fc_total} record")
+                logger.info(f"forecast forecasts: {fc_total} record")
 
             # ── 2. Features ─────────────────────────────────────────────────
             n_features = build_features_daily(db)
-            logger.info(f"pipeline features: {n_features} righe in features_daily")
+            logger.info(f"forecast features: {n_features} righe in features_daily")
 
             # ── 3. Predict ──────────────────────────────────────────────────
-            if not dry_run:
-                # Retroattivo: popola *_obs sui giorni passati quando ingest daily è già girato
-                # (daily a 06:00 UTC → questo run delle 08:00+ ha i dati; run delle 02:00 no).
-                n_backfilled = db.backfill_prediction_obs()
-                if n_backfilled:
-                    logger.info(f"pipeline obs backfill: {n_backfilled} predictions")
-                n_bench = db.backfill_benchmark_obs()
-                if n_bench:
-                    logger.info(f"pipeline bench backfill: {n_bench} benchmark")
-                n_aci = _aci_update_from_history(db)
-                if n_aci:
-                    logger.info(f"pipeline ACI: {n_aci} coppie aggiornate")
-
             artifacts = load_artifacts(model_dir=model_dir)
             model_version = artifacts.trained_at.strftime("%Y%m%d")
-            logger.info(f"pipeline modello: {model_version}, {len(artifacts.targets)} target")
+            logger.info(f"forecast modello: {model_version}, {len(artifacts.targets)} target")
 
             indicators_cfg = load_indicators()
 
@@ -241,7 +155,7 @@ def cmd_run(
 
                 # Prima riga per target_date = lead minimo (query già ordinata per lead_time_h ASC)
                 min_lead_indices: set[int] = set(
-                    loc_df.groupby("target_date").apply(lambda g: g.index[0]).tolist()
+                    loc_df.groupby("target_date")["lead_time_h"].idxmin().tolist()
                 )
 
                 for i, row in loc_df.iterrows():
@@ -349,33 +263,10 @@ def cmd_run(
                 )
                 json_paths.append(path)
 
-            logger.info(f"pipeline predict: {len(json_paths)} JSON scritti")
-
-            # ── 4. Skill-history append (ieri) + dump ────────────────────────
-            n_sh = 0
-            if not dry_run:
-                assert db._conn is not None
-                yesterday = date.today() - timedelta(days=1)
-                n_sh = append_one(db._conn, yesterday)
-                logger.info(f"pipeline skill-history: {n_sh} righe upsert ({yesterday})")
-
-                payload = dump_payload(db._conn)
-                atomic_write_json(skill_output, payload)
-                logger.info(f"pipeline skill-history dump: {skill_output}")
-
-            # ── 5. Monitor coverage ACI ──────────────────────────────────────
-            coverage_results = compute_coverage(db)
-            if not coverage_results:
-                logger.warning("pipeline monitor: nessuna prediction con actual negli ultimi 30gg")
-            else:
-                n_alerts = check_and_log(coverage_results)
-                if n_alerts > 0 and not dry_run:
-                    _ping_monitor_alert()
-                    logger.warning(f"pipeline monitor: drift su {n_alerts} combinazioni — healthchecks /fail")
+            logger.info(f"forecast predict: {len(json_paths)} JSON scritti")
 
         stats.rows = len(json_paths)
-        n_sh_str = str(n_sh) if not dry_run else "dry"
-        stats.summary = f"forecasts→features({n_features})→predict({len(json_paths)} JSON)→skill-history({n_sh_str})"
+        stats.summary = f"forecasts→features({n_features})→predict({len(json_paths)} JSON)"
 
 
 if __name__ == "__main__":

@@ -45,6 +45,23 @@ def _resolve_healthchecks_url(job_name: str) -> str:
     return os.environ.get("HEALTHCHECKS_URL", "").strip()
 
 
+def ping_monitor_alert() -> None:
+    """Invia ping a HEALTHCHECKS_URL_MONITOR se configurata, altrimenti solo warning.
+
+    Canale separato dal check principale del job: il drift ACI non è un
+    fallimento del job, quindi non deve sovrascrivere il ping ok finale.
+    """
+    url = os.environ.get("HEALTHCHECKS_URL_MONITOR", "").strip()
+    if not url:
+        logger.warning("HEALTHCHECKS_URL_MONITOR non configurata — drift ACI non notificato")
+        return
+    try:
+        httpx.get(url.rstrip("/") + "/fail", timeout=5)
+        logger.info(f"Monitor alert inviato: {url}/fail")
+    except Exception as e:
+        logger.warning(f"Monitor alert ping fallito: {e}")
+
+
 def ping_healthchecks(status: str = "", base_url: str = "") -> None:
     """Invia ping a Healthchecks.io se l'URL è configurato (altrimenti skip).
 

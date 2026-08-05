@@ -62,14 +62,13 @@ guazza/
 │   ├── qc.py               # Quality control osservazioni SIR (chiamato da ingest)
 │   ├── _logging.py         # setup_logging() + log_scrape() — TTY pretty / cron JSON
 │   ├── netatmo_daily.py    # Accumulo Netatmo realtime → daily (forward-looking storico)
- │   ├── skill_history.py    # append_one(), dump_payload(), atomic_write_json() (usato da pipeline)
- │   ├── monitor.py          # compute_coverage(), check_and_log() (usato da pipeline)
+ │   ├── skill_history.py    # append_one(), dump_payload(), atomic_write_json() (usato da review)
+ │   ├── monitor.py          # compute_coverage(), check_and_log(), update_aci_from_history()
  │   └── jobs/
  │       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
  │       ├── ingest.py       # Cron: historical / daily / realtime
- │       ├── pipeline.py     # Cron 6h: forecasts → features → predict → skill-history → monitor
- │       ├── train.py        # One-shot: train run (LightGBM + CQR)
- │       ├── skill.py        # Cron settimanale: curva skill MAE per lead → skill.json
+ │       ├── forecast.py     # Cron 6h (02/08/14/20 UTC): NWP live → features → predict → JSON
+ │       ├── review.py       # Cron 1×/giorno (06:00 UTC): obs ieri + ACI + skill-history + train condizionale
  │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2
 ├── data/
 │   ├── guazza.duckdb       # Database analitico (non committato)
@@ -167,22 +166,21 @@ condizioni realtime aggregate (`current` con dewpoint e temperatura percepita),
 profili orari NWP con vento, e confronto
 modelli con data ultimo run.
 
-> **Nota locale**: prima della pipeline eseguire `ingest realtime` per avere
+> **Nota locale**: prima del forecast eseguire `ingest realtime` per avere
 > il campo `current` popolato. In produzione il cron ogni 30 min lo mantiene fresco.
 
-### Training (on-demand o mensile)
+### Training (condizionale in review, o forzato)
 
 ```bash
-# Pesi stazioni + ring upstream pluvio — gestiti automaticamente da guazza-pipeline run
-
-# Training LightGBM + CQR
-uv run python -m guazza.jobs.train run --db data/guazza.duckdb --model-dir data/models
+# Il train gira automaticamente dentro guazza-review se gli artefatti hanno > 7 giorni.
+# Per forzarlo manualmente:
+uv run python -m guazza.jobs.review run --db data/guazza.duckdb --model-dir data/models --force-train
 ```
 
 ### Skill history backfill manuale
 
 ```bash
-# append + dump sono inclusi automaticamente nella pipeline 6h.
+# append + dump sono inclusi automaticamente in guazza-review.
 # Per backfill manuale (es. dopo perdita dati):
 python -c "
 import duckdb
@@ -217,8 +215,7 @@ container su GitHub Container Registry, allineata a `pyproject.toml`:
 
 L'immagine è single-stage: `python:3.13-slim` + `uv` (binario ufficiale) + nginx + frontend statico. Il
 container gira come utente non-root (UID 1000), include nginx sulla porta 8080
-per il servizio web e gli entry point CLI (`guazza-ingest`, `guazza-predict`,
-`guazza-train`, ...) per i job schedulati.
+per il servizio web e gli entry point CLI (`guazza-ingest`, `guazza-forecast`, `guazza-review`, `guazza-backup`) per i job schedulati.
 
 ### Procedura di rilascio
 

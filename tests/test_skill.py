@@ -1,10 +1,10 @@
-"""Test della logica di curva skill (jobs.skill._curve_for) — no DB, no training."""
+"""Test della logica di curva skill (jobs.review._curve_for) — no DB, no training."""
 
 from __future__ import annotations
 
 import pandas as pd
 
-from guazza.jobs.skill import LEADS, MIN_SAMPLES_PER_LEAD, _curve_for
+from guazza.jobs.review import LEADS, MIN_SAMPLES_PER_LEAD, _curve_for
 
 
 def _row(lead: int, pred: float, nwp: float, prim: float) -> dict[str, object]:
