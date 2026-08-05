@@ -8,24 +8,32 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-05
+
+### Added
+- **`monitor.update_aci_from_history()`**: ricostruisce stato ACI da tutta la
+  history di predictions con osservazioni; usato da `review` per warm-up ACI
+  su DB resettato.
+
 ### Changed
 - **`fetch_openmeteo.py`**: sostituiti `_DEFAULT_CHUNK_DAYS` / `_HIGH_RES_CHUNK_DAYS` / `_HIGH_RES_MODELS`
   con `_OM_CELL_BUDGET = 483_840` e `_chunk_days(n_vars)`. Il chunk temporale viene ora calcolato
   per modello e tipo di fetch in base al numero di variabili richieste, evitando strutturalmente
   il 429 "Minutely" su ECMWF multilead (28 vars → 120gg) e massimizzando il chunk per modelli
   leggeri (historical 9 vars → 474gg; AROME multilead 4 vars → 845gg).
-
-### Changed (previous)
-- **Restructured `docs/status.md` come cockpit**: rimosse roadmap sprint
-  (unica fonte: `CHANGELOG.md`), rimosse note tecniche operative duplicate
-  (già in `decisions.md`/`known_issues.md`/codice), rimosso blocco metriche
-  skill (canonica in `D-016`).
-- **P9 → D-021** (nowcast Blitzortung) e **P10 → D-022** (allerte
-  allertameteo.app) promossi a decisioni in `docs/decisions.md`. Status tiene
-  solo stub `→ D-021` / `→ D-022`.
-- **P4 chiuso**: `affidabilita.html` esiste già come pagina dedicata.
-- **P6 chiuso**: la migrazione k3s è completata (Sprint 8, v0.12.2); il
-  riferimento era un P fantasma (numerazione non auditabile).
+- **Entry point rinominati**: `guazza-pipeline → guazza-forecast`, `guazza-train → guazza-review`,
+  rimosso `guazza-skill` (funzionalità assorbita in `review`).
+- **`models.py` — LEAD_BUCKETS giornalieri**: bucket ridefiniti D+0..D+5+ (erano orari, sempre
+  vuoti su features_daily multi-lead). Cal_days rollbackato a 90 (150 non migliorava coverage CI).
+- **Rimossi wet regressor** (skill negativo in 3/4 fold) e **`anomaly_targets`** (dead code
+  post-KI-024); 36 test rimasti verdi.
+- **`docs/status.md`** ristrutturato come cockpit: rimossi duplicati, P9→D-021, P10→D-022,
+  P4 e P6 chiusi.
+- **`AGENTS.md`** rivisto: minimal modification doctrine, diff-first, gate analisi funzionale,
+  gold standard files, checklist in negativo; rimossi duplicati (-23 righe nette).
+- **`rain_clf` (hurdle stadio 1)**: BSS +0.16/+0.28, AUC 0.73-0.79 nei fold rappresentativi.
+- **CAPE feature convettiva**: `cape_jkg` in schema/storage/features, `nwp_cape_mean/spread`
+  in FEATURE_COLS (ora 32, 4×8).
 
 ### Fixed
 - Rimossi riferimenti morti: `(P6)` in `AGENTS.md` e `README.md`,
