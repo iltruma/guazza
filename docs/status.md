@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | Versione | **0.14.0-dev** |
-| Test | 36 verdi (`test_models.py`; suite completa ~90s) |
+| Test | 36 verdi (`test_models.py`; suite completa ~41s) |
 | Lint / mypy | ✅ puliti |
 | Deploy | k3s astra/nebula, namespace `guazza`, Flux + SOPS — DB prod da resettare (schema `cape_jkg`) |
 
