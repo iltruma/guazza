@@ -583,10 +583,10 @@ def train_all(
 
         logger.info(f"[{target}] training su {len(y_tr)} righe con {len(QUANTILES)} quantili")
 
+        init_tr  = _make_init_score(df_fit, target, mask_train)
+        init_val = _make_init_score(df_es_val, target, df_es_val[col].notna()) if has_es_val else None
         models_q: dict[float, lgb.LGBMRegressor | lgb.Booster] = {}
         for q in QUANTILES:
-            init_tr  = _make_init_score(df_fit, target, mask_train)
-            init_val = _make_init_score(df_es_val, target, df_es_val[col].notna()) if has_es_val else None
             if has_es_val:
                 mask_val = df_es_val[col].notna()
                 X_val_es = df_es_val.loc[mask_val, FEATURE_COLS]
@@ -1013,9 +1013,6 @@ def predict(
     if artifacts.rain_classifier is not None:
         clf = artifacts.rain_classifier
         X_clf = X.copy()
-        for col in artifacts.categorical_cols:
-            if col in X_clf.columns:
-                X_clf[col] = X_clf[col].astype("category")
         prob_raw = np.asarray(clf.model.predict(X_clf))
         prob_cal = _apply_rain_calibration(prob_raw, clf.calibration)
         out["rain_clf"] = {"prob_rain": float(np.clip(prob_cal[0], 0.0, 1.0))}
@@ -1057,9 +1054,6 @@ def predict_frame(
     if artifacts.rain_classifier is not None:
         clf = artifacts.rain_classifier
         X_clf = X.copy()
-        for col in artifacts.categorical_cols:
-            if col in X_clf.columns:
-                X_clf[col] = X_clf[col].astype("category")
         prob_raw_all = np.asarray(clf.model.predict(X_clf))
         prob_cal_all = np.clip(_apply_rain_calibration(prob_raw_all, clf.calibration), 0.0, 1.0)
 
@@ -1167,10 +1161,10 @@ def walk_forward_cv(
                 logger.warning(f"Fold {i+1} [{target}]: train troppo piccolo ({len(y_tr)}), skip")
                 continue
 
+            init_tr = _make_init_score(df_train, target, mask_tr)
+            init_val_fold = _make_init_score(df_es_val_fold, target, df_es_val_fold[col].notna()) if has_es_val_fold else None
             models_q: dict[float, lgb.LGBMRegressor | lgb.Booster] = {}
             for q in QUANTILES:
-                init_tr = _make_init_score(df_train, target, mask_tr)
-                init_val_fold = _make_init_score(df_es_val_fold, target, df_es_val_fold[col].notna()) if has_es_val_fold else None
                 if has_es_val_fold:
                     mask_val = df_es_val_fold[col].notna()
                     X_val_es = df_es_val_fold.loc[mask_val, FEATURE_COLS]
@@ -1183,7 +1177,10 @@ def walk_forward_cv(
                 else:
                     models_q[q] = train_lgbm(X_tr, y_tr, q, init_score=init_tr)
 
-            cqr = _compute_cqr(models_q, df_cal[FEATURE_COLS], df_cal[col], df_cal["lead_time_h"], target=target, use_init_score=True)
+            cqr = _compute_cqr(
+                models_q, df_cal[FEATURE_COLS], df_cal[col], df_cal["lead_time_h"],
+                target=target, use_init_score=True,
+            )
 
             # Valuta sul test set
             mask_te = df_test[col].notna()
@@ -1212,7 +1209,7 @@ def walk_forward_cv(
             ci80_hi = preds[0.90].copy()
             ci90_lo = preds[0.05].copy()
             ci90_hi = preds[0.95].copy()
-            for label, _ in LEAD_BUCKETS.items():
+            for label in LEAD_BUCKETS:
                 m_b = buckets_te == label
                 if not m_b.any():
                     continue
@@ -1252,7 +1249,7 @@ def walk_forward_cv(
             })
 
             # Breakdown per lead bucket: una riga per bucket presente nel test
-            for label, _ in LEAD_BUCKETS.items():
+            for label in LEAD_BUCKETS:
                 m_b = buckets_te == label
                 n_b = int(m_b.sum())
                 if n_b == 0:
