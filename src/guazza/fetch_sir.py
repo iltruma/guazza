@@ -346,19 +346,21 @@ def fetch_sir_stations_realtime(
             executor.submit(fetch_sir_realtime, sid): sid
             for sid in station_ids
         }
-        for future in tqdm(
-            as_completed(future_to_sid),
+        with tqdm(
             total=len(station_ids),
             desc="SIR realtime",
             unit="staz",
             disable=not _tty,
-        ):
-            sid = future_to_sid[future]
-            try:
-                results[sid] = future.result()
-            except Exception as e:
-                n_fail += 1
-                logger.warning(f"SIR realtime fallito per {sid}: {e}")
+            dynamic_ncols=True,
+        ) as bar:
+            for future in as_completed(future_to_sid):
+                sid = future_to_sid[future]
+                try:
+                    results[sid] = future.result()
+                except Exception as e:
+                    n_fail += 1
+                    tqdm.write(f"SIR realtime fallito per {sid}: {e}", file=sys.stderr)
+                bar.update(1)
 
     status = "ok" if results else "fail"
     detail = f"{n_fail} stazioni fallite" if n_fail else ""
