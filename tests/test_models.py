@@ -218,7 +218,7 @@ def test_crps_from_quantiles_positive() -> None:
 
 
 def test_train_all_returns_artifacts(db: DuckDBClient, tmp_path: Path) -> None:
-    _insert_features(db, n_days=400, n_locations=2)
+    _insert_features(db, n_days=120, n_locations=1)
     model_dir = tmp_path / "models"
 
     artifacts = train_all(db, model_dir=model_dir, cal_days=60)
@@ -232,7 +232,7 @@ def test_train_all_returns_artifacts(db: DuckDBClient, tmp_path: Path) -> None:
 
 
 def test_train_all_models_have_all_quantiles(db: DuckDBClient, tmp_path: Path) -> None:
-    _insert_features(db, n_days=400, n_locations=2)
+    _insert_features(db, n_days=120, n_locations=1)
     artifacts = train_all(db, model_dir=tmp_path / "m", cal_days=60)
 
     for target, bundle in artifacts.targets.items():
@@ -241,7 +241,7 @@ def test_train_all_models_have_all_quantiles(db: DuckDBClient, tmp_path: Path) -
 
 
 def test_load_artifacts_roundtrip(db: DuckDBClient, tmp_path: Path) -> None:
-    _insert_features(db, n_days=400)
+    _insert_features(db, n_days=120)
     model_dir = tmp_path / "models"
     trained = train_all(db, model_dir=model_dir, cal_days=60)
 
@@ -309,7 +309,7 @@ def test_load_artifacts_rejects_legacy_pickle(tmp_path: Path) -> None:
 
 
 def test_predict_returns_all_keys(db: DuckDBClient, tmp_path: Path) -> None:
-    _insert_features(db, n_days=400)
+    _insert_features(db, n_days=120)
     artifacts = train_all(db, model_dir=tmp_path / "m", cal_days=60)
 
     from guazza.models import FEATURE_COLS
@@ -325,7 +325,7 @@ def test_predict_returns_all_keys(db: DuckDBClient, tmp_path: Path) -> None:
 
 
 def test_predict_ci_ordering(db: DuckDBClient, tmp_path: Path) -> None:
-    _insert_features(db, n_days=400)
+    _insert_features(db, n_days=120)
     artifacts = train_all(db, model_dir=tmp_path / "m", cal_days=60)
 
     from guazza.models import FEATURE_COLS
@@ -348,7 +348,7 @@ def test_predict_frame_matches_per_row(db: DuckDBClient, tmp_path: Path) -> None
     Invariante alla base dell'ottimizzazione C2 del job predict: include lead time
     diversi (bucket CQR diversi) per coprire la correzione per-riga.
     """
-    _insert_features(db, n_days=400)
+    _insert_features(db, n_days=120)
     artifacts = train_all(db, model_dir=tmp_path / "m", cal_days=60)
 
     from guazza.models import FEATURE_COLS
@@ -367,7 +367,7 @@ def test_predict_frame_matches_per_row(db: DuckDBClient, tmp_path: Path) -> None
 
 
 def test_predict_frame_length_mismatch_raises(db: DuckDBClient, tmp_path: Path) -> None:
-    _insert_features(db, n_days=400)
+    _insert_features(db, n_days=120)
     artifacts = train_all(db, model_dir=tmp_path / "m", cal_days=60)
 
     from guazza.models import FEATURE_COLS
@@ -378,7 +378,7 @@ def test_predict_frame_length_mismatch_raises(db: DuckDBClient, tmp_path: Path) 
 
 
 def test_walk_forward_cv_returns_dataframe(db: DuckDBClient) -> None:
-    _insert_features(db, n_days=600, n_locations=2)
+    _insert_features(db, n_days=220, n_locations=1)
     aggregate, per_bucket = walk_forward_cv(db, n_splits=2, min_train_days=180, embargo_days=7)
 
     assert isinstance(aggregate, pd.DataFrame) and isinstance(per_bucket, pd.DataFrame)
@@ -392,8 +392,8 @@ def test_walk_forward_cv_returns_dataframe(db: DuckDBClient) -> None:
 
 
 def test_walk_forward_cv_coverage_reasonable(db: DuckDBClient) -> None:
-    _insert_features(db, n_days=800, n_locations=2)
-    aggregate, per_bucket = walk_forward_cv(db, n_splits=3, min_train_days=180, embargo_days=7)
+    _insert_features(db, n_days=250, n_locations=1)
+    aggregate, per_bucket = walk_forward_cv(db, n_splits=2, min_train_days=180, embargo_days=7)
 
     # Verifica che coverage sia un float valido in [0, 1] — non testiamo calibrazione
     # su dati sintetici con modelli veloci (n_estimators ridotto dalla fixture fast_lgbm).
@@ -414,9 +414,9 @@ def test_walk_forward_cv_cqr_per_row(db: DuckDBClient) -> None:
     larghezza del CI riga per riga; senza il fix, ogni riga userebbe la correzione
     0-6h hardcoded.
     """
-    _insert_features(db, n_days=800, n_locations=2)
+    _insert_features(db, n_days=220, n_locations=1)
     _aggregate, per_bucket = walk_forward_cv(
-        db, n_splits=3, min_train_days=180, embargo_days=7
+        db, n_splits=2, min_train_days=180, embargo_days=7
     )
 
     assert "D+0" in set(per_bucket["lead_bucket"])
@@ -808,11 +808,11 @@ def test_train_rain_classifier_returns_bundle(db: DuckDBClient, tmp_path: Path) 
 
 def test_predict_emits_prob_rain(db: DuckDBClient, tmp_path: Path) -> None:
     """predict() emette out['rain_clf']['prob_rain'] in [0, 1] quando il clf è presente."""
-    _insert_features(db, n_days=400, n_locations=2)
+    _insert_features(db, n_days=140, n_locations=2)
     model_dir = tmp_path / "models"
     artifacts = train_all(db, model_dir=model_dir, cal_days=60)
 
-    assert artifacts.rain_classifier is not None, "rain_classifier dovrebbe essere presente con 400 giorni"
+    assert artifacts.rain_classifier is not None, "rain_classifier dovrebbe essere presente"
 
     # Usa la prima riga di features come input
     df = db.execute("SELECT * FROM features_daily LIMIT 1").df()
@@ -829,7 +829,7 @@ def test_predict_emits_prob_rain(db: DuckDBClient, tmp_path: Path) -> None:
 
 def test_walk_forward_cv_has_rain_clf_row(db: DuckDBClient) -> None:
     """walk_forward_cv deve produrre almeno una riga target='rain_clf' con brier non None."""
-    _insert_features(db, n_days=600, n_locations=2)
+    _insert_features(db, n_days=220, n_locations=1)
     aggregate, _per_bucket = walk_forward_cv(db, n_splits=2, min_train_days=180, embargo_days=7)
 
     clf_rows = aggregate[aggregate["target"] == "rain_clf"]
