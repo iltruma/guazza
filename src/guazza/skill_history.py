@@ -131,6 +131,8 @@ def dump_payload(con: duckdb.DuckDBPyConnection) -> dict:
                forecast_value, actual_value
         FROM skill_history_daily
         WHERE lead_h = ?
+        -- ORDER BY target_date è load-bearing: dump_payload si affida all'ordine
+        -- crescente per costruire la lista dates in by_lv senza sort esplicito
         ORDER BY location_id, variable, target_date, source
     """, [LEAD_H]).fetchall()
 
@@ -163,7 +165,7 @@ def dump_payload(con: duckdb.DuckDBPyConnection) -> dict:
             "dates": [d.isoformat() for d in entry["dates"]],
             "actual": [entry["_actual"].get(d) for d in entry["dates"]],
         }
-        for src in NWP_SOURCES + ["guazza"]:
+        for src in ALL_SOURCES:
             var_dict[src] = [entry["_forecast"].get(src, {}).get(d) for d in entry["dates"]]
         loc_dict[var] = var_dict
         if entry["dates"]:

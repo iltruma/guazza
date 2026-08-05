@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pandas as pd
 from loguru import logger
 
 from guazza.models import (
@@ -21,6 +20,13 @@ from guazza.storage import DuckDBClient
 DRIFT_TOLERANCE_PP: float = 0.05
 TARGET_COVERAGE_80: float = 0.80
 TARGET_COVERAGE_90: float = 0.90
+
+# (obs_col, p10, p90, p05, p95) per ogni target — fonte unica condivisa tra compute_coverage e update_aci_from_history
+TARGET_COLS: dict[str, tuple[str, str, str, str, str]] = {
+    "tmin_c":    ("tmin_obs",   "tmin_p10",   "tmin_p90",   "tmin_p05",   "tmin_p95"),
+    "tmax_c":    ("tmax_obs",   "tmax_p10",   "tmax_p90",   "tmax_p05",   "tmax_p95"),
+    "precip_mm": ("precip_obs", "precip_p10", "precip_p90", "precip_p05", "precip_p95"),
+}
 
 
 @dataclass
@@ -53,11 +59,7 @@ def compute_coverage(db: DuckDBClient) -> list[CoverageResult]:
     rows = rows.assign(bucket=rows["lead_time_h"].apply(_lead_time_bucket))
 
     out: list[CoverageResult] = []
-    for target, obs_col, p10, p90, p05, p95 in [
-        ("tmin_c",    "tmin_obs",   "tmin_p10",   "tmin_p90",   "tmin_p05",   "tmin_p95"),
-        ("tmax_c",    "tmax_obs",   "tmax_p10",   "tmax_p90",   "tmax_p05",   "tmax_p95"),
-        ("precip_mm", "precip_obs", "precip_p10", "precip_p90", "precip_p05", "precip_p95"),
-    ]:
+    for target, (obs_col, p10, p90, p05, p95) in TARGET_COLS.items():
         sub = rows.dropna(subset=[obs_col])
         if sub.empty:
             continue
@@ -118,29 +120,26 @@ def update_aci_from_history(db: DuckDBClient) -> int:
     if rows.empty:
         return 0
 
-    target_obs = {
-        "tmin_c":    ("tmin_obs",   "tmin_p10",   "tmin_p90",   "tmin_p05",   "tmin_p95"),
-        "tmax_c":    ("tmax_obs",   "tmax_p10",   "tmax_p90",   "tmax_p05",   "tmax_p95"),
-        "precip_mm": ("precip_obs", "precip_p10", "precip_p90", "precip_p05", "precip_p95"),
-    }
-
     rows = rows.assign(_bucket=rows["lead_time_h"].apply(_lead_time_bucket))
+    # groupby calcolato una volta sola; sort=False preserva l'ordine ts_valid (ORDER BY in SQL)
+    # — AdaptiveConformalizer.update() è sequenziale: alpha_{t+1} dipende da alpha_t
+    grouped = dict(rows.groupby("_bucket", sort=False))
 
     n_updated = 0
-    for target, (obs_col, p10_col, p90_col, p05_col, p95_col) in target_obs.items():
+    for target, (obs_col, p10_col, p90_col, p05_col, p95_col) in TARGET_COLS.items():
         for bucket in LEAD_BUCKETS:
             aci_80 = AdaptiveConformalizer(alpha_target=0.20, learning_rate=ACI_LEARNING_RATE)
             aci_90 = AdaptiveConformalizer(alpha_target=0.10, learning_rate=ACI_LEARNING_RATE)
-            for _, row in rows.iterrows():
-                if row["_bucket"] != bucket:
-                    continue
-                actual = row[obs_col]
-                if pd.isna(actual):
-                    continue
-                if pd.isna(row[p10_col]) or pd.isna(row[p90_col]) or pd.isna(row[p05_col]) or pd.isna(row[p95_col]):
-                    continue
-                aci_80.update(bool(row[p10_col] <= actual <= row[p90_col]))
-                aci_90.update(bool(row[p05_col] <= actual <= row[p95_col]))
+            bsub = grouped.get(bucket)
+            if bsub is not None:
+                valid = bsub.dropna(subset=[obs_col, p10_col, p90_col, p05_col, p95_col])
+                for covered_80, covered_90 in zip(
+                    (valid[p10_col] <= valid[obs_col]) & (valid[obs_col] <= valid[p90_col]),
+                    (valid[p05_col] <= valid[obs_col]) & (valid[obs_col] <= valid[p95_col]),
+                    strict=True,
+                ):
+                    aci_80.update(bool(covered_80))
+                    aci_90.update(bool(covered_90))
             db.upsert_aci_state(
                 target, bucket,
                 aci_80.alpha_t, aci_90.alpha_t,

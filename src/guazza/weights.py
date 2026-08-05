@@ -94,7 +94,7 @@ def refresh_upstream_rings(
             s_lon = s.get("lon")
             if s_lat is None or s_lon is None:
                 continue
-            s_elev: float = s.get("quota_m") or target_elev
+            s_elev: float = s["quota_m"] if s.get("quota_m") is not None else target_elev
             _, dist_km, _ = compute_station_weight(
                 s_lat, s_lon, s_elev,
                 target_lat, target_lon, target_elev,
@@ -182,11 +182,8 @@ def refresh_station_weights(
                 "weight": weight,
                 "distance_km": dist_km,
                 "delta_elev_m": delta_elev,
-                "nome": s.get("nome", station_id),
                 "computed_at": now,
             })
-
-
 
     if not records:
         logger.warning("Nessun record da inserire in station_weights")
@@ -194,9 +191,7 @@ def refresh_station_weights(
 
     db.execute("DELETE FROM station_weights")
     df = pd.DataFrame(
-        [[r["station_id"], r["source"], r["location_id"],
-          r["weight"], r["distance_km"], r["delta_elev_m"], r["computed_at"]]
-         for r in records],
+        records,
         columns=["station_id", "source", "location_id", "weight", "distance_km", "delta_elev_m", "computed_at"],
     )
     db.register_df("_stg_weights", df)

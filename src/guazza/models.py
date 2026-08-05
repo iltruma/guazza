@@ -527,7 +527,7 @@ def _lead_time_bucket(lead_h: int) -> str:
     for label, (lo, hi) in LEAD_BUCKETS.items():
         if lo <= lead_h < hi:
             return label
-    return "72h+"
+    raise ValueError(f"lead_h={lead_h} fuori da tutti i LEAD_BUCKETS")
 
 
 def train_all(

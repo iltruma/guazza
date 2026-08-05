@@ -25,19 +25,21 @@ def compute_quality_flags(db: DuckDBClient) -> dict[str, int]:
         Dict con total e breakdown per flag_type.
     """
     db.execute("BEGIN TRANSACTION")
-    db.execute("DELETE FROM quality_flags")
-
-    _insert_spike_flags(db, "tmin_c", "spike_tmin")
-    _insert_spike_flags(db, "tmax_c", "spike_tmax")
-    _insert_inversion_flags(db)
-    _insert_range_precip_flags(db)
-
-    rows = db.execute(
-        "SELECT flag_type, COUNT(*) FROM quality_flags GROUP BY flag_type ORDER BY flag_type"
-    ).fetchall()
-    breakdown = {str(r[0]): int(r[1]) for r in rows}
-    breakdown["total"] = sum(breakdown.values())
-    db.execute("COMMIT")
+    try:
+        db.execute("DELETE FROM quality_flags")
+        _insert_spike_flags(db, "tmin_c", "spike_tmin")
+        _insert_spike_flags(db, "tmax_c", "spike_tmax")
+        _insert_inversion_flags(db)
+        _insert_range_precip_flags(db)
+        rows = db.execute(
+            "SELECT flag_type, COUNT(*) FROM quality_flags GROUP BY flag_type ORDER BY flag_type"
+        ).fetchall()
+        breakdown = {str(r[0]): int(r[1]) for r in rows}
+        breakdown["total"] = sum(breakdown.values())
+        db.execute("COMMIT")
+    except Exception:
+        db.execute("ROLLBACK")
+        raise
     return breakdown
 
 
