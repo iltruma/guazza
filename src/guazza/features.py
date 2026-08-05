@@ -5,14 +5,9 @@ features_daily è una tabella materializzata (non una view) costruita da:
   - observations: SIR daily pesati per location via station_weights
   - climatologia: media/std mensile multi-anno calcolata dagli stessi observations
 
-Schema di una riga:
-  (location_id, target_date, lead_time_h)
-  NWP per modello (ecmwf/aifs/icon/gfs/arome) × (tmin, tmax, precip, humidity, wind)
-  Ensemble stats: media e spread inter-modello su tmin, tmax, precip
-  Obs features: osservazione pesata del giorno prima (lookahead-safe)
-  Climatologia: media/std mensile per tmin, tmax, precip
-  Calendario: month, day_of_year
-  Target: osservazione pesata a target_date (ground truth per il training)
+Schema di una riga: vedi SELECT finale.
+  Modelli NWP: prefissi in NWP_MODEL_PREFIXES × NWP_DAILY_VARS
+  Ensemble stats, obs features, climatologia, calendario, ring features, targets.
 
 lead_time_h = ore da ts_run a mezzanotte di target_date.
 I forecast orari vengono aggregati: MIN(temp)→tmin, MAX(temp)→tmax, SUM(precip), AVG(humidity/wind).
@@ -53,6 +48,41 @@ _NWP_PIVOT_COLS = ",\n        ".join(
     for prefix, src in NWP_MODEL_PREFIXES
     for var in NWP_DAILY_VARS
 )
+
+# SELECT n.<col> per tutte le colonne NWP wide, iniettato al posto di __NWP_SELECT_COLS__.
+# Deriva da NWP_FEATURE_COLS: aggiungere un modello aggiorna automaticamente anche questo.
+_NWP_SELECT_COLS = ",\n    ".join(f"n.{c}" for c in NWP_FEATURE_COLS)
+
+# Ensemble stats: (prefisso output, colonna per-modello).
+# L'ordine fissa quello delle colonne nwp_*_mean/nwp_*_spread lette da models.FEATURE_COLS.
+_ENSEMBLE_VARS: list[tuple[str, str]] = [
+    ("tmin",     "tmin_c"),
+    ("tmax",     "tmax_c"),
+    ("precip",   "precip_mm"),
+    ("pressure", "pressure_hpa_avg"),
+    ("cape",     "cape_max"),
+]
+
+
+def _ensemble_block(out: str, col: str) -> str:
+    """Genera il blocco SQL mean+spread per una variabile ensemble.
+
+    Media null-safe: somma COALESCE / conteggio non-NULL.
+    Spread: GREATEST-LEAST (DuckDB ignora i NULL → funziona con modelli parziali).
+    I termini per-modello derivano da NWP_MODEL_PREFIXES: aggiungere un modello
+    estende automaticamente la statistica.
+    """
+    cols = [f"n.{prefix}_{col}" for prefix, _src in NWP_MODEL_PREFIXES]
+    total = " + ".join(f"COALESCE({c}, 0)" for c in cols)
+    count = " + ".join(f"({c} IS NOT NULL)::INT" for c in cols)
+    args = ", ".join(cols)
+    return (
+        f"({total}) / NULLIF({count}, 0) AS nwp_{out}_mean,\n"
+        f"    GREATEST({args}) - LEAST({args}) AS nwp_{out}_spread"
+    )
+
+
+_ENSEMBLE_COLS = ",\n    ".join(_ensemble_block(out, col) for out, col in _ENSEMBLE_VARS)
 
 _BUILD_SQL = """\
 CREATE OR REPLACE TABLE features_daily AS
@@ -183,71 +213,12 @@ SELECT
     n.target_date,
     n.lead_time_h,
 
-    -- NWP per modello (4 modelli)
-    n.ecmwf_tmin_c, n.ecmwf_tmax_c, n.ecmwf_precip_mm, n.ecmwf_humidity_pct, n.ecmwf_wind_ms, n.ecmwf_pressure_hpa_avg, n.ecmwf_pressure_hpa_min, n.ecmwf_cape_max,
-    n.icon_tmin_c,  n.icon_tmax_c,  n.icon_precip_mm,  n.icon_humidity_pct,  n.icon_wind_ms,  n.icon_pressure_hpa_avg,  n.icon_pressure_hpa_min,  n.icon_cape_max,
-    n.arome_tmin_c, n.arome_tmax_c, n.arome_precip_mm, n.arome_humidity_pct, n.arome_wind_ms, n.arome_pressure_hpa_avg, n.arome_pressure_hpa_min, n.arome_cape_max,
-    n.icon2i_tmin_c, n.icon2i_tmax_c, n.icon2i_precip_mm, n.icon2i_humidity_pct, n.icon2i_wind_ms, n.icon2i_pressure_hpa_avg, n.icon2i_pressure_hpa_min, n.icon2i_cape_max,
+    -- NWP per modello (colonne generate da NWP_FEATURE_COLS)
+    __NWP_SELECT_COLS__,
 
-    -- Ensemble mean (media null-safe su 4 modelli)
-    (COALESCE(n.ecmwf_tmin_c, 0) + COALESCE(n.icon_tmin_c, 0)
-        + COALESCE(n.arome_tmin_c, 0) + COALESCE(n.icon2i_tmin_c, 0))
-    / NULLIF(
-        (n.ecmwf_tmin_c IS NOT NULL)::INT + (n.icon_tmin_c IS NOT NULL)::INT
-        + (n.arome_tmin_c IS NOT NULL)::INT + (n.icon2i_tmin_c IS NOT NULL)::INT, 0
-    ) AS nwp_tmin_mean,
-
-    -- Ensemble spread (max - min tra modelli disponibili).
-    -- DuckDB GREATEST/LEAST ignora i NULL: spread calcolato anche con modelli parziali.
-    GREATEST(n.ecmwf_tmin_c, n.icon_tmin_c, n.arome_tmin_c, n.icon2i_tmin_c)
-        - LEAST(n.ecmwf_tmin_c, n.icon_tmin_c, n.arome_tmin_c, n.icon2i_tmin_c)
-        AS nwp_tmin_spread,
-
-    (COALESCE(n.ecmwf_tmax_c, 0) + COALESCE(n.icon_tmax_c, 0)
-        + COALESCE(n.arome_tmax_c, 0) + COALESCE(n.icon2i_tmax_c, 0))
-    / NULLIF(
-        (n.ecmwf_tmax_c IS NOT NULL)::INT + (n.icon_tmax_c IS NOT NULL)::INT
-        + (n.arome_tmax_c IS NOT NULL)::INT + (n.icon2i_tmax_c IS NOT NULL)::INT, 0
-    ) AS nwp_tmax_mean,
-
-    GREATEST(n.ecmwf_tmax_c, n.icon_tmax_c, n.arome_tmax_c, n.icon2i_tmax_c)
-        - LEAST(n.ecmwf_tmax_c, n.icon_tmax_c, n.arome_tmax_c, n.icon2i_tmax_c)
-        AS nwp_tmax_spread,
-
-    (COALESCE(n.ecmwf_precip_mm, 0) + COALESCE(n.icon_precip_mm, 0)
-        + COALESCE(n.arome_precip_mm, 0) + COALESCE(n.icon2i_precip_mm, 0))
-    / NULLIF(
-        (n.ecmwf_precip_mm IS NOT NULL)::INT + (n.icon_precip_mm IS NOT NULL)::INT
-        + (n.arome_precip_mm IS NOT NULL)::INT + (n.icon2i_precip_mm IS NOT NULL)::INT, 0
-    ) AS nwp_precip_mean,
-
-    GREATEST(n.ecmwf_precip_mm, n.icon_precip_mm, n.arome_precip_mm, n.icon2i_precip_mm)
-        - LEAST(n.ecmwf_precip_mm, n.icon_precip_mm, n.arome_precip_mm, n.icon2i_precip_mm)
-        AS nwp_precip_spread,
-
-    -- Ensemble mean/spread pressione
-    (COALESCE(n.ecmwf_pressure_hpa_avg, 0) + COALESCE(n.icon_pressure_hpa_avg, 0)
-        + COALESCE(n.arome_pressure_hpa_avg, 0) + COALESCE(n.icon2i_pressure_hpa_avg, 0))
-    / NULLIF(
-        (n.ecmwf_pressure_hpa_avg IS NOT NULL)::INT + (n.icon_pressure_hpa_avg IS NOT NULL)::INT
-        + (n.arome_pressure_hpa_avg IS NOT NULL)::INT + (n.icon2i_pressure_hpa_avg IS NOT NULL)::INT, 0
-    ) AS nwp_pressure_mean,
-
-    GREATEST(n.ecmwf_pressure_hpa_avg, n.icon_pressure_hpa_avg, n.arome_pressure_hpa_avg, n.icon2i_pressure_hpa_avg)
-        - LEAST(n.ecmwf_pressure_hpa_avg, n.icon_pressure_hpa_avg, n.arome_pressure_hpa_avg, n.icon2i_pressure_hpa_avg)
-        AS nwp_pressure_spread,
-
-    -- Ensemble mean/spread CAPE (MAX giornaliero per modello → spread = disaccordo convettivo)
-    (COALESCE(n.ecmwf_cape_max, 0) + COALESCE(n.icon_cape_max, 0)
-        + COALESCE(n.arome_cape_max, 0) + COALESCE(n.icon2i_cape_max, 0))
-    / NULLIF(
-        (n.ecmwf_cape_max IS NOT NULL)::INT + (n.icon_cape_max IS NOT NULL)::INT
-        + (n.arome_cape_max IS NOT NULL)::INT + (n.icon2i_cape_max IS NOT NULL)::INT, 0
-    ) AS nwp_cape_mean,
-
-    GREATEST(n.ecmwf_cape_max, n.icon_cape_max, n.arome_cape_max, n.icon2i_cape_max)
-        - LEAST(n.ecmwf_cape_max, n.icon_cape_max, n.arome_cape_max, n.icon2i_cape_max)
-        AS nwp_cape_spread,
+    -- Ensemble mean/spread inter-modello (generati da _ENSEMBLE_VARS in Python).
+    -- Media null-safe; spread = GREATEST-LEAST (ignora NULL → funziona con modelli parziali).
+    __NWP_ENSEMBLE_COLS__,
 
     -- Obs features (giorno precedente — lookahead-safe)
     prev.tmin_c      AS obs_tmin_c,
@@ -261,9 +232,8 @@ SELECT
     prev.tmin_c - prev2.tmin_c AS obs_tmin_gradient,
     prev.tmax_c - prev2.tmax_c AS obs_tmax_gradient,
 
-    -- Anomaly features (obs giorno prec − climatologia mensile). NULL se obs o clim
-    -- mancanti: il modello impara a ignorarli come per obs_tmin_c. Mantenute in
-    -- features_daily per backward compat; non usate attivamente da models.py.
+    -- Anomaly (obs D-1 − clim mensile). Non in FEATURE_COLS: esperimento parcheggiato
+    -- (vedi known_issues.md). Mantenute perché asserite dai test.
     prev.tmin_c - c.clim_tmin_mean AS anom_tmin_c,
     prev.tmax_c - c.clim_tmax_mean AS anom_tmax_c,
 
@@ -284,7 +254,7 @@ SELECT
     rp.ring3_precip_d1_mean, rp.ring3_precip_d1_max,
 
     -- Target (ground truth a target_date). Tutti in valore assoluto.
-    -- Le colonne anom rimangono per backward compat ma non sono usate come target.
+    -- Le colonne anom sono un esperimento parcheggiato (vedi known_issues.md), asserite dai test.
     tgt.tmin_c - c.clim_tmin_mean AS target_tmin_anom_c,
     tgt.tmax_c - c.clim_tmax_mean AS target_tmax_anom_c,
     tgt.tmin_c                    AS target_tmin_c,
@@ -309,7 +279,12 @@ LEFT JOIN ring_pivot rp
     AND rp.obs_date   = n.target_date - INTERVAL 1 DAY
 """
 
-_BUILD_SQL = _BUILD_SQL.replace("__NWP_PIVOT_COLS__", _NWP_PIVOT_COLS)
+_BUILD_SQL = (
+    _BUILD_SQL
+    .replace("__NWP_PIVOT_COLS__", _NWP_PIVOT_COLS)
+    .replace("__NWP_SELECT_COLS__", _NWP_SELECT_COLS)
+    .replace("__NWP_ENSEMBLE_COLS__", _ENSEMBLE_COLS)
+)
 
 
 def build_features_daily(db: DuckDBClient) -> int:
