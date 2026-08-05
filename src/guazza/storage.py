@@ -29,6 +29,13 @@ from guazza._paths import DEFAULT_DB_PATH
 _SCHEMA_SQL = Path(__file__).parent / "schema.sql"
 
 
+def _strip_tz(ts: Any) -> Any:
+    """Rimuove il timezone da un datetime se presente (DuckDB vuole TIMESTAMP naive)."""
+    if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
+        return ts.replace(tzinfo=None)
+    return ts
+
+
 class DuckDBClient:
     """Wrapper attorno a duckdb.connect con lock file per write serializzate."""
 
@@ -66,25 +73,26 @@ class DuckDBClient:
             self._lock_fd = None
             logger.debug(f"Lock rilasciato: {self._lock_path}")
 
-    def execute(self, query: str, params: list[Any] | None = None) -> Any:
-        """Esegui una query SQL. Richiede connessione aperta."""
+    @property
+    def _c(self) -> duckdb.DuckDBPyConnection:
+        """Connessione attiva; solleva RuntimeError se usato fuori dal context manager."""
         if self._conn is None:
             raise RuntimeError("DuckDBClient non è nel context manager.")
+        return self._conn
+
+    def execute(self, query: str, params: list[Any] | None = None) -> Any:
+        """Esegui una query SQL. Richiede connessione aperta."""
         if params:
-            return self._conn.execute(query, params)
-        return self._conn.execute(query)
+            return self._c.execute(query, params)
+        return self._c.execute(query)
 
     def register_df(self, name: str, df: pd.DataFrame) -> None:
         """Espone un DataFrame come relazione virtuale (path Arrow, senza staging table)."""
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-        self._conn.register(name, df)
+        self._c.register(name, df)
 
     def unregister_df(self, name: str) -> None:
         """Rimuove la relazione virtuale registrata con register_df."""
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-        self._conn.unregister(name)
+        self._c.unregister(name)
 
     def upsert_predictions(self, records: list[dict[str, Any]]) -> int:
         """UPSERT batch per predictions ML.
@@ -97,8 +105,6 @@ class DuckDBClient:
         """
         if not records:
             return 0
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
 
         _PRED_COLS = [
             "model_version", "location_id", "ts_valid", "lead_time_h",
@@ -112,9 +118,7 @@ class DuckDBClient:
 
         rows = []
         for rec in records:
-            ts = rec["ts_valid"]
-            if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
-                ts = ts.replace(tzinfo=None)
+            ts = _strip_tz(rec["ts_valid"])
             tmin = rec["tmin_c"]
             tmax = rec["tmax_c"]
             prec = rec["precip_mm"]
@@ -129,8 +133,8 @@ class DuckDBClient:
             ])
 
         df = pd.DataFrame(rows, columns=_PRED_COLS)
-        self._conn.register("_staging_pred", df)
-        self._conn.execute("""
+        self._c.register("_staging_pred", df)
+        self._c.execute("""
             INSERT OR REPLACE INTO predictions (
                 model_version, location_id, ts_valid, lead_time_h,
                 tmin_p05, tmin_p10, tmin_p50, tmin_p90, tmin_p95,
@@ -142,7 +146,7 @@ class DuckDBClient:
             )
             SELECT * FROM _staging_pred
         """)
-        self._conn.unregister("_staging_pred")
+        self._c.unregister("_staging_pred")
         logger.info(f"upsert_predictions: {len(records)} record salvati")
         return len(records)
 
@@ -160,8 +164,6 @@ class DuckDBClient:
         """
         if not records:
             return 0
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
 
         _BENCH_COLS = [
             "source", "location_id", "target_date", "lead_time_h",
@@ -176,14 +178,14 @@ class DuckDBClient:
             for rec in records
         ]
         df = pd.DataFrame(rows, columns=_BENCH_COLS)
-        self._conn.register("_staging_bench", df)
-        self._conn.execute("""
+        self._c.register("_staging_bench", df)
+        self._c.execute("""
             INSERT OR REPLACE INTO benchmark_forecasts
                 (source, location_id, target_date, lead_time_h, tmin_c, tmax_c, precip_mm)
             SELECT source, location_id, target_date, lead_time_h, tmin_c, tmax_c, precip_mm
             FROM _staging_bench
         """)
-        self._conn.unregister("_staging_bench")
+        self._c.unregister("_staging_bench")
         logger.info(f"upsert_benchmark_forecasts: {len(records)} record salvati")
         return len(records)
 
@@ -197,9 +199,7 @@ class DuckDBClient:
         Returns:
             Numero approssimativo di righe aggiornate.
         """
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-        result = self._conn.execute("""
+        result = self._c.execute("""
             UPDATE benchmark_forecasts
             SET
                 tmin_obs   = ow.tmin_c,
@@ -210,6 +210,7 @@ class DuckDBClient:
               AND benchmark_forecasts.target_date = ow.obs_date
               AND benchmark_forecasts.tmin_obs IS NULL
         """)
+        # DuckDB: UPDATE restituisce una riga con il conteggio righe modificate
         n = result.fetchone()
         count = int(n[0]) if n else 0
         if count:
@@ -224,9 +225,7 @@ class DuckDBClient:
         Returns:
             Numero approssimativo di righe aggiornate.
         """
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-        result = self._conn.execute("""
+        result = self._c.execute("""
             UPDATE predictions
             SET
                 tmin_obs   = ow.tmin_c,
@@ -237,6 +236,7 @@ class DuckDBClient:
               AND predictions.ts_valid::DATE = ow.obs_date
               AND predictions.tmin_obs IS NULL
         """)
+        # DuckDB: UPDATE restituisce una riga con il conteggio righe modificate
         n = result.fetchone()
         count = int(n[0]) if n else 0
         if count:
@@ -247,9 +247,7 @@ class DuckDBClient:
 
     def get_aci_state(self, target: str, lead_bucket: str) -> dict[str, Any] | None:
         """Carica state ACI per (target, lead_bucket). None se assente (cold start)."""
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-        row = self._conn.execute("""
+        row = self._c.execute("""
             SELECT alpha_t_80, alpha_t_90, n_updates, err_sum_80, err_sum_90, updated_at
             FROM aci_state
             WHERE target = ? AND lead_bucket = ?
@@ -276,9 +274,7 @@ class DuckDBClient:
         err_sum_90: int,
     ) -> None:
         """Salva/aggiorna state ACI. INSERT ON CONFLICT: idempotente."""
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-        self._conn.execute("""
+        self._c.execute("""
             INSERT INTO aci_state
                 (target, lead_bucket, alpha_t_80, alpha_t_90,
                  n_updates, err_sum_80, err_sum_90, updated_at)
@@ -300,9 +296,7 @@ class DuckDBClient:
         sql = _SCHEMA_SQL.read_text()
         # DuckDB accetta più statement separati da ";" in una singola execute().
         # Split manuale su ";" è fragile con MACRO e commenti.
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-        self._conn.execute(sql)
+        self._c.execute(sql)
         logger.info("Schema applicato")
 
     def verify_schema(self) -> bool:
@@ -338,16 +332,13 @@ class DuckDBClient:
         if not records:
             return 0
 
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-
         seen: set[tuple] = set()
         rows = []
         for rec in records:
             # Normalize to UTC-naive: prevents TIMESTAMPTZ→TIMESTAMP implicit conversion
             # by DuckDB using session timezone (would collapse DST-ambiguous hours).
-            ts_run = rec["ts_run"].replace(tzinfo=None)
-            ts_valid = rec["ts_valid"].replace(tzinfo=None)
+            ts_run = _strip_tz(rec["ts_run"])
+            ts_valid = _strip_tz(rec["ts_valid"])
             key = (rec["source"], rec["location_id"], ts_run, ts_valid)
             if key in seen:
                 continue
@@ -370,13 +361,13 @@ class DuckDBClient:
             "weather_code",
         ]
         df = pd.DataFrame(rows, columns=_FCAST_COLS)
-        self._conn.register("_staging_forecasts", df)
+        self._c.register("_staging_forecasts", df)
 
         # INSERT OR REPLACE: gestisce sia insert nuovi sia update esistenti in un solo
         # statement. Evita completamente il WHERE NOT EXISTS, che confronta TIMESTAMPTZ
         # (staging) con TIMESTAMP (forecasts) e fallisce sui timestamp UTC non-zero
         # (es. DST-transition days).
-        self._conn.execute("""
+        self._c.execute("""
             INSERT OR REPLACE INTO forecasts (
                 source, location_id, ts_run, ts_valid, lead_time_h,
                 temp_c, humidity_pct, precip_mm,
@@ -400,7 +391,7 @@ class DuckDBClient:
             WHERE s._rn = 1
         """)
 
-        self._conn.unregister("_staging_forecasts")
+        self._c.unregister("_staging_forecasts")
         logger.info(f"upsert_forecasts: {len(records)} record processati")
         return len(records)
 
@@ -420,9 +411,6 @@ class DuckDBClient:
         if not records:
             return 0
 
-        if self._conn is None:
-            raise RuntimeError("DuckDBClient non è nel context manager.")
-
         # Solo le colonne che esistono nello schema (escluse PK)
         _obs_cols = [
             "tmax_c", "tmin_c", "temp_c",
@@ -441,9 +429,7 @@ class DuckDBClient:
                 if rec.get("hum_med_pct") is not None
                 else rec.get("humidity_pct")
             )
-            ts = rec["ts"]
-            if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
-                ts = ts.replace(tzinfo=None)
+            ts = _strip_tz(rec["ts"])
             rows.append([
                 rec.get("source", "sir_toscana"),
                 rec["station_id"],
@@ -492,14 +478,14 @@ class DuckDBClient:
             "weight", "qc_pass",
         ]
         df = pd.DataFrame(rows, columns=_OBS_STAGING_COLS)
-        self._conn.register("_staging_obs", df)
+        self._c.register("_staging_obs", df)
 
         # UPDATE righe esistenti con COALESCE
         coalesce_sets = ", ".join(
             f"{col} = COALESCE(s.{col}, observations.{col})"
             for col in _obs_cols
         )
-        self._conn.execute(f"""
+        self._c.execute(f"""
             UPDATE observations SET
                 location_id   = COALESCE(s.location_id, observations.location_id),
                 {coalesce_sets},
@@ -512,7 +498,7 @@ class DuckDBClient:
         """)
 
         # INSERT righe nuove (non presenti in observations)
-        self._conn.execute("""
+        self._c.execute("""
             INSERT INTO observations
                 (source, station_id, location_id, ts, granularity,
                  tmax_c, tmin_c, temp_c,
@@ -536,7 +522,7 @@ class DuckDBClient:
             )
         """)
 
-        self._conn.unregister("_staging_obs")
+        self._c.unregister("_staging_obs")
 
         logger.info(f"upsert_sir_observations: {len(records)} record processati")
         return len(records)
