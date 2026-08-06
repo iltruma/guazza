@@ -9,11 +9,17 @@ import json
 from datetime import UTC, datetime
 from datetime import date as date_type
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import duckdb
 from loguru import logger
 
 from guazza.features import NWP_MODEL_PREFIXES
+
+if TYPE_CHECKING:
+    from guazza.storage import DuckDBClient
+
+if TYPE_CHECKING:
+    from guazza.storage import DuckDBClient
 
 LEAD_H = 24
 VARS = ["tmin_c", "tmax_c", "precip_mm"]
@@ -79,21 +85,21 @@ def _sql_upsert(rows: list[tuple]) -> str:
     """
 
 
-def _collect_rows(con: duckdb.DuckDBPyConnection, target_date: date_type) -> list[tuple]:
+def _collect_rows(db: DuckDBClient, target_date: date_type) -> list[tuple]:
     actuals = {
         r[0]: {"tmin_c": r[1], "tmax_c": r[2], "precip_mm": r[3]}
-        for r in con.execute(_sql_actual(target_date)).fetchall()
+        for r in db._c.execute(_sql_actual(target_date)).fetchall()
     }
     if not actuals:
         return []
 
     guazza = {
         r[0]: {"tmin_c": r[1], "tmax_c": r[2], "precip_mm": r[3]}
-        for r in con.execute(_sql_guazza_forecast(target_date)).fetchall()
+        for r in db._c.execute(_sql_guazza_forecast(target_date)).fetchall()
     }
     nwp = {
         (r[0], r[1]): {"tmin_c": r[2], "tmax_c": r[3], "precip_mm": r[4]}
-        for r in con.execute(_sql_nwp_forecast(target_date)).fetchall()
+        for r in db._c.execute(_sql_nwp_forecast(target_date)).fetchall()
     }
 
     rows: list[tuple] = []
@@ -113,19 +119,19 @@ def _collect_rows(con: duckdb.DuckDBPyConnection, target_date: date_type) -> lis
     return rows
 
 
-def append_one(con: duckdb.DuckDBPyConnection, target_date: date_type) -> int:
+def append_one(db: DuckDBClient, target_date: date_type) -> int:
     """Upsert le righe per un singolo giorno. Ritorna il numero inserito."""
-    rows = _collect_rows(con, target_date)
+    rows = _collect_rows(db, target_date)
     if not rows:
         logger.info(f"skill_history: {target_date} — nessuna riga (no obs)")
         return 0
-    con.execute(_sql_upsert(rows))
+    db._c.execute(_sql_upsert(rows))
     return len(rows)
 
 
-def dump_payload(con: duckdb.DuckDBPyConnection) -> dict:
+def dump_payload(db: DuckDBClient) -> dict:
     """Aggrega skill_history_daily in un JSON time series per il frontend."""
-    rows = con.execute("""
+    rows = db._c.execute("""
         SELECT location_id, variable, target_date, source,
                forecast_value, actual_value
         FROM skill_history_daily

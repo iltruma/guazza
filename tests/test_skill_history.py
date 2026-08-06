@@ -13,7 +13,6 @@ import json
 from datetime import date
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from guazza.skill_history import (
@@ -25,6 +24,7 @@ from guazza.skill_history import (
     atomic_write_json,
     dump_payload,
 )
+from guazza.storage import DuckDBClient
 
 # ── fixtures: query SQL mockate in DataFrame ────────────────────────────────
 
@@ -67,6 +67,9 @@ def test_collect_rows_creates_one_per_source_per_var() -> None:
                     ("open_meteo_italia_meteo_arpae_icon_2i", "casa_campi", 10.9, 20.3, 0.4),
                 ])
             return FakeResult([])
+        @property
+        def _c(self) -> FakeCon:
+            return self
 
     rows = _collect_rows(FakeCon(), date(2026, 6, 27))
     # 1 loc × 3 var × (1 Guazza + 4 NWP) = 15
@@ -88,6 +91,9 @@ def test_collect_rows_skips_when_actual_missing() -> None:
     class FakeCon:
         def execute(self, sql: str) -> FakeResult:  # noqa: ARG002
             return FakeResult()
+        @property
+        def _c(self) -> FakeCon:
+            return self
 
     rows = _collect_rows(FakeCon(), date(2026, 6, 27))
     assert rows == []
@@ -107,6 +113,9 @@ def test_collect_rows_skips_when_actual_has_null_var() -> None:
             if "FROM forecasts" in sql:
                 return FakeResult([("open_meteo_ecmwf_ifs", "casa_campi", 11.0, 21.0, 0.0)])
             return FakeResult([])
+        @property
+        def _c(self) -> FakeCon:
+            return self
 
     rows = _collect_rows(FakeCon(), date(2026, 6, 27))
     vars_seen = {r[3] for r in rows}
@@ -129,6 +138,9 @@ def test_collect_rows_skips_nwp_missing_for_location() -> None:
             if "FROM forecasts" in sql:
                 return FakeResult([("open_meteo_ecmwf_ifs", "casa_campi", 11.0, 21.0, 0.0)])
             return FakeResult([])
+        @property
+        def _c(self) -> FakeCon:
+            return self
 
     rows = _collect_rows(FakeCon(), date(2026, 6, 27))
     sources = {r[2] for r in rows}
@@ -138,10 +150,10 @@ def test_collect_rows_skips_nwp_missing_for_location() -> None:
 # ── _dump_payload ───────────────────────────────────────────────────────────
 
 
-def _seed_db(tmp_path: Path) -> duckdb.DuckDBPyConnection:
-    """Crea un DB in-memory con la tabella skill_history_daily e dati minimi."""
-    con = duckdb.connect(str(tmp_path / "test.duckdb"))
-    con.execute("""
+def _seed_db(tmp_path: Path) -> DuckDBClient:
+    """Crea un DuckDBClient con tabella skill_history_daily e dati minimi."""
+    db = DuckDBClient(db_path=tmp_path / "test.duckdb").__enter__()
+    db._c.execute("""
         CREATE TABLE skill_history_daily (
             location_id    VARCHAR  NOT NULL,
             target_date    DATE     NOT NULL,
@@ -164,22 +176,22 @@ def _seed_db(tmp_path: Path) -> duckdb.DuckDBPyConnection:
                 ac = 10.5
                 err = abs(fc - ac)
                 rows.append(("casa_campi", d, src, var, 24, fc, ac, err))
-    con.executemany(
+    db._c.executemany(
         "INSERT INTO skill_history_daily VALUES (?,?,?,?,?,?,?,?,current_timestamp)",
         rows,
     )
-    return con
+    return db
 
 
 def test_dump_payload_structure() -> None:
     """Verifica la forma del JSON: locations → variable → dates, actual, per-source."""
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
-        con = _seed_db(Path(tmp))
+        db = _seed_db(Path(tmp))
         try:
-            payload = dump_payload(con)
+            payload = dump_payload(db)
         finally:
-            con.close()
+            db.__exit__(None, None, None)
 
     assert payload["lead_h"] == LEAD_H
     assert set(payload["sources"]) == set(ALL_SOURCES)
@@ -201,9 +213,8 @@ def test_dump_payload_handles_empty_table() -> None:
     """Tabella vuota → payload con locations={} e date=None."""
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
-        empty_path = Path(tmp) / "empty.duckdb"
-        con = duckdb.connect(str(empty_path))
-        con.execute("""
+        db = DuckDBClient(db_path=Path(tmp) / "empty.duckdb").__enter__()
+        db._c.execute("""
             CREATE TABLE skill_history_daily (
                 location_id VARCHAR, target_date DATE, source VARCHAR,
                 variable VARCHAR, lead_h SMALLINT,
@@ -213,9 +224,9 @@ def test_dump_payload_handles_empty_table() -> None:
             )
         """)
         try:
-            payload = dump_payload(con)
+            payload = dump_payload(db)
         finally:
-            con.close()
+            db.__exit__(None, None, None)
 
     assert payload["locations"] == {}
     assert payload["min_date"] is None
@@ -257,7 +268,7 @@ def test_public_functions_match_pipeline_usage() -> None:
     for fn in (mod.append_one, mod.dump_payload):
         sig = inspect.signature(fn)
         params = list(sig.parameters.keys())
-        assert params[0] == "con", f"manca connessione DuckDB in {fn.__name__}: {params}"
+        assert params[0] == "db", f"manca DuckDBClient in {fn.__name__}: {params}"
 
 
 if __name__ == "__main__":

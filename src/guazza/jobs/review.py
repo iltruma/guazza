@@ -295,10 +295,9 @@ def cmd_run(
 
             # ── 5. Skill-history append (ieri) + dump ─────────────────────────
             if not dry_run:
-                assert db._conn is not None
-                n_sh = append_one(db._conn, date_obj)
+                n_sh = append_one(db, date_obj)
                 logger.info(f"review skill-history: {n_sh} righe upsert ({date_obj})")
-                payload = dump_payload(db._conn)
+                payload = dump_payload(db)
                 atomic_write_json(skill_output, payload)
                 logger.info(f"review skill-history dump: {skill_output}")
 
