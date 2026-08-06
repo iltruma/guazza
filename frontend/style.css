@@ -1002,10 +1002,19 @@ img.emoji {
 .g-metric__value--warm { color: var(--warm); }
 .g-metric__value--cool { color: var(--cold); }
 
-/* Pill P(pioggia) sotto il valore Precip del dettaglio giorno (slot, nascosto se assente) */
-.g-metric__prob {
+/* Riga valore mm + pill P(pioggia) nella g-metric Precip: la pill sta a destra
+   del valore sulla stessa riga, baseline allineata col numero grande. Su mobile
+   la riga va a capo (wrap) invece di schiacciare la pill. */
+.g-metric__value-row {
   display: flex;
-  margin-top: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Slot pill: partecipa alla riga valore, non si schiaccia mai */
+.g-metric__prob {
+  flex-shrink: 0;
 }
 
 /* Indicators */
