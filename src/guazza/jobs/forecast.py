@@ -159,6 +159,8 @@ def cmd_run(
                     loc_df.groupby("target_date")["lead_time_h"].idxmin().tolist()
                 )
 
+                prediction_records: list[dict] = []
+
                 for i, row in loc_df.iterrows():
                     target_date_obj = _to_date(row["target_date"])
                     lead_time_h = lead_times[int(i)]
@@ -239,7 +241,7 @@ def cmd_run(
                         target_date_obj.year, target_date_obj.month, target_date_obj.day,
                         tzinfo=None,
                     )
-                    db.upsert_predictions([{
+                    prediction_records.append({
                         "model_version": model_version,
                         "location_id":   location_id,
                         "ts_valid":      ts_valid,
@@ -247,10 +249,13 @@ def cmd_run(
                         "tmin_c":        pred["tmin_c"],
                         "tmax_c":        pred["tmax_c"],
                         "precip_mm":     pred["precip_mm"],
-                    }])
+                    })
 
                 if dry_run:
                     continue
+
+                if prediction_records:
+                    db.upsert_predictions(prediction_records)
 
                 coverage = compute_coverage_30d(db, location_id)
                 path = write_location_json(
