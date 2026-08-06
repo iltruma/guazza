@@ -3,9 +3,10 @@
 // Struttura:
 //   1. Ranking compatto (D+1, per-modello da skill_history)
 //   2. MAE per orizzonte D+0..D+7 (Guazza vs NWP-consensus da skill.json)
-//   3. Errore rolling nel tempo (errore giornaliero |forecast−actual| da skill_history)
-//   4. Chi vince sulla temperatura? (Win Rate bar + barre giornaliere vincitore)
-//   5. Chi vince sulle precipitazioni? (stesso schema, solo wet days)
+//   3. Copertura intervalli CI80/CI90 per orizzonte (coverage da skill.json)
+//   4. Errore rolling nel tempo (errore giornaliero |forecast−actual| da skill_history)
+//   5. Chi vince sulla temperatura? (Win Rate bar + barre giornaliere vincitore)
+//   6. Chi vince sulle precipitazioni? (stesso schema, solo wet days)
 //
 // Self-contained: nessuna dipendenza da app.js.
 
@@ -64,10 +65,12 @@ let histData    = null;    // skill_history.json
 let affLocId       = 'casa_campi';
 let rankingVar     = 'tmax_c';   // tmax_c | tmin_c
 let horizonVar     = 'tmax_c';   // tmax_c | tmin_c
+let coverageVar    = 'tmax_c';   // tmax_c | tmin_c
 let rollingVar     = 'tmax_c';   // tmax_c | tmin_c | precip_mm
 let rollingWindow  = 90;         // giorni; 0 = totale
 
 let horizonChart    = null;
+let coverageChart   = null;
 let rollingChart    = null;
 let winnerTempChart = null;
 let winnerPrecipChart = null;
@@ -361,7 +364,151 @@ function drawHorizonChart(pts) {
   });
 }
 
-// ── 3. Errore rolling nel tempo ────────────────────────────────────────────────
+// ── 3. Copertura intervalli CI80/CI90 per orizzonte ──────────────────────────
+
+function renderCoverage() {
+  const loc = skillData?.locations?.[affLocId];
+  if (!loc?.coverage) { hideEl('aff-coverage-card'); return; }
+
+  const pts = loc.coverage[coverageVar];
+  if (!pts?.length || !pts.some(p => p.cov80 != null || p.cov90 != null)) {
+    hideEl('aff-coverage-card'); return;
+  }
+  showEl('aff-coverage-card');
+
+  const varLabel = coverageVar === 'tmax_c' ? 'T max' : 'T min';
+  const d1 = fmtDate(skillData.window_start);
+  const d2 = fmtDate(skillData.window_end);
+  document.getElementById('coverage-sub').textContent =
+    `${varLabel} · ${d1}→${d2}`;
+  document.getElementById('coverage-caption').textContent =
+    `Quante volte il valore vero è caduto dentro l'intervallo di confidenza, per orizzonte. ` +
+    `Intervalli CQR + ACI dalle previsioni reali di produzione. ` +
+    `Le linee tratteggiate sono i target 80%/90%. Fonte: skill.json.`;
+
+  drawCoverageChart(pts);
+}
+
+function drawCoverageChart(pts) {
+  const canvas = document.getElementById('aff-coverage-chart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (coverageChart) { coverageChart.destroy(); coverageChart = null; }
+
+  const axis  = cssVar('--chart-axis');
+  const grid  = cssVar('--chart-grid');
+  const iris  = MODEL_COLORS.guazza;          // CI80 = accent (come range-80 della CI bar)
+  const cov90 = 'rgba(255,255,255,0.45)';     // CI90 = neutro chiaro (come range-90)
+
+  const labels = pts.map(p => `D+${p.lead_h / 24}`);
+  const cov80Data = pts.map(p => p.cov80 ?? null);
+  const cov90Data = pts.map(p => p.cov90 ?? null);
+
+  coverageChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'CI 80%',
+          data: cov80Data,
+          borderColor: iris,
+          backgroundColor: iris,
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          spanGaps: true,
+          tension: 0.3,
+          order: 1,
+        },
+        {
+          label: 'CI 90%',
+          data: cov90Data,
+          borderColor: cov90,
+          backgroundColor: cov90,
+          borderWidth: 1.8,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          spanGaps: true,
+          tension: 0.3,
+          order: 2,
+        },
+        {
+          label: 'Target 80%',
+          data: pts.map(() => 0.8),
+          borderColor: 'rgba(255,255,255,0.22)',
+          borderDash: [4, 4],
+          borderWidth: 1,
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          fill: false,
+          order: 0,
+          reference: true,
+        },
+        {
+          label: 'Target 90%',
+          data: pts.map(() => 0.9),
+          borderColor: 'rgba(255,255,255,0.22)',
+          borderDash: [4, 4],
+          borderWidth: 1,
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          fill: false,
+          order: 0,
+          reference: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: {
+          grid: { color: grid },
+          ticks: { color: axis, font: { family: 'JetBrains Mono, monospace', size: 11 } },
+        },
+        y: {
+          grid: { color: grid },
+          min: 0,
+          max: 1,
+          ticks: {
+            color: axis,
+            font: { family: 'JetBrains Mono, monospace', size: 11 },
+            callback: v => `${Math.round(v * 100)}%`,
+          },
+          title: { display: true, text: 'Copertura', color: axis, font: { size: 10 } },
+        },
+      },
+      plugins: {
+        legend: { display: false },  // legenda HTML sopra
+        tooltip: {
+          backgroundColor: 'rgba(19,19,19,0.97)',
+          borderColor: 'rgba(255,255,255,0.09)',
+          borderWidth: 1,
+          titleColor: axis,
+          bodyColor: cssVar('--text-2'),
+          filter: (item) => !item.dataset.reference,
+          callbacks: {
+            label: (item) => {
+              const v = item.raw;
+              return v != null
+                ? `${item.dataset.label}: ${(v * 100).toFixed(0)}%`
+                : `${item.dataset.label}: —`;
+            },
+            afterBody: (items) => {
+              const i = items[0]?.dataIndex;
+              const p = pts[i];
+              if (!p) return '';
+              return p.n != null ? [`Campioni: ${p.n}`] : '';
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+// ── 4. Errore rolling nel tempo ────────────────────────────────────────────────
 
 function renderRolling() {
   const loc = histData?.locations?.[affLocId];
@@ -506,6 +653,7 @@ function drawRollingChart(dates, actual, sourceArrays, unit) {
 function renderAll() {
   renderRanking();
   renderHorizon();
+  renderCoverage();
   renderRolling();
   renderWinnerTemp();
   renderWinnerPrecip();
@@ -537,6 +685,19 @@ document.getElementById('aff-horizon-card')?.addEventListener('click', e => {
      .querySelectorAll('.aff-ranking__toggle-btn')
      .forEach(b => b.classList.toggle('is-active', b.dataset.var === horizonVar));
   renderHorizon();
+});
+
+// Coverage: toggle Tmax/Tmin
+document.getElementById('aff-coverage-card')?.addEventListener('click', e => {
+  const btn = e.target.closest('[data-var]');
+  if (!btn || !btn.closest('.aff-ranking__toggle')) return;
+  const v = btn.dataset.var;
+  if (v === coverageVar) return;
+  coverageVar = v;
+  btn.closest('.aff-ranking__toggle')
+     .querySelectorAll('.aff-ranking__toggle-btn')
+     .forEach(b => b.classList.toggle('is-active', b.dataset.var === coverageVar));
+  renderCoverage();
 });
 
 // Rolling: toggle variabile + finestra
@@ -617,8 +778,29 @@ function computeWinRate(winners) {
   return { rate, total };
 }
 
+// MAE medio per modello dagli errori giornalieri (media di |forecast−actual|
+// sui giorni con dato, per ogni modello)
+function computeMaeByModel(winners) {
+  const sums = {};
+  const counts = {};
+  for (const w of winners) {
+    if (!w.errors) continue;
+    for (const k of Object.keys(w.errors)) {
+      const e = w.errors[k];
+      if (e == null) continue;
+      sums[k] = (sums[k] || 0) + e;
+      counts[k] = (counts[k] || 0) + 1;
+    }
+  }
+  const mae = {};
+  for (const k of Object.keys(sums)) {
+    if (counts[k] > 0) mae[k] = sums[k] / counts[k];
+  }
+  return mae;
+}
+
 // Renderizza la Win Rate stacked bar + legenda in un container
-function renderWinRateBar(barEl, legendEl, winRate) {
+function renderWinRateBar(barEl, legendEl, winRate, maeByModel, unit) {
   if (!winRate) { barEl.innerHTML = ''; legendEl.innerHTML = ''; return; }
 
   const allKeys = ['guazza', ...NWP_SOURCES];
@@ -639,11 +821,15 @@ function renderWinRateBar(barEl, legendEl, winRate) {
     const wins = Math.round(winRate.rate[k] * winRate.total);
     const color = MODEL_COLORS[k] || 'rgba(148,163,174,0.55)';
     const label = k === 'guazza' ? 'Guazza ML' : NWP_LABELS[k] || k;
+    const mae = maeByModel?.[k];
+    const maeTxt = mae != null
+      ? ` <span style="color:var(--text-3)">· MAE ${mae.toFixed(1)}${unit}</span>`
+      : '';
     return `
       <span class="aff-winrate__legend-item">
         <span class="aff-winrate__legend-dot" style="background:${color}"></span>
         ${label} <span class="aff-winrate__legend-pct">${pct}%</span>
-        <span style="color:var(--text-3)">(${wins}gg)</span>
+        <span style="color:var(--text-3)">(${wins}gg)</span>${maeTxt}
       </span>`;
   }).join('');
 }
@@ -752,7 +938,7 @@ function drawWinnerChart(canvasId, chartRef, dates, winners, unit) {
   return newChart;
 }
 
-// ── 4. Chi vince sulla temperatura? ──────────────────────────────────────────
+// ── 5. Chi vince sulla temperatura? ──────────────────────────────────────────
 
 function renderWinnerTemp() {
   const loc = histData?.locations?.[affLocId];
@@ -786,11 +972,14 @@ function renderWinnerTemp() {
 
   const winners = computeDailyWinners(dates, actual, sourceArrays);
   const winRate = computeWinRate(winners);
+  const maeByModel = computeMaeByModel(winners);
 
   renderWinRateBar(
     document.getElementById('winner-temp-winrate-bar'),
     document.getElementById('winner-temp-winrate-legend'),
     winRate,
+    maeByModel,
+    '°C',
   );
 
   winnerTempChart = drawWinnerChart(
@@ -799,13 +988,13 @@ function renderWinnerTemp() {
 
   const winDays = winners.filter(w => w.winner).length;
   document.getElementById('winner-temp-caption').textContent =
-    `Ogni barra = un giorno. Colore = modello con errore assoluto minore. ` +
-    `Altezza = vantaggio rispetto al secondo classificato (barre piatte = vittoria risicata). ` +
+    `Ogni barra = un giorno. Colore = modello con errore assoluto minore quel giorno, anche di poco. ` +
+    `Altezza = vantaggio sul secondo classificato (barre piatte = vittoria risicata). ` +
     `${winDays} giorni con almeno un modello disponibile su ${dates.length}. ` +
     `Fonte: skill_history.json lead 24h.`;
 }
 
-// ── 5. Chi vince sulle precipitazioni? ───────────────────────────────────────
+// ── 6. Chi vince sulle precipitazioni? ───────────────────────────────────────
 
 function renderWinnerPrecip() {
   const loc = histData?.locations?.[affLocId];
@@ -876,11 +1065,14 @@ function renderWinnerPrecip() {
 
   const winners = computeDailyWinners(wetDates, wetActual, wetSources);
   const winRate = computeWinRate(winners);
+  const maeByModel = computeMaeByModel(winners);
 
   renderWinRateBar(
     document.getElementById('winner-precip-winrate-bar'),
     document.getElementById('winner-precip-winrate-legend'),
     winRate,
+    maeByModel,
+    'mm',
   );
 
   winnerPrecipChart = drawWinnerChart(
@@ -890,7 +1082,8 @@ function renderWinnerPrecip() {
   const winDays = winners.filter(w => w.winner).length;
   document.getElementById('winner-precip-caption').textContent =
     `Solo wet days (osservato o almeno un forecast ≥${WET_THRESHOLD}mm). ` +
-    `Colore = modello con errore assoluto minore. Altezza = margine di vittoria. ` +
+    `Ogni barra = un giorno. Colore = modello con errore assoluto minore quel giorno, anche di poco. ` +
+    `Altezza = vantaggio sul secondo classificato. ` +
     `${winDays} wet days nel periodo · Fonte: skill_history.json lead 24h.`;
 }
 

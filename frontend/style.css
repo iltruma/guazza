@@ -1934,6 +1934,10 @@ img.emoji {
 .aff-legend-dot--icon2i  { background: var(--viola); }
 .aff-legend-dot--nwp     { background: rgba(148,163,174,0.55); }
 
+/* Copertura intervalli: CI80 = iris (come range-80 della CI bar), CI90 = neutro chiaro */
+.aff-legend-dot--cov80  { background: #6B7FD4; }
+.aff-legend-dot--cov90  { background: rgba(255,255,255,0.45); }
+
 /* Section title group */
 .aff-title { display: flex; flex-direction: column; gap: 2px; }
 /* Override rispetto a g-section__kicker: no padding, inline, size leggermente diverso */

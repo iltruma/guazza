@@ -95,7 +95,43 @@
       <p id="horizon-caption" class="g-skill__caption"></p>
     </section>
 
-    <!-- 3. ERRORE ROLLING NEL TEMPO -->
+    <!-- 3. COPERTURA INTERVALLI CI80/CI90 PER ORIZZONTE -->
+    <section id="aff-coverage-card" class="g-card hidden">
+      <div class="g-card__header aff-horizon__header">
+        <div class="aff-title">
+          <span class="g-section__kicker aff-title__kicker">Copertura intervalli · D+0 → D+7</span>
+          <span class="aff-title__main">Il vero cade dentro l'intervallo?</span>
+          <span id="coverage-sub" class="aff-title__sub"></span>
+        </div>
+        <div class="aff-ranking__toggle g-skill__seg" role="group" aria-label="Variabile copertura">
+          <button class="aff-ranking__toggle-btn g-skill__seg-btn is-active" data-var="tmax_c">T max</button>
+          <button class="aff-ranking__toggle-btn g-skill__seg-btn" data-var="tmin_c">T min</button>
+        </div>
+      </div>
+      <div class="aff-horizon__legend" id="coverage-legend" aria-hidden="true">
+        <span class="g-chart-legend__item aff-legend-item">
+          <span class="g-chart-legend__dot aff-legend-dot aff-legend-dot--cov80"></span>CI 80%
+        </span>
+        <span class="g-chart-legend__item aff-legend-item">
+          <span class="g-chart-legend__dot aff-legend-dot aff-legend-dot--cov90"></span>CI 90%
+        </span>
+        <span class="g-chart-legend__item aff-legend-item" style="color:var(--text-3)">
+          <span class="aff-legend-dash" style="color:rgba(255,255,255,0.35)"></span>Target 80/90%
+        </span>
+        <span class="g-chart-legend__item aff-legend-item" style="font-size:0.5rem;color:var(--text-3)">
+          Sotto il target = intervallo troppo stretto
+        </span>
+      </div>
+      <div class="g-chart-scroll aff-horizon__chart-scroll">
+        <div class="aff-horizon__canvas-wrap">
+          <canvas id="aff-coverage-chart"
+            aria-label="Copertura empirica CI80 e CI90 per orizzonte da D+0 a D+7"></canvas>
+        </div>
+      </div>
+      <p id="coverage-caption" class="g-skill__caption"></p>
+    </section>
+
+    <!-- 4. ERRORE ROLLING NEL TEMPO -->
     <section id="aff-rolling-card" class="g-card hidden">
       <div class="g-card__header aff-rolling__header">
         <div class="aff-title">
@@ -147,7 +183,7 @@
       <p id="rolling-caption" class="g-skill__caption"></p>
     </section>
 
-    <!-- 4. CHI VINCE SULLA TEMPERATURA? -->
+    <!-- 5. CHI VINCE SULLA TEMPERATURA? -->
     <section id="aff-winner-temp-card" class="g-card hidden">
       <div class="g-card__header aff-rolling__header">
         <div class="aff-title">
@@ -176,7 +212,7 @@
       <p id="winner-temp-caption" class="g-skill__caption"></p>
     </section>
 
-    <!-- 5. CHI VINCE SULLE PRECIPITAZIONI? -->
+    <!-- 6. CHI VINCE SULLE PRECIPITAZIONI? -->
     <section id="aff-winner-precip-card" class="g-card hidden">
       <div class="g-card__header aff-rolling__header">
         <div class="aff-title">
