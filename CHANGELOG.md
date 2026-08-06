@@ -34,6 +34,14 @@ Versioning: major per sprint, minor per milestone interne.
   grafici "chi vince" riformulate in modo onesto (vittoria = errore assoluto
   minore quel giorno, anche di poco) e legenda win rate con MAE medio per modello
   (°C/mm) sulla finestra corrente.
+- **P(pioggia) persistita e in pagina**: colonna `rain_prob` in `predictions`
+  (schema con `ALTER ADD COLUMN IF NOT EXISTS` per DB esistenti, storage,
+  forecast: `prob_rain` del rain_clf calibrato scritta in produzione — si popola
+  forward dal deploy). `_run_skill_curve` calcola per lead il Brier score Guazza
+  (prob_rain) vs NWP-consensus binario sopra soglia (stessa baseline di cv.py)
+  più la probabilità media nei giorni piovosi/asciutti → sezione `rain_prob` del
+  payload skill.json. Nuova card "P(pioggia)" in `affidabilita` con rimando dalla
+  caption della card precip.
 
 ## [0.15.0] - 2026-08-06
 

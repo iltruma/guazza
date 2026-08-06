@@ -46,7 +46,7 @@ from guazza.jobs._common import (
 from guazza.jobs.ingest import (
     _ingest_sir_historical_range,
 )
-from guazza.models import train_all
+from guazza.models import RAIN_THRESHOLD_MM, train_all
 from guazza.monitor import check_and_log, compute_coverage, update_aci_from_history
 from guazza.netatmo_daily import aggregate_netatmo_daily
 from guazza.qc import compute_quality_flags
@@ -126,6 +126,38 @@ def _coverage_for(df: pd.DataFrame, var: str) -> list[dict[str, object]]:
         })
     return points
 
+
+def _rain_prob_for(df: pd.DataFrame) -> list[dict[str, object]]:
+    """Brier score della P(pioggia): Guazza (prob_rain di produzione) vs NWP-consensus.
+
+    Evento: precip_obs > RAIN_THRESHOLD_MM (obs SIR pesate backfillate).
+    Baseline NWP: frazione binaria nwp_precip_mean > soglia — stessa baseline
+    usata da walk_forward_cv (cv.py). Si popola dal deploy: le predictions
+    precedenti non hanno rain_prob (colonna nuova).
+    """
+    points: list[dict[str, object]] = []
+    for lead in LEADS:
+        g = df[df["lead_time_h"] == lead].dropna(
+            subset=["rain_prob", "precip_obs", "nwp_precip_mean"]
+        )
+        n = len(g)
+        if n < MIN_SAMPLES_PER_LEAD:
+            points.append({"lead_h": lead, "n": n, "brier_g": None, "brier_n": None,
+                           "p_wet_g": None, "p_dry_g": None})
+            continue
+        event = (g["precip_obs"] > RAIN_THRESHOLD_MM).astype(float)
+        nwp_prob = (g["nwp_precip_mean"] > RAIN_THRESHOLD_MM).astype(float)
+        wet = g[event == 1.0]
+        dry = g[event == 0.0]
+        points.append({
+            "lead_h": lead, "n": n,
+            "brier_g": round(float(((g["rain_prob"] - event) ** 2).mean()), 4),
+            "brier_n": round(float(((nwp_prob - event) ** 2).mean()), 4),
+            "p_wet_g": round(float(wet["rain_prob"].mean()), 3) if len(wet) else None,
+            "p_dry_g": round(float(dry["rain_prob"].mean()), 3) if len(dry) else None,
+        })
+    return points
+
 app = typer.Typer(
     help="Review giornaliero: ingest [ieri-7, ieri] + backfill + ACI + skill-history + monitor + train condizionale.",
     no_args_is_help=True,
@@ -170,6 +202,8 @@ def _run_skill_curve(
     riallenato settimanalmente); NWP = consensus dei 4 modelli alla stessa lead da
     features_daily (stessa aggregazione usata in training). La copertura CI80/CI90
     usa gli intervalli CQR+ACI scritti in produzione (sezione "coverage" del payload).
+    La sezione "rain_prob" riporta il Brier score della P(pioggia) (prob_rain di
+    produzione vs baseline NWP binaria, soglia RAIN_THRESHOLD_MM).
 
     Finestra mobile [oggi - embargo - window, oggi - embargo]: l'embargo esclude
     le osservazioni più recenti non ancora backfillate/validate.
@@ -191,7 +225,8 @@ def _run_skill_curve(
             SELECT location_id, ts_valid::DATE AS target_date, lead_time_h,
                    tmin_p50, tmax_p50, tmin_obs, tmax_obs,
                    tmin_ci80_lo, tmin_ci80_hi, tmin_ci90_lo, tmin_ci90_hi,
-                   tmax_ci80_lo, tmax_ci80_hi, tmax_ci90_lo, tmax_ci90_hi
+                   tmax_ci80_lo, tmax_ci80_hi, tmax_ci90_lo, tmax_ci90_hi,
+                   precip_obs, rain_prob
             FROM (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY location_id, ts_valid::DATE, lead_time_h
@@ -206,7 +241,8 @@ def _run_skill_curve(
 
         # NWP consensus per lead (stessa aggregazione delle features del modello)
         nwp = db_client.execute("""
-            SELECT location_id, target_date, lead_time_h, nwp_tmin_mean, nwp_tmax_mean
+            SELECT location_id, target_date, lead_time_h,
+                   nwp_tmin_mean, nwp_tmax_mean, nwp_precip_mean
             FROM features_daily
             WHERE target_date BETWEEN ? AND ?
         """, [start_iso, end_iso]).df()
@@ -222,7 +258,10 @@ def _run_skill_curve(
         for var in _SKILL_VARS:
             curves[var] = _curve_for(loc_test, var)
             coverage[var] = _coverage_for(loc_test, var)
-        locations_out[loc_id] = {"sir_station_id": stations[loc_id], **curves, "coverage": coverage}
+        locations_out[loc_id] = {
+            "sir_station_id": stations[loc_id], **curves, "coverage": coverage,
+            "rain_prob": _rain_prob_for(loc_test),
+        }
 
     payload: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),

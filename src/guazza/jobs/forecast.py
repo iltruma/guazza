@@ -249,6 +249,7 @@ def cmd_run(
                         "tmin_c":        pred["tmin_c"],
                         "tmax_c":        pred["tmax_c"],
                         "precip_mm":     pred["precip_mm"],
+                        "rain_prob":     pred.get("rain_clf", {}).get("prob_rain"),
                     })
 
                 if dry_run:

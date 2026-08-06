@@ -95,10 +95,15 @@ CREATE TABLE IF NOT EXISTS predictions (
     precip_ci80_lo DOUBLE, precip_ci80_hi DOUBLE,
     precip_ci90_lo DOUBLE, precip_ci90_hi DOUBLE,
     precip_obs     DOUBLE,
+    rain_prob      DOUBLE,
     generated_at  TIMESTAMP DEFAULT current_timestamp,
     last_modified TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (model_version, location_id, ts_valid, lead_time_h)
 );
+
+-- Migrazione idempotente per DB esistenti (il CREATE con IF NOT EXISTS non
+-- aggiunge colonne su tabelle già presenti; DuckDB supporta ADD COLUMN IF NOT EXISTS).
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS rain_prob DOUBLE;
 
 CREATE INDEX IF NOT EXISTS idx_predictions_location_ts
     ON predictions (location_id, ts_valid);

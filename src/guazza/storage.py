@@ -114,6 +114,7 @@ class DuckDBClient:
             "tmax_ci80_lo", "tmax_ci80_hi", "tmax_ci90_lo", "tmax_ci90_hi",
             "precip_p05", "precip_p10", "precip_p50", "precip_p90", "precip_p95",
             "precip_ci80_lo", "precip_ci80_hi", "precip_ci90_lo", "precip_ci90_hi",
+            "rain_prob",
         ]
 
         rows = []
@@ -130,6 +131,7 @@ class DuckDBClient:
                 tmax.get("ci80_lo"), tmax.get("ci80_hi"), tmax.get("ci90_lo"), tmax.get("ci90_hi"),
                 prec.get("p05"), prec.get("p10"), prec.get("p50"), prec.get("p90"), prec.get("p95"),
                 prec.get("ci80_lo"), prec.get("ci80_hi"), prec.get("ci90_lo"), prec.get("ci90_hi"),
+                rec.get("rain_prob"),
             ])
 
         df = pd.DataFrame(rows, columns=_PRED_COLS)
@@ -142,7 +144,8 @@ class DuckDBClient:
                 tmax_p05, tmax_p10, tmax_p50, tmax_p90, tmax_p95,
                 tmax_ci80_lo, tmax_ci80_hi, tmax_ci90_lo, tmax_ci90_hi,
                 precip_p05, precip_p10, precip_p50, precip_p90, precip_p95,
-                precip_ci80_lo, precip_ci80_hi, precip_ci90_lo, precip_ci90_hi
+                precip_ci80_lo, precip_ci80_hi, precip_ci90_lo, precip_ci90_hi,
+                rain_prob
             )
             SELECT * FROM _staging_pred
         """)
