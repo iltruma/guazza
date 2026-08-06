@@ -1298,16 +1298,16 @@ function _buildChartDatasets(canvas, points, p) {
   const precipHi = points.filter(pt => pt.precip_ci80_hi != null).map(pt => ({ x: pt.ts, y: pt.precip_ci80_hi }));
   if (precipLo.length && precipHi.length) {
     datasets.push({
-      type: 'bar', label: 'Precip CI 80% (low)',
-      data: precipLo, backgroundColor: 'rgba(96,165,250,0.08)',
-      yAxisID: 'yPrecip', barPercentage: 0.9, categoryPercentage: 1.0,
-      borderRadius: 2, order: 2,
+      type: 'line', label: 'Precip CI 80% (low)',
+      data: precipLo, borderColor: 'transparent',
+      backgroundColor: 'rgba(96,165,250,0.13)',
+      fill: '+1', pointRadius: 0, yAxisID: 'yPrecip', tension: 0.4, order: 2,
     });
     datasets.push({
-      type: 'bar', label: 'Precip CI 80% (high)',
-      data: precipHi, backgroundColor: 'rgba(96,165,250,0.18)',
-      yAxisID: 'yPrecip', barPercentage: 0.9, categoryPercentage: 1.0,
-      borderRadius: 2, order: 2,
+      type: 'line', label: 'Precip CI 80% (high)',
+      data: precipHi, borderColor: 'transparent',
+      backgroundColor: 'transparent',
+      fill: false, pointRadius: 0, yAxisID: 'yPrecip', tension: 0.4, order: 2,
     });
   }
 
