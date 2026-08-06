@@ -42,8 +42,9 @@ Versioning: major per sprint, minor per milestone interne.
   più la probabilità media nei giorni piovosi/asciutti → sezione `rain_prob` del
   payload skill.json. Nuova card "P(pioggia)" in `affidabilita` (asse Y leggibile
   suggestedMax 0.3) con rimando dalla caption della card precip; pill `NN%`
-  con tooltip "P(pioggia ≥ 0.2mm)" nelle card giornaliere di `index` (dati già
-  nel JSON, `prob_rain` null → pill assente).
+  con tooltip "P(pioggia ≥ 0.2mm)" nelle card giornaliere di `index` e nella
+  g-metric Precip del dettaglio espanso (dati già nel JSON, `prob_rain` null →
+  pill assente, layout invariato).
 
 ## [0.15.0] - 2026-08-06
 
