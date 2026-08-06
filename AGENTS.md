@@ -95,6 +95,14 @@ Dipendenze:  installazione pacchetti non in pyproject.toml
 - Eseguire pytest, ruff, mypy
 - Scrivere/aggiornare `docs/`
 - `git add <file specifici>` (proporre commit, attendere conferma — vedi §Regole di commit)
+- Usare `pydantic v2` solo ai boundary di sistema (config YAML in ingresso, JSON verso frontend); `@dataclass` per oggetti interni
+
+### Errori in esecuzione
+
+Quando uno script va in errore:
+1. Fermarsi — non ritentare varianti, non fare reverse engineering autonomo su API o sistemi esterni
+2. Mostrare l'output completo dell'errore
+3. Aspettare istruzioni
 
 ## Regole di modifica del codice
 
@@ -120,6 +128,17 @@ Quando scrivi nuovo codice, usa questi file come riferimento per i pattern conso
 - `src/guazza/_logging.py` — `setup_logging()` pattern
 - `src/guazza/features.py` — SQL-first design pattern
 - `tests/test_models.py` — test pattern per suite ML
+
+### Checklist completamento task
+
+Prima di dichiarare un task completo:
+- [ ] `uv run python -m pytest` verde
+- [ ] `ruff check` zero warning, `mypy` pulito
+- [ ] `setup_logging()` in ogni nuovo job CLI
+- [ ] Healthchecks.io ping se job cron
+- [ ] Nessun dead code o codice sperimentale residuo
+- [ ] `docs/known_issues.md` aggiornato se workaround
+- [ ] Commit proposto con formato `tipo(scope): descrizione`
 
 ## Regole di commit
 
