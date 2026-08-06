@@ -40,8 +40,10 @@ Versioning: major per sprint, minor per milestone interne.
   forward dal deploy). `_run_skill_curve` calcola per lead il Brier score Guazza
   (prob_rain) vs NWP-consensus binario sopra soglia (stessa baseline di cv.py)
   più la probabilità media nei giorni piovosi/asciutti → sezione `rain_prob` del
-  payload skill.json. Nuova card "P(pioggia)" in `affidabilita` con rimando dalla
-  caption della card precip.
+  payload skill.json. Nuova card "P(pioggia)" in `affidabilita` (asse Y leggibile
+  suggestedMax 0.3) con rimando dalla caption della card precip; pill `NN%`
+  con tooltip "P(pioggia ≥ 0.2mm)" nelle card giornaliere di `index` (dati già
+  nel JSON, `prob_rain` null → pill assente).
 
 ## [0.15.0] - 2026-08-06
 
