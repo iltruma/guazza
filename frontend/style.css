@@ -1042,22 +1042,13 @@ img.emoji {
   overflow: visible;
 }
 
-.g-ci-bar__range-90 {
+.g-ci-bar__range-80 {
   position: absolute;
   inset: 0;
   border-radius: 3px;
-  background: rgba(255,255,255,0.10);
-  transform-origin: left;
-  animation: ci-expand 400ms 200ms cubic-bezier(0.4,0,0.2,1) both;
-}
-
-.g-ci-bar__range-80 {
-  position: absolute;
-  top: 0; height: 100%;
-  border-radius: 3px;
   background: var(--accent-line);
   transform-origin: left;
-  animation: ci-expand 400ms 320ms cubic-bezier(0.4,0,0.2,1) both;
+  animation: ci-expand 400ms 200ms cubic-bezier(0.4,0,0.2,1) both;
 }
 
 .g-ci-bar__median {

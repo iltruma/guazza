@@ -563,26 +563,23 @@ function renderHeroSun(locMeta, now) {
 
 function ciBar(fc, unit) {
   if (!fc) return '';
-  const { p50, mean, ci80_lo, ci80_hi, ci90_lo, ci90_hi } = fc;
+  const { p50, mean, ci80_lo, ci80_hi } = fc;
   const anchor = mean ?? p50;
-  if (anchor == null || ci90_lo == null || ci90_hi == null) return '';
-  const range = ci90_hi - ci90_lo;
+  if (anchor == null || ci80_lo == null || ci80_hi == null) return '';
+  const range = ci80_hi - ci80_lo;
   if (range <= 0) return '';
-  const pct = v => Math.max(0, Math.min(100, ((v - ci90_lo) / range) * 100));
-  const p80l    = (ci80_lo != null ? pct(ci80_lo) : 0).toFixed(2);
-  const p80w    = (ci80_lo != null && ci80_hi != null ? pct(ci80_hi) - pct(ci80_lo) : 100).toFixed(2);
+  const pct = v => Math.max(0, Math.min(100, ((v - ci80_lo) / range) * 100));
   const anchorPos = pct(anchor).toFixed(2);
   return `
     <div class="g-ci-bar">
       <div class="g-ci-bar__track">
-        <div class="g-ci-bar__range-90"></div>
-        <div class="g-ci-bar__range-80" style="left:${p80l}%;width:${p80w}%"></div>
+        <div class="g-ci-bar__range-80"></div>
         <div class="g-ci-bar__median" style="left:${anchorPos}%"></div>
       </div>
       <div class="g-ci-bar__labels">
-        <span class="g-ci-bar__lo">${ci90_lo.toFixed(1)}${unit}</span>
-        <span class="g-ci-bar__note">CI 90%</span>
-        <span class="g-ci-bar__hi">${ci90_hi.toFixed(1)}${unit}</span>
+        <span class="g-ci-bar__lo">${ci80_lo.toFixed(1)}${unit}</span>
+        <span class="g-ci-bar__note">CI 80%</span>
+        <span class="g-ci-bar__hi">${ci80_hi.toFixed(1)}${unit}</span>
       </div>
     </div>`;
 }
