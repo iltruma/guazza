@@ -219,7 +219,7 @@ function renderRanking() {
     const cardClass = [
       'aff-rank-card',
       isGuazza ? 'aff-rank-card--guazza' : '',
-      isBest && !isGuazza ? 'aff-rank-card--best' : '',
+      isBest ? 'aff-rank-card--best' : '',
     ].filter(Boolean).join(' ');
 
     return `
