@@ -25,6 +25,15 @@ Versioning: major per sprint, minor per milestone interne.
   ground truth è `obs_weighted_daily` (`ground_truth: "sir_weighted"`). Payload
   `skill.json` invariato; aggiornata la caption in `affidabilita.js` ("previsioni
   reali di produzione" invece di "CV out-of-sample").
+- **Copertura CI in `skill.json` + pagina affidabilità**: `_run_skill_curve`
+  include ora nel payload la sezione `coverage` per location — copertura empirica
+  CI80/CI90 per lead D+0..D+7 (intervalli CQR+ACI scritti in produzione, stessa
+  finestra 90gg+embargo della skill). Nuova card "Copertura intervalli" in
+  `affidabilita` (linee CI80/CI90 vs target tratteggiati 80/90%, toggle T max/T min,
+  tooltip con campioni; nascosta se il payload non ha `coverage`). Caption dei
+  grafici "chi vince" riformulate in modo onesto (vittoria = errore assoluto
+  minore quel giorno, anche di poco) e legenda win rate con MAE medio per modello
+  (°C/mm) sulla finestra corrente.
 
 ## [0.15.0] - 2026-08-06
 

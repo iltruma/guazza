@@ -96,6 +96,36 @@ def _curve_for(df: pd.DataFrame, var: str) -> list[dict[str, object]]:
         })
     return points
 
+
+def _coverage_for(df: pd.DataFrame, var: str) -> list[dict[str, object]]:
+    """Copertura empirica CI80/CI90 per lead dalle predictions di produzione.
+
+    Le predictions contengono gli intervalli CQR+ACI scritti in produzione
+    (forecast.py applica apply_aci_correction prima dell'upsert): questa è la
+    copertura del sistema reale, sulla stessa finestra della skill curve.
+    """
+    stem = var.replace("_c", "")
+    obs_col = f"{stem}_obs"
+    points: list[dict[str, object]] = []
+    for lead in LEADS:
+        cols = [obs_col, f"{stem}_ci80_lo", f"{stem}_ci80_hi",
+                f"{stem}_ci90_lo", f"{stem}_ci90_hi"]
+        g = df[df["lead_time_h"] == lead].dropna(subset=cols)
+        n = len(g)
+        if n < MIN_SAMPLES_PER_LEAD:
+            points.append({"lead_h": lead, "n": n, "cov80": None, "cov90": None})
+            continue
+        cov80 = float(((g[f"{stem}_ci80_lo"] <= g[obs_col])
+                       & (g[obs_col] <= g[f"{stem}_ci80_hi"])).mean())
+        cov90 = float(((g[f"{stem}_ci90_lo"] <= g[obs_col])
+                       & (g[obs_col] <= g[f"{stem}_ci90_hi"])).mean())
+        points.append({
+            "lead_h": lead, "n": n,
+            "cov80": round(cov80, 3),
+            "cov90": round(cov90, 3),
+        })
+    return points
+
 app = typer.Typer(
     help="Review giornaliero: ingest [ieri-7, ieri] + backfill + ACI + skill-history + monitor + train condizionale.",
     no_args_is_help=True,
@@ -133,12 +163,13 @@ def _run_skill_curve(
     embargo_days: int = 7,
     window_days: int = 90,
 ) -> None:
-    """Calcola la curva skill per-lead dalle predictions reali di produzione e scrive skill.json.
+    """Calcola la curva skill e la copertura CI per-lead dalle predictions reali di produzione e scrive skill.json.
 
     Ground truth: obs SIR pesate (obs_weighted_daily) backfillate sulle predictions
     dal review (backfill_prediction_obs). Guazza = p50 di produzione (modello
     riallenato settimanalmente); NWP = consensus dei 4 modelli alla stessa lead da
-    features_daily (stessa aggregazione usata in training).
+    features_daily (stessa aggregazione usata in training). La copertura CI80/CI90
+    usa gli intervalli CQR+ACI scritti in produzione (sezione "coverage" del payload).
 
     Finestra mobile [oggi - embargo - window, oggi - embargo]: l'embargo esclude
     le osservazioni più recenti non ancora backfillate/validate.
@@ -158,7 +189,9 @@ def _run_skill_curve(
         # Predictions di produzione: ultima model_version per (location, giorno, lead)
         preds = db_client.execute("""
             SELECT location_id, ts_valid::DATE AS target_date, lead_time_h,
-                   tmin_p50, tmax_p50, tmin_obs, tmax_obs
+                   tmin_p50, tmax_p50, tmin_obs, tmax_obs,
+                   tmin_ci80_lo, tmin_ci80_hi, tmin_ci90_lo, tmin_ci90_hi,
+                   tmax_ci80_lo, tmax_ci80_hi, tmax_ci90_lo, tmax_ci90_hi
             FROM (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY location_id, ts_valid::DATE, lead_time_h
@@ -185,9 +218,11 @@ def _run_skill_curve(
     for loc_id in sorted(stations):
         loc_test = test[test["location_id"] == loc_id].copy()
         curves: dict[str, list[dict[str, object]]] = {}
+        coverage: dict[str, list[dict[str, object]]] = {}
         for var in _SKILL_VARS:
             curves[var] = _curve_for(loc_test, var)
-        locations_out[loc_id] = {"sir_station_id": stations[loc_id], **curves}
+            coverage[var] = _coverage_for(loc_test, var)
+        locations_out[loc_id] = {"sir_station_id": stations[loc_id], **curves, "coverage": coverage}
 
     payload: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),

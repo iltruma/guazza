@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from guazza.jobs.review import LEADS, MIN_SAMPLES_PER_LEAD, _curve_for
+from guazza.jobs.review import LEADS, MIN_SAMPLES_PER_LEAD, _coverage_for, _curve_for
 
 
 def _row(lead: int, pred: float, nwp: float, obs: float) -> dict[str, object]:
@@ -47,3 +47,32 @@ def test_curve_ignores_rows_with_null_ground_truth() -> None:
 
     p24 = next(p for p in curve if p["lead_h"] == 24)
     assert p24["n"] == MIN_SAMPLES_PER_LEAD
+
+
+def _cov_row(lead: int, obs: float, lo80: float, hi80: float, lo90: float, hi90: float) -> dict[str, object]:
+    return {
+        "lead_time_h": lead,
+        "tmax_obs": obs,
+        "tmax_ci80_lo": lo80, "tmax_ci80_hi": hi80,
+        "tmax_ci90_lo": lo90, "tmax_ci90_hi": hi90,
+    }
+
+
+def test_coverage_computes_cov_for_populated_lead() -> None:
+    # Lead 24: 4 giorni dentro CI80, 1 giorno fuori CI80 ma dentro CI90 → cov80=0.8, cov90=1.0.
+    rows = [_cov_row(24, 10.0, 9.0, 11.0, 8.0, 12.0) for _ in range(4)]
+    rows.append(_cov_row(24, 11.5, 9.0, 11.0, 8.0, 12.0))
+    cov = _coverage_for(pd.DataFrame(rows), "tmax_c")
+
+    p24 = next(p for p in cov if p["lead_h"] == 24)
+    assert p24["n"] == 5
+    assert p24["cov80"] == 0.8
+    assert p24["cov90"] == 1.0
+
+
+def test_coverage_nulls_below_min_samples() -> None:
+    cov = _coverage_for(pd.DataFrame([_cov_row(0, 10.0, 9.0, 11.0, 8.0, 12.0)]), "tmax_c")
+    p0 = next(p for p in cov if p["lead_h"] == 0)
+    assert p0["n"] == 1
+    assert p0["cov80"] is None
+    assert p0["cov90"] is None
