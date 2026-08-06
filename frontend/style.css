@@ -802,6 +802,31 @@ img.emoji {
   text-align: center;
 }
 
+/* Riga mm + pill P(pioggia) del totale giornaliero */
+.g-strip__precip-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.g-strip__rain-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  font-family: var(--ff-mono);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  line-height: 1.35;
+  cursor: help;
+  white-space: nowrap;
+}
+
 .g-strip__dots {
   display: flex;
   flex-wrap: wrap;

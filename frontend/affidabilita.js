@@ -591,8 +591,8 @@ function drawRainProbChart(pts) {
         },
         y: {
           grid: { color: grid },
-          min: 0,
-          max: 1,
+          suggestedMin: 0,
+          suggestedMax: 0.3,
           ticks: {
             color: axis,
             font: { family: 'JetBrains Mono, monospace', size: 11 },

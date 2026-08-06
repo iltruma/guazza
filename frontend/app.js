@@ -611,6 +611,12 @@ function renderDayStrip(days, activeDayIdx) {
     const precipVal = t.precip ?? 0;
     const precipPct = Math.min(100, (precipVal / 20) * 100).toFixed(1);
     const precipDisplay = precipVal > 0.05 ? `${precipVal.toFixed(1)} mm` : '—';
+    // P(pioggia) del TOTALE giornaliero (classificatore daily): pill accanto ai mm.
+    // null = modello vecchio/cold-start → nessuna pill (la card resta com'era).
+    const probRain = day.forecasts?.precip_mm?.prob_rain;
+    const rainPill = probRain != null
+      ? `<span class="g-strip__rain-pill" title="P(pioggia ≥ 0.2mm)">${Math.round(probRain * 100)}%</span>`
+      : '';
     const dayLabel  = fmtDayShort(target_date);
     const isToday_  = diff === 0;
 
@@ -634,7 +640,10 @@ function renderDayStrip(days, activeDayIdx) {
       <div class="g-strip__precip-bar">
         <span class="g-strip__precip-fill" style="width:${precipPct}%"></span>
       </div>
-      <span class="g-strip__precip-val">${precipDisplay}</span>
+      <div class="g-strip__precip-row">
+        <span class="g-strip__precip-val">${precipDisplay}</span>
+        ${rainPill}
+      </div>
       ${dotsHtml}
     </button>`;
   }).join('');
