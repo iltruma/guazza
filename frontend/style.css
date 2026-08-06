@@ -1857,6 +1857,8 @@ img.emoji {
 }
 
 .aff-horizon__canvas-wrap {
+  flex: 1;
+  min-width: 0;
   padding: 8px 8px 4px;
   height: 260px;
 }
@@ -1884,6 +1886,8 @@ img.emoji {
 }
 
 .aff-rolling__canvas-wrap {
+  flex: 1;
+  min-width: 0;
   padding: 8px 8px 4px;
   height: 260px;
 }
@@ -2010,6 +2014,8 @@ img.emoji {
 }
 
 .aff-winner__canvas-wrap {
+  flex: 1;
+  min-width: 0;
   padding: 8px 8px 4px;
   height: 180px;
 }
