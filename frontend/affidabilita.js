@@ -213,8 +213,8 @@ function renderRanking() {
     const barColor = MODEL_COLORS[m.key] || 'rgba(148,163,174,0.55)';
 
     let badge = '';
-    if (isGuazza) badge += `<span class="aff-rank-card__badge aff-rank-card__badge--guazza">Guazza</span>`;
-    if (isBest)   badge += `<span class="aff-rank-card__badge aff-rank-card__badge--best">✓ Migliore</span>`;
+    if (isBest)        badge = `<span class="aff-rank-card__badge aff-rank-card__badge--best">✓ Migliore</span>`;
+    else if (isGuazza) badge = `<span class="aff-rank-card__badge aff-rank-card__badge--guazza">Guazza</span>`;
 
     const cardClass = [
       'aff-rank-card',
