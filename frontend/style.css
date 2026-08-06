@@ -1002,6 +1002,12 @@ img.emoji {
 .g-metric__value--warm { color: var(--warm); }
 .g-metric__value--cool { color: var(--cold); }
 
+/* Pill P(pioggia) sotto il valore Precip del dettaglio giorno (slot, nascosto se assente) */
+.g-metric__prob {
+  display: flex;
+  margin-top: 8px;
+}
+
 /* Indicators */
 .g-detail__intraday {
   padding: 0 20px 10px;

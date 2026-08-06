@@ -702,6 +702,17 @@ function renderDayDetail(day) {
       : '—';
   }
 
+  // Pill P(pioggia) del totale giornaliero — stessa semantica della striscia:
+  // prob_rain null (JSON vecchio/cold-start) → nessuna pill, layout invariato.
+  const probEl = document.getElementById('detail-precip-prob');
+  if (probEl) {
+    const p = day.forecasts?.precip_mm?.prob_rain;
+    probEl.classList.toggle('hidden', p == null);
+    probEl.innerHTML = p != null
+      ? `<span class="g-strip__rain-pill" title="P(pioggia ≥ 0.2mm)">${Math.round(p * 100)}%</span>`
+      : '';
+  }
+
   // Intraday correction D+0: tmin/tmax/precip già applicati da dayTemps();
   // qui resta solo il badge informativo "osservato/atteso".
   const intraday = day.intraday;
