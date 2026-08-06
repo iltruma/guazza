@@ -59,6 +59,7 @@ Deploy prod: reset DB schema (cape_jkg), `guazza-ingest historical` su k8s, `gua
 
 - `guazza-ingest daily` rimosso dallo scheduling: l'ingestion giornaliera era duplicata 1:1 in `guazza-review` (stessa data, stesso orario). Resta come strumento manuale (recupero giorni mancanti con `--date`, `--netatmo-all`).
 - `guazza-review` ingesta la finestra [ieri-7, ieri] (SIR CSV + OM historical + multilead): costo rete invariato (il CSV SIR restituisce comunque tutto lo storico), auto-guarigione dai run persi entro una settimana. Netatmo daily resta su ieri.
+- **Skill curve da predictions reali**: `_run_skill_curve` non usa più il modello congelato su split fisso (2025-10-15) — curva per-lead da predictions di produzione (p50, dedup ultima model_version) + consensus NWP da features_daily, finestra mobile 90gg + embargo 7gg. Ground truth `obs_weighted_daily`. Payload invariato, caption frontend aggiornata. Da notare: `skill.json` ora misura il sistema reale; le prediction di produzione esistono dal deploy (ott 2025), quindi la curva parte da lì.
 - Da fare nell'infra repo (astra): rimuovere il CronJob `guazza-ingest daily`.
 
 ## Sessione 2026-08-04 — CV, cleanup ML, LEAD_BUCKETS giornalieri

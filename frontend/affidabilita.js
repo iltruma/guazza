@@ -255,7 +255,7 @@ function renderHorizon() {
     `${varLabel} · SIR ${loc.sir_station_id} · ${d1}→${d2}`;
   document.getElementById('horizon-caption').textContent =
     `Guazza vs consensus NWP medio (ECMWF + ICON-EU + AROME + ICON-2I aggregati) per orizzonte. ` +
-    `Fonte: skill.json (CV out-of-sample, embargo ${skillData.embargo_days}gg). ` +
+    `Fonte: skill.json (previsioni reali di produzione, embargo ${skillData.embargo_days}gg). ` +
     `Il dettaglio per-modello è nel grafico precedente (solo D+1).`;
 
   drawHorizonChart(pts);

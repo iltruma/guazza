@@ -7,13 +7,13 @@ import pandas as pd
 from guazza.jobs.review import LEADS, MIN_SAMPLES_PER_LEAD, _curve_for
 
 
-def _row(lead: int, pred: float, nwp: float, prim: float) -> dict[str, object]:
-    return {"lead_time_h": lead, "pred_tmax_c": pred, "nwp_tmax_mean": nwp, "prim_tmax_c": prim}
+def _row(lead: int, pred: float, nwp: float, obs: float) -> dict[str, object]:
+    return {"lead_time_h": lead, "tmax_p50": pred, "nwp_tmax_mean": nwp, "tmax_obs": obs}
 
 
 def test_curve_computes_mae_and_skill_for_populated_lead() -> None:
     # Lead 24: Guazza MAE 0.5, NWP MAE 1.0 → skill +50%; campioni sufficienti.
-    rows = [_row(24, pred=10.5, nwp=11.0, prim=10.0) for _ in range(MIN_SAMPLES_PER_LEAD)]
+    rows = [_row(24, pred=10.5, nwp=11.0, obs=10.0) for _ in range(MIN_SAMPLES_PER_LEAD)]
     curve = _curve_for(pd.DataFrame(rows), "tmax_c")
 
     p24 = next(p for p in curve if p["lead_h"] == 24)
@@ -30,7 +30,7 @@ def test_curve_returns_all_leads() -> None:
 
 def test_curve_nulls_below_min_samples() -> None:
     # Un solo campione sul lead 0 → sotto soglia → metriche null ma n riportato.
-    rows = [_row(0, pred=10.0, nwp=11.0, prim=10.0)]
+    rows = [_row(0, pred=10.0, nwp=11.0, obs=10.0)]
     curve = _curve_for(pd.DataFrame(rows), "tmax_c")
 
     p0 = next(p for p in curve if p["lead_h"] == 0)
@@ -40,9 +40,9 @@ def test_curve_nulls_below_min_samples() -> None:
 
 
 def test_curve_ignores_rows_with_null_ground_truth() -> None:
-    # Righe senza gauge primario non contano nel campione.
+    # Righe senza obs non contano nel campione.
     rows: list[dict[str, object]] = [_row(24, 10.5, 11.0, 10.0) for _ in range(MIN_SAMPLES_PER_LEAD)]
-    rows.append({"lead_time_h": 24, "pred_tmax_c": 9.0, "nwp_tmax_mean": 11.0, "prim_tmax_c": None})
+    rows.append({"lead_time_h": 24, "tmax_p50": 9.0, "nwp_tmax_mean": 11.0, "tmax_obs": None})
     curve = _curve_for(pd.DataFrame(rows), "tmax_c")
 
     p24 = next(p for p in curve if p["lead_h"] == 24)

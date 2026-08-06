@@ -17,6 +17,14 @@ Versioning: major per sprint, minor per milestone interne.
   `guazza-review`, che esegue la stessa ingestion quotidiana). Il comando resta
   come strumento operativo manuale: recupero giornate mancanti (`--date`),
   `--only-sir`/`--only-openmeteo`, backfill Netatmo (`--netatmo-all`).
+- **`jobs/review.py` skill curve**: `_run_skill_curve` non allena più un modello
+  congelato su split fisso (2025-10-15) — la curva per-lead ora usa le predictions
+  reali di produzione (p50, ultima `model_version` per lead/giorno/location) e il
+  consensus NWP da `features_daily`, su finestra mobile `[oggi-97gg, oggi-7gg]`
+  (embargo 7gg). Eliminati `train_lgbm`/`FEATURE_COLS` dalla funzione e il
+  ground truth è `obs_weighted_daily` (`ground_truth: "sir_weighted"`). Payload
+  `skill.json` invariato; aggiornata la caption in `affidabilita.js` ("previsioni
+  reali di produzione" invece di "CV out-of-sample").
 
 ## [0.15.0] - 2026-08-06
 

@@ -46,7 +46,7 @@ from guazza.jobs._common import (
 from guazza.jobs.ingest import (
     _ingest_sir_historical_range,
 )
-from guazza.models import FEATURE_COLS, train_all, train_lgbm
+from guazza.models import train_all
 from guazza.monitor import check_and_log, compute_coverage, update_aci_from_history
 from guazza.netatmo_daily import aggregate_netatmo_daily
 from guazza.qc import compute_quality_flags
@@ -70,21 +70,23 @@ def _curve_for(df: pd.DataFrame, var: str) -> list[dict[str, object]]:
     """Calcola la curva skill MAE per un singolo target su tutti i lead.
 
     Args:
-        df: DataFrame con colonne lead_time_h, pred_{var}, nwp_{var}_mean, prim_{var}.
+        df: DataFrame con colonne lead_time_h, {stem}_p50, nwp_{stem}_mean, {stem}_obs
+            (stem = var senza suffisso _c, es. tmax).
         var: nome target, es. "tmax_c".
     """
-    nwp_col = f"nwp_{var.replace('_c', '')}_mean"  # es. nwp_tmax_mean
-    pred_col = f"pred_{var}"
-    prim_col = f"prim_{var}"
+    stem = var.replace("_c", "")
+    nwp_col = f"nwp_{stem}_mean"  # es. nwp_tmax_mean — consensus NWP da features_daily
+    pred_col = f"{stem}_p50"      # es. tmax_p50 — p50 di produzione
+    obs_col = f"{stem}_obs"       # es. tmax_obs — obs SIR pesate backfillate
     points: list[dict[str, object]] = []
     for lead in LEADS:
-        g = df[df["lead_time_h"] == lead].dropna(subset=[pred_col, nwp_col, prim_col])
+        g = df[df["lead_time_h"] == lead].dropna(subset=[pred_col, nwp_col, obs_col])
         n = len(g)
         if n < MIN_SAMPLES_PER_LEAD:
             points.append({"lead_h": lead, "n": n, "mae_nwp": None, "mae_ml": None, "skill_pct": None})
             continue
-        mae_nwp = float((g[nwp_col] - g[prim_col]).abs().mean())
-        mae_ml = float((g[pred_col] - g[prim_col]).abs().mean())
+        mae_nwp = float((g[nwp_col] - g[obs_col]).abs().mean())
+        mae_ml = float((g[pred_col] - g[obs_col]).abs().mean())
         skill = (1 - mae_ml / mae_nwp) * 100 if mae_nwp else None
         points.append({
             "lead_h": lead, "n": n,
@@ -95,7 +97,7 @@ def _curve_for(df: pd.DataFrame, var: str) -> list[dict[str, object]]:
     return points
 
 app = typer.Typer(
-    help="Review giornaliero: obs ieri + backfill + ACI + skill-history + monitor + train condizionale.",
+    help="Review giornaliero: ingest [ieri-7, ieri] + backfill + ACI + skill-history + monitor + train condizionale.",
     no_args_is_help=True,
 )
 
@@ -128,57 +130,60 @@ def _run_skill_curve(
     db_path: Path,
     output_dir: Path,
     config_dir: Path,
-    model_dir: Path,
-    window_start: str = "2025-10-15",
     embargo_days: int = 7,
+    window_days: int = 90,
 ) -> None:
-    """Calcola la curva di skill Guazza vs NWP e scrive skill.json."""
+    """Calcola la curva skill per-lead dalle predictions reali di produzione e scrive skill.json.
+
+    Ground truth: obs SIR pesate (obs_weighted_daily) backfillate sulle predictions
+    dal review (backfill_prediction_obs). Guazza = p50 di produzione (modello
+    riallenato settimanalmente); NWP = consensus dei 4 modelli alla stessa lead da
+    features_daily (stessa aggregazione usata in training).
+
+    Finestra mobile [oggi - embargo - window, oggi - embargo]: l'embargo esclude
+    le osservazioni più recenti non ancora backfillate/validate.
+
+    Sostituisce la vecchia curva con modello congelato su split fisso (2025-10-15):
+    quel modello non era quello in produzione e la finestra di test cresceva
+    all'infinito. Ora si misura il sistema reale su una finestra recente.
+    """
     stations = primary_stations(config_dir)
 
+    end = (datetime.now(tz=UTC) - timedelta(days=embargo_days)).date()
+    start = end - timedelta(days=window_days)
+    start_iso, end_iso = start.isoformat(), end.isoformat()
+    logger.info(f"skill curve finestra {start_iso} → {end_iso} (embargo {embargo_days}gg)")
+
     with DuckDBClient(db_path=db_path, read_only=True) as db_client:
-        df = db_client.execute("SELECT * FROM features_daily").df()
-        df["location_id"] = df["location_id"].astype("category")
-        df["target_date"] = pd.to_datetime(df["target_date"]).dt.date
-        df = df.sort_values("target_date").reset_index(drop=True)
+        # Predictions di produzione: ultima model_version per (location, giorno, lead)
+        preds = db_client.execute("""
+            SELECT location_id, ts_valid::DATE AS target_date, lead_time_h,
+                   tmin_p50, tmax_p50, tmin_obs, tmax_obs
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY location_id, ts_valid::DATE, lead_time_h
+                    ORDER BY model_version DESC
+                ) AS _rn
+                FROM predictions
+                WHERE ts_valid::DATE BETWEEN ? AND ?
+            ) s
+            WHERE s._rn = 1
+        """, [start_iso, end_iso]).df()
+        preds["target_date"] = pd.to_datetime(preds["target_date"]).dt.date
 
-        values = ", ".join(f"('{loc}','{st}')" for loc, st in stations.items())
-        primary = db_client.execute(f"""
-            WITH st(location_id, station_id) AS (VALUES {values})
-            SELECT st.location_id, o.ts::date AS target_date,
-                   o.tmin_c AS prim_tmin_c, o.tmax_c AS prim_tmax_c
-            FROM observations o JOIN st ON o.station_id = st.station_id
-            WHERE o.source = 'sir_toscana' AND o.granularity = 'daily'
-        """).df()
-        primary["target_date"] = pd.to_datetime(primary["target_date"]).dt.date
+        # NWP consensus per lead (stessa aggregazione delle features del modello)
+        nwp = db_client.execute("""
+            SELECT location_id, target_date, lead_time_h, nwp_tmin_mean, nwp_tmax_mean
+            FROM features_daily
+            WHERE target_date BETWEEN ? AND ?
+        """, [start_iso, end_iso]).df()
+        nwp["target_date"] = pd.to_datetime(nwp["target_date"]).dt.date
 
-    win_start = pd.to_datetime(window_start).date()
-    cutoff = (pd.Timestamp(win_start) - pd.Timedelta(days=embargo_days)).date()
-
-    train_df = df[df["target_date"] <= cutoff]
-    models: dict[str, Any] = {}
-    for var in _SKILL_VARS:
-        col = f"target_{var}"
-        mask = train_df[col].notna()
-        models[var] = train_lgbm(train_df.loc[mask, FEATURE_COLS], train_df.loc[mask, col], 0.50)
-    logger.info(f"skill curve train q=0.50: {len(train_df)} righe ≤ {cutoff} | test ≥ {win_start}")
-
-    test = df[df["target_date"] >= win_start].copy()
-    for var in _SKILL_VARS:
-        test[f"pred_{var}"] = models[var].predict(test[FEATURE_COLS])
-    test = test.merge(primary, on=["location_id", "target_date"], how="left")
-
-    evaluated = primary[primary["target_date"] >= win_start]["target_date"]
-    window_end = max(evaluated) if len(evaluated) else win_start
+    test = preds.merge(nwp, on=["location_id", "target_date", "lead_time_h"], how="left")
 
     locations_out: dict[str, Any] = {}
     for loc_id in sorted(stations):
         loc_test = test[test["location_id"] == loc_id].copy()
-        # Rinomina colonne per far combaciare lo schema atteso da _curve_for:
-        #   nwp_{var}_mean → già ok (_TARGET_NWP_MEAN)
-        #   prim_{tmin,tmax}_c → già ok dal join con primary
-        for var in _SKILL_VARS:
-            prim_col_src = f"prim_{var.replace('_c', '')}_c"
-            loc_test[f"prim_{var}"] = loc_test[prim_col_src]
         curves: dict[str, list[dict[str, object]]] = {}
         for var in _SKILL_VARS:
             curves[var] = _curve_for(loc_test, var)
@@ -186,9 +191,9 @@ def _run_skill_curve(
 
     payload: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
-        "ground_truth": "sir_primary",
-        "window_start": win_start.isoformat(),
-        "window_end": window_end.isoformat(),
+        "ground_truth": "sir_weighted",
+        "window_start": start_iso,
+        "window_end": end_iso,
         "embargo_days": embargo_days,
         "leads_h": LEADS,
         "min_samples_per_lead": MIN_SAMPLES_PER_LEAD,
@@ -322,7 +327,7 @@ def cmd_run(
             with DuckDBClient(db_path=db_path, read_only=True) as db_ro:
                 artifacts = train_all(db_ro, model_dir=model_dir, cal_days=90)
             logger.info(f"review train completato: n_train={artifacts.n_train} n_cal={artifacts.n_cal}")
-            _run_skill_curve(db_path, output_dir, config_dir, model_dir)
+            _run_skill_curve(db_path, output_dir, config_dir)
 
         stats.summary = f"window={ingest_start}..{date_str} dry_run={dry_run} force_train={force_train}"
 
