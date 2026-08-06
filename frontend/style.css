@@ -1756,6 +1756,12 @@ img.emoji {
   border-color: rgba(52,211,153,0.28);
 }
 
+/* Worst model: rosso */
+.aff-rank-card--worst {
+  border-color: rgba(248,113,113,0.28);
+}
+.aff-rank-card--worst .aff-rank-card__bar-fill { background: var(--rosso); }
+
 .aff-rank-card__badge {
   display: inline-flex;
   align-items: center;
@@ -1778,6 +1784,15 @@ img.emoji {
   background: var(--verde-bg);
   border: 1px solid var(--verde-bd);
   color: var(--verde);
+}
+.aff-rank-card__badge--worst {
+  background: var(--rosso-bg);
+  border: 1px solid var(--rosso-bd);
+  color: var(--rosso);
+}
+.aff-rank-card__badge-spacer {
+  display: block;
+  height: 18px;
 }
 
 .aff-rank-card__name {

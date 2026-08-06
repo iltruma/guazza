@@ -193,6 +193,7 @@ function renderRanking() {
 
   const worstMAE = Math.max(...scored.map(m => m.mae));
   const bestKey  = scored[0].key;
+  const worstKey = scored[scored.length - 1].key;
 
   // Caption data range
   const d1 = fmtDate(histData.min_date);
@@ -208,23 +209,27 @@ function renderRanking() {
   container.innerHTML = scored.map((m, idx) => {
     const isGuazza = m.key === 'guazza';
     const isBest   = m.key === bestKey;
+    const isWorst  = m.key === worstKey;
     const dotCls   = MODEL_DOT_CLASS[m.key] || 'aff-legend-dot--nwp';
     const barPct   = worstMAE > 0 ? ((m.mae / worstMAE) * 100).toFixed(1) : '100';
     const barColor = MODEL_COLORS[m.key] || 'rgba(148,163,174,0.55)';
 
     let badge = '';
-    if (isBest)        badge = `<span class="aff-rank-card__badge aff-rank-card__badge--best">✓ Migliore</span>`;
-    else if (isGuazza) badge = `<span class="aff-rank-card__badge aff-rank-card__badge--guazza">Guazza</span>`;
+    if (isBest)       badge = `<span class="aff-rank-card__badge aff-rank-card__badge--best">✓ Migliore</span>`;
+    else if (isWorst) badge = `<span class="aff-rank-card__badge aff-rank-card__badge--worst">✗ Peggiore</span>`;
 
     const cardClass = [
       'aff-rank-card',
       isGuazza ? 'aff-rank-card--guazza' : '',
-      isBest ? 'aff-rank-card--best' : '',
+      isBest  ? 'aff-rank-card--best'   : '',
+      isWorst ? 'aff-rank-card--worst'  : '',
     ].filter(Boolean).join(' ');
+
+    const badgeOrSpacer = badge || `<span class="aff-rank-card__badge-spacer"></span>`;
 
     return `
       <div class="${cardClass}" role="listitem">
-        ${badge}
+        ${badgeOrSpacer}
         <div class="aff-rank-card__name">${m.label}</div>
         <div class="aff-rank-card__mae">${m.mae.toFixed(2)}<span style="font-size:0.625rem;color:var(--text-3);font-weight:400;margin-left:2px">°C</span></div>
         <div class="aff-rank-card__rank">#${idx + 1} su ${scored.length}</div>
