@@ -1002,9 +1002,9 @@ img.emoji {
 .g-metric__value--warm { color: var(--warm); }
 .g-metric__value--cool { color: var(--cold); }
 
-/* Riga valore mm + pill P(pioggia) nella g-metric Precip: la pill sta a destra
-   del valore sulla stessa riga, baseline allineata col numero grande. Su mobile
-   la riga va a capo (wrap) invece di schiacciare la pill. */
+/* Riga valore mm + percentuale P(pioggia) nella g-metric Precip: valore a
+   sinistra, percentuale spinta a destra della card (margin-left auto), stessa
+   riga. Su mobile la riga va a capo e la percentuale resta allineata a destra. */
 .g-metric__value-row {
   display: flex;
   align-items: baseline;
@@ -1012,9 +1012,30 @@ img.emoji {
   gap: 8px;
 }
 
-/* Slot pill: partecipa alla riga valore, non si schiaccia mai */
+/* Slot percentuale: spinto a destra, non si schiaccia mai (va a capo) */
 .g-metric__prob {
   flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Percentuale P(pioggia): stessa scala del valore mm (clamp 1.6-2.2rem, Geist
+   700, tabular-nums) ma colore secondario — il testo è il protagonista, niente
+   pill/bordo. Override scoped: la pill della striscia (9px) resta invariata. */
+.g-metric__value-row .g-strip__rain-pill {
+  display: inline;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  font-family: var(--ff-sans);
+  font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--text-2);
+  cursor: help;
+  white-space: nowrap;
 }
 
 /* Indicators */
