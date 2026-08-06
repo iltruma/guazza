@@ -58,7 +58,7 @@ TRAIN_INTERVAL_DAYS: int = 7  # riallenare se artefatti più vecchi di N giorni
 
 _MODEL_DIR_DEFAULT = Path(os.environ.get("MODEL_DIR", "/var/lib/guazza/models"))
 
-# Variabili per la skill curve (identico a skill.py)
+# Variabili per la skill curve (usate in _run_skill_curve)
 LEADS = [0, 24, 48, 72, 96, 120, 144, 168]
 MIN_SAMPLES_PER_LEAD = 5
 _SKILL_VARS = ["tmin_c", "tmax_c"]

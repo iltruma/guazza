@@ -6,7 +6,7 @@ Tre comandi:
   daily       — cron 1×/giorno: delta di ieri (SIR CSV + OM historical lead=0 + OM multilead + Netatmo daily)
   realtime    — cron ogni 15-30 min: SIR actions.php + Netatmo + refresh JSON location
 
-I forecast NWP live e la pipeline ML sono in `guazza-pipeline`.
+I forecast NWP live e la pipeline ML sono in `guazza-forecast`.
 
 Uso:
     uv run python -m guazza.jobs.ingest historical [--start-date 2022-01-01]

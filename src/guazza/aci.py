@@ -88,7 +88,7 @@ class AdaptiveConformalizer:
         alpha_t più basso → CI più largo. Approssimazione lineare attorno
         al baseline.
 
-        ponytail: correct() è usato solo nei test sintetici (test_aci_*.py).
+        Nota: correct() è usato solo nei test sintetici (test_models.py).
         In produzione il mapping alpha_t→CI passa da apply_aci_correction
         (scaling moltiplicativo del half-width CQR, più robusto).
         """
@@ -116,7 +116,7 @@ class AdaptiveConformalizer:
         """Ricostruisce ACI da state persistito (DuckDB o dizionario).
 
         Usato dopo `db.get_aci_state()` per ricaricare lo state al startup
-        del job predict. Se n_updates == 0, alpha_t == alpha_target (cold start).
+        di guazza-forecast. Se n_updates == 0, alpha_t == alpha_target (cold start).
         """
         aci = cls(alpha_target=alpha_target, learning_rate=learning_rate, eps=eps)
         aci.alpha_t = max(eps, min(1.0 - eps, alpha_t))

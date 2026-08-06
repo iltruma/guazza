@@ -90,8 +90,8 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 
 ## `skill.json` — curva di skill (file globale)
 
-File separato `data/output/skill.json`, **uno solo** (non per-location): generato dal job
-`guazza-skill` (`jobs/skill.py`), letto dal frontend per la sezione "Quanto è affidabile".
+File separato `data/output/skill.json`, **uno solo** (non per-location): generato da
+`jobs/review.py` come parte del review giornaliero, letto dal frontend per la sezione "Quanto è affidabile".
 Misura retrospettiva MAE Guazza vs consensus NWP per orizzonte D+0…D+7, contro il
 **termometro SIR primario** di ogni location (verità indipendente, non il target pesato).
 
@@ -123,8 +123,8 @@ Misura retrospettiva MAE Guazza vs consensus NWP per orizzonte D+0…D+7, contro
 
 ## `skill_history.json` — time series forecast vs actual (file globale)
 
-File separato `frontend/data/skill_history.json`, **uno solo**: generato come
-passo 4 della `pipeline.py` (6h). Misura **per ogni giorno
+File separato `frontend/data/skill_history.json`, **uno solo**: generato da
+`jobs/review.py` (1×/giorno). Misura **per ogni giorno
 passato** come hanno performato i vari modelli sul forecast emesso a D-1 (lead
 24h) per D, rispetto al valore osservato. Popolamento incrementale (append
 giornaliero, idempotente).
@@ -176,13 +176,10 @@ giornaliero, idempotente).
 - **NWP senza dati**: GFS rimosso dal setup in v0.11.1 (KI-025); le righe
   storiche restano in `forecasts` come dati morti ma innocui. Il frontend
   nasconde i NWP con tutti valori null nella finestra corrente.
-- **Job**:
-  - `append [--day YYYY-MM-DD | --days N]` (default: ieri): ~21 righe × N
-    location × N giorni. Idempotente (PK composta + ON CONFLICT DO UPDATE).
-  - `dump [--output PATH]` (default `frontend/data/skill_history.json`):
-    scrittura atomica, aggrega la tabella in JSON.
-- **Schedule k8s proposta**: `15 6 * * *` UTC per `append` (15 min dopo
-  `daily` ingest), `30 6 * * *` per `dump`.
+- **Job**: append + dump sono gestiti internamente da `guazza-review` (1×/giorno, 06:10 UTC).
+  - `append_one(db, date)`: ~21 righe per location per giorno. Idempotente (PK composta + ON CONFLICT DO UPDATE).
+  - `dump_payload(db)` + `atomic_write_json(path, payload)`: scrittura atomica, aggrega la tabella in JSON.
+- **Schedule k8s**: `guazza-review` a `10 6 * * *` UTC copre entrambi (dopo `daily` ingest).
 
 ## Decision Logic Engine — logging obbligatorio
 

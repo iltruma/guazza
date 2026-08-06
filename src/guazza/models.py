@@ -588,7 +588,7 @@ def train_all(
 
     df = load_features(db)
     if df.empty:
-        raise ValueError("features_daily è vuota. Popolala con ingest + train run")
+        raise ValueError("features_daily è vuota. Popolala con guazza-ingest historical + guazza-review run")
 
     max_date = df["target_date"].max()
     cal_cutoff = pd.Timestamp(max_date) - pd.Timedelta(days=cal_days)
@@ -703,7 +703,7 @@ def load_artifacts(model_dir: Path | None = None) -> TrainingArtifacts:
             raise RuntimeError(
                 f"Trovato artifacts.pkl obsoleto in {model_dir}: il formato pickle "
                 "è stato sostituito da artifacts.json + modelli .txt. "
-                "Riesegui: train run"
+                "Riesegui: guazza-review run --force-train"
             )
         # Suggerimenti per l'utente quando gli artefatti mancano al path di default.
         # In produzione k8s il path è /var/lib/guazza/models; in locale è data/models.
@@ -716,7 +716,7 @@ def load_artifacts(model_dir: Path | None = None) -> TrainingArtifacts:
                     f"o esporta MODEL_DIR=data/models."
                 )
         raise FileNotFoundError(
-            f"Artefatti non trovati: {manifest_path}.{hint} Esegui prima: train run"
+            f"Artefatti non trovati: {manifest_path}.{hint} Esegui prima: guazza-review run"
         )
 
     manifest = json.loads(manifest_path.read_text())
@@ -838,7 +838,7 @@ def predict_frame(
 
     Una sola chiamata model.predict per (target, quantile) sull'intero frame invece
     di una per riga: LightGBM è row-independent, quindi i quantili sono identici; la
-    correzione CQR resta per-riga in base al bucket di lead_h[i]. Usato dal job predict
+    correzione CQR resta per-riga in base al bucket di lead_h[i]. Usato da guazza-forecast
     per evitare 15 chiamate-modello per giorno (15 per location, una sola volta).
 
     Args:

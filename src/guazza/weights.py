@@ -9,7 +9,7 @@ Schema di pesi (Alessandrini et al. 2013, calibrato per Toscana):
 Ricalibrazione prevista dopo 60 giorni di osservazioni reali.
 
 La CLI standalone è stata rimossa: refresh_station_weights() e
-refresh_upstream_rings() sono invocati da `guazza-pipeline run`.
+refresh_upstream_rings() sono invocati da `guazza-forecast run`.
 """
 
 from __future__ import annotations

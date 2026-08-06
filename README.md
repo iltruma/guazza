@@ -58,7 +58,7 @@ guazza/
 │   ├── features.py         # build_features_daily() — 50 feature, tabella materializzata
 │   ├── models.py           # LightGBM quantile + CQR, train_all(), predict(), predict_frame()
 │   ├── indicators.py       # Decision Logic Engine: evaluate_all(), log_results()
-│   ├── output.py           # build_signals(), build_signals_today(), dewpoint/apparent_temp, write_location_json()
+│   ├── output.py           # build_signals(), build_signals_today(), write_location_json(), refresh_realtime_json()
 │   ├── qc.py               # Quality control osservazioni SIR (chiamato da ingest)
 │   ├── _logging.py         # setup_logging() + log_scrape() — TTY pretty / cron JSON
 │   ├── netatmo_daily.py    # Accumulo Netatmo realtime → daily (forward-looking storico)
@@ -68,8 +68,7 @@ guazza/
  │       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
  │       ├── ingest.py       # Cron: historical / daily / realtime
  │       ├── forecast.py     # Cron 6h (02/08/14/20 UTC): NWP live → features → predict → JSON
- │       ├── review.py       # Cron 1×/giorno (06:00 UTC): obs ieri + ACI + skill-history + train condizionale
- │       └── backup.py       # Cron: backup DuckDB su Cloudflare R2
+ │       └── review.py       # Cron 1×/giorno (06:10 UTC): obs ieri + ACI + skill-history + train condizionale
 ├── data/
 │   ├── guazza.duckdb       # Database analitico (non committato)
 │   ├── models/             # Artefatti LightGBM artifacts.json + model-string .txt (non committati)
@@ -183,13 +182,13 @@ uv run python -m guazza.jobs.review run --dry-run
 # append + dump sono inclusi automaticamente in guazza-review.
 # Per backfill manuale (es. dopo perdita dati):
 python -c "
-import duckdb
+from guazza.storage import DuckDBClient
 from guazza.skill_history import append_one, dump_payload, atomic_write_json, DEFAULT_DUMP_PATH
 from datetime import date, timedelta
-con = duckdb.connect('data/guazza.duckdb')
-for i in range(30):
-    append_one(con, date.today() - timedelta(days=i+1))
-atomic_write_json(DEFAULT_DUMP_PATH, dump_payload(con))
+with DuckDBClient(db_path='data/guazza.duckdb') as db:
+    for i in range(30):
+        append_one(db, date.today() - timedelta(days=i+1))
+    atomic_write_json(DEFAULT_DUMP_PATH, dump_payload(db))
 "
 ```
 
@@ -215,7 +214,7 @@ container su GitHub Container Registry, allineata a `pyproject.toml`:
 
 L'immagine è single-stage: `python:3.13-slim` + `uv` (binario ufficiale) + nginx + frontend statico. Il
 container gira come utente non-root (UID 1000), include nginx sulla porta 8080
-per il servizio web e gli entry point CLI (`guazza-ingest`, `guazza-forecast`, `guazza-review`, `guazza-backup`) per i job schedulati.
+per il servizio web e gli entry point CLI (`guazza-ingest`, `guazza-forecast`, `guazza-review`) per i job schedulati.
 
 ### Procedura di rilascio
 

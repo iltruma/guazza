@@ -1,6 +1,6 @@
 """Skill history: append giornaliero e dump JSON per il frontend.
 
-Funzioni pure usate da jobs/review.py (ogni 6h) per backfill e dump giornaliero.
+Usato da jobs/review.py (1×/giorno) per backfill e dump giornaliero.
 """
 
 from __future__ import annotations

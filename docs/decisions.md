@@ -11,7 +11,7 @@
 spesso usata come ground truth in letteratura ML meteo.
 
 **Problema**: ERA5 assimila osservazioni reali → è una stima del vero stato
-atmosferico. In produzione si hanno solo forecast NWP (ECMWF, ICON-EU, GFS)
+atmosferico. In produzione si hanno solo forecast NWP (ECMWF, ICON-EU, AROME, ICON-2I)
 che non hanno visto la verità. Usare ERA5 come feature di input → train/serve
 skew grave → metriche gonfiate in CV, degrado reale in produzione.
 
@@ -36,8 +36,8 @@ non garantiscono separazione tra train e validation per serie meteorologiche.
 embargo, esempi correlati finiscono in train e validation → metriche gonfiate.
 
 **Scelta**: embargo minimo 7 giorni tra fine train e inizio validation in ogni
-fold. Implementazione: `TimeSeriesSplit` con `gap=7*24` (ore) se granularità
-oraria, `gap=7` se giornaliera.
+fold. Implementazione: aritmetica diretta sulle date (train_end + 7 giorni =
+val_start), senza `TimeSeriesSplit` di sklearn.
 
 **Conseguenze**: N fold effettivi ridotto, ma metriche oneste.
 
@@ -71,7 +71,7 @@ toscani non validati il coverage reale può discostarsi.
 
 **Scelta**: ogni output JSON include:
 ```json
-{"coverage_empirical_30d": {"temp_ci80": 0.81, "temp_ci90": 0.88}}
+{"coverage_empirical_30d": {"tmin_ci80": 0.81, "tmin_ci90": 0.88, "tmax_ci80": 0.79, "tmax_ci90": 0.87, "precip_ci80": 0.76, "precip_ci90": 0.84}}
 ```
 Rolling window 30 giorni su osservazioni vs CI. Se dati insufficienti → `null`,
 dashboard mostra "calibrazione in corso".
@@ -219,8 +219,9 @@ termica nella piana di Campi o Scandicci).
 - Mantenere `arome_france` (2.5 km) e `icon_eu` (7 km) come modelli ad alta risoluzione.
 - Aggiungere `italia_meteo_arpae_icon_2i` (2.2 km, ItaliaMeteo/ARPAE): unico modello che assimila osservazioni italiane, orizzonte 72h.
 
-**Conseguenza**: il dataset di training `features_daily` usa 6 modelli NWP
-(ecmwf_ifs, icon_eu, icon_d2, gfs025, arome_france, icon_2i).
+**Conseguenza**: il dataset di training `features_daily` usa 4 modelli NWP
+(ecmwf_ifs, icon_eu, arome_france, icon_2i). `icon_d2` rimosso in v0.12.5
+(KI-025), `gfs025` rimosso in v0.11.1.
 Necessario rieseguire il backfill `historical` per i nuovi modelli.
 
 ---
@@ -242,7 +243,7 @@ Necessario rieseguire il backfill `historical` per i nuovi modelli.
 
 **Decisione**: nel DLE (Sprint 5), per gli indicatori dipendenti dalla pioggia
 (`panni`, soglie allerta) usare la distribuzione NWP ensemble direttamente
-(probabilità di precip > soglia calcolata su 6 modelli) piuttosto che il CI
+(probabilità di precip > soglia calcolata su 4 modelli) piuttosto che il CI
 ML post-processato. Il modello ML produce comunque un output per precip, ma
 non è il segnale primario per queste decisioni.
 
@@ -316,10 +317,9 @@ NWP contro **ground truth diversi**, e il backtest 0.75 non riguarda nemmeno il 
 
 - **+25.6% (Sprint 4)** = skill del **modello ML** vs NWP-ensemble-mean, entrambi valutati
   contro il **target pesato** multi-stazione (il target di training), walk-forward CV con
-  embargo. Ri-eseguito oggi a 6 modelli (`walk_forward_cv`): **tmin +32.5%, tmax +42.8%,
+  embargo. Ri-eseguito oggi a 4 modelli (`walk_forward_cv`): **tmin +32.5%, tmax +42.8%,
   precip −2.4%** (precip pareggia il NWP, conferma D-014). MAE NWP-mean vs target pesato
-  ≈ **1.34°C** tmin / **1.43°C** tmax. Il +25.6% era a 4 modelli: passare a 6 ha *alzato*
-  lo skill, non gonfiato il baseline.
+  ≈ **1.34°C** tmin / **1.43°C** tmax.
 - **~0.75°C (backtest 2025)** = MAE del **NWP grezzo** (non il modello ML) vs la **stazione
   SIR primaria**, debias-only, solo 2025, sulle location migliori. È un *floor-of-skill*
   esplorativo, non uno skill score del modello.
@@ -444,7 +444,7 @@ dei dati di produzione futuri. Due vie correttive possibili.
 - Il drift osservato è di **calibrazione** (la predizione puntuale è decente,
   ma i bound CI sono troppo stretti), non di accuratezza (MAE non degradato
   significativamente). Correggere la confidenza è sufficiente e molto più
-  economico di riaddestrare un LightGBM con 6 modelli NWP.
+  economico di riaddestrare un LightGBM con 4 modelli NWP.
 - ACI richiede solo le coppie (prediction, actual) già presenti in
   `predictions.*_obs` — nessun accesso alle feature originali, nessun
   accumulo di training set, nessun costo computazionale.
@@ -464,7 +464,7 @@ la stima di α_t è dominata dal rumore (un singolo errore sposta α del
 Equivalente a ~30 giorni di produzione (una observation al giorno per
 target, dopo che D+0…D+7 sono backfillati).
 
-**Monitor separato** (`jobs/monitor.py`): calcola `coverage_30d` per
+**Monitor separato** (`src/guazza/monitor.py`): calcola `coverage_30d` per
 (target, lead_bucket) aggregato, indipendente dal predict job. Due motivi:
 1. Il predict job aggiorna ACI e genera previsioni — confondere feedback
    (coverage reale) e azione (correzione α_t) in un unico job rende il

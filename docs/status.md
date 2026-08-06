@@ -16,7 +16,7 @@
 
 | Componente | Stato |
 |---|---|
-| Pipeline 6h | `guazza-pipeline` — forecasts → features → predict+DLE+JSON → skill-history → monitor |
+| Pipeline 6h | `guazza-forecast` — forecasts → features → predict+DLE+JSON |
 | Ingest | `guazza-ingest historical/daily/realtime` (SIR + Open-Meteo + Netatmo) |
 | Modello | LightGBM quantile + CQR (cal_days=90) + ACI + rain_clf (hurdle stadio 1) |
 | NWP | 4 modelli: ECMWF IFS, ICON-EU, AROME France, ICON-2I |
@@ -50,7 +50,7 @@ Fold 1-2 (pre-ott 2024) sono lead=0-only, non rappresentativi del sistema con mu
 
 ## Prossima mossa
 
-Deploy prod: reset DB schema (cape_jkg), `ingest historical` su k8s, `train run`, `pipeline run`.
+Deploy prod: reset DB schema (cape_jkg), `guazza-ingest historical` su k8s, `guazza-review run --force-train`, `guazza-forecast run`.
 `skill_history.json` si popolerà automaticamente dopo ~1 settimana di operatività in prod.
 
 ---
@@ -73,7 +73,7 @@ Deploy prod: reset DB schema (cape_jkg), `ingest historical` su k8s, `train run`
 ### Note tecniche
 
 - La coverage CI80 (72-76% vs 80%) è non-stazionarietà train→test, non problema di volume cal set. ACI è il meccanismo corretto per produzione.
-- `walk_forward_cv` e `crps_from_quantiles` restano in `models.py` — strumenti del case study, verranno riusati tra 6 mesi quando ensemble ≤48h si completa.
+- `walk_forward_cv` e `crps_from_quantiles` sono in `cv.py` (estratti da `models.py` in v0.15.0) — strumenti del case study, verranno riusati tra 6 mesi quando ensemble ≤48h si completa.
 - Wet regressor rimosso: skill_wet_mae negativo perché usa stesse FEATURE_COLS del modello globale con meno dati — nessun vantaggio strutturale senza feature termodinamiche aggiuntive specifiche.
 - `anomaly_targets` rimosso: ANOMALY_TARGETS=() da KI-024, tutti i branch erano dead code. Semplificata `_target_col`, rimossa `_invert_anomaly`.
 

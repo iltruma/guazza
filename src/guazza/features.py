@@ -12,7 +12,7 @@ Schema di una riga: vedi SELECT finale.
 lead_time_h = ore da ts_run a mezzanotte di target_date.
 I forecast orari vengono aggregati: MIN(temp)→tmin, MAX(temp)→tmax, SUM(precip), AVG(humidity/wind).
 
-Prerequisito: station_weights deve essere popolata (guazza-pipeline run la popola automaticamente).
+Prerequisito: station_weights deve essere popolata (guazza-forecast run la popola automaticamente).
 """
 
 from __future__ import annotations
@@ -299,7 +299,7 @@ def build_features_daily(db: DuckDBClient) -> int:
     if not n_weights or n_weights[0] == 0:
         raise ValueError(
             "station_weights è vuota. "
-            "Esegui prima: guazza-pipeline run"
+            "Esegui prima: guazza-forecast run"
         )
 
     db.execute(_BUILD_SQL)
