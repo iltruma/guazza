@@ -88,16 +88,6 @@ File dati:   scrittura su /var/lib/guazza/, config/*.yaml, Parquet esistenti
 Dipendenze:  installazione pacchetti non in pyproject.toml
 ```
 
-Pattern obbligatorio prima di procedere:
-```
-Sto per eseguire:
-  [tipo]: [dettaglio esatto — URL, query SQL, comando]
-  Scopo: [perché è necessario]
-  Impatto: [cosa cambia/scrive/modifica]
-
-Attendo conferma prima di procedere.
-```
-
 ### 🟢 Zona verde — procedere autonomamente
 
 - Scrivere/modificare codice in `src/`, `tests/`
@@ -105,15 +95,6 @@ Attendo conferma prima di procedere.
 - Eseguire pytest, ruff, mypy
 - Scrivere/aggiornare `docs/`
 - `git add <file specifici>` (proporre commit, attendere conferma — vedi §Regole di commit)
-
-### Errori in esecuzione
-
-Quando uno script va in errore:
-1. Fermarsi immediatamente — non tentare fix autonomi, non ritentare varianti
-2. Mostrare l'errore esattamente com'è (output completo)
-3. Aspettare istruzioni
-
-Non fare reverse engineering autonomo su API o sistemi esterni quando uno script fallisce.
 
 ## Regole di modifica del codice
 
@@ -123,9 +104,6 @@ La modifica minima che risolve il problema è l'unica corretta. Se un bug si ris
 - Non toccare codice adiacente non richiesto: no rinomine "di passaggio", no riformattazioni, no riordino import.
 - Refactoring e cleanup sono task separati, richiesti esplicitamente. Non mescolarli a fix o feature.
 - Se durante il lavoro noti codice migliorabile fuori scope: segnalalo in una riga, non modificarlo.
-
-### Diff-first
-Le modifiche si propongono come blocchi `oldString`/`newString` (o unified diff), mai come file interi riscritti. Riscrivere un file intero è ammesso solo per file nuovi o quando >70% delle righe cambia.
 
 ### Gate analisi funzionale (modifiche strutturali)
 Per modifiche che toccano >1 file o alterano logica esistente, prima di scrivere codice:
@@ -235,42 +213,7 @@ retry: log ERROR, ping fail, non crashare — il prossimo cron riprova.
 
 **Decision Logic Engine**: ogni invocazione produce log in DuckDB (`indicator_log`) — schema in `docs/contract.md`.
 
-## Qualità del codice
-
-- **Leggibile da un mid developer**: nomi espliciti (no abbreviazioni criptiche),
-  funzioni corte con un solo scopo, niente magie implicite non ovvie.
-- **Niente dead code**: funzioni, variabili, import non usati si rimuovono subito.
-  Non lasciare codice "forse utile in futuro".
-- **Niente codice sperimentale residuo**: niente `print()` di debug, variabili temporanee,
-  rami commentati. Si elimina prima del commit.
-- **Niente helper prematuri**: tre righe simili non giustificano un'astrazione.
-  Estrarre una funzione solo quando il riuso è concreto e immediato.
-- **Commenti solo sul "perché"**: non sul "cosa" (il codice lo dice già). Un commento che
-  descrive ciò che fa la riga è rumore — va rimosso.
-- **Boundary di validazione**: `pydantic v2` solo ai boundary di sistema (config YAML in ingresso, JSON di output verso frontend); `@dataclass` per oggetti interni fidati — non validare codice interno.
-
-### Checklist completamento task
-
-- [ ] Mai considerare completo senza: `uv run python -m pytest` verde
-- [ ] Mai considerare completo senza: `ruff check` zero warning
-- [ ] Mai considerare completo senza: type hints presenti e mypy pulito
-- [ ] `setup_logging()` chiamato in ogni nuovo job CLI
-- [ ] Healthchecks.io ping se è un job cron
-- [ ] Nessun dead code, nessun codice sperimentale residuo
-- [ ] Punto aperto segnalato se il task ne dipende
-- [ ] `docs/known_issues.md` aggiornato se workaround
-- [ ] Versione/CHANGELOG proposti se la sessione lo richiede
-- [ ] Commit proposto con formato `tipo(scope): descrizione`
-
 ## Comandi e ambiente
-
-Comandi di sviluppo più usati (lista operativa completa con tutti i flag in `README.md`):
-
-```bash
-uv sync --extra dev                          # ambiente + dev deps
-uv run python -m pytest                       # test
-uv run ruff check src/ && uv run mypy src/   # lint + type check
-```
 
 ### Variabili d'ambiente rilevanti
 
