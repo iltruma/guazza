@@ -107,19 +107,6 @@ function absError(forecasts, actuals) {
   });
 }
 
-// Media mobile: finestra `k` giorni, null se non abbastanza valori (min 3)
-function rolling(arr, k) {
-  const out = new Array(arr.length).fill(null);
-  for (let i = 0; i < arr.length; i++) {
-    const start = Math.max(0, i - k + 1);
-    const slice = arr.slice(start, i + 1).filter(v => v != null);
-    if (slice.length >= Math.min(3, k)) {
-      out[i] = slice.reduce((s, v) => s + v, 0) / slice.length;
-    }
-  }
-  return out;
-}
-
 // Legge CSS custom property dal root
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();

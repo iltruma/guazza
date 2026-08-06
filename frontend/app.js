@@ -1,6 +1,5 @@
 'use strict';
 
-// Dev: ln -s ../data/output frontend2/data  then: cd frontend2 && python3 -m http.server 8081
 const DATA_URL = loc => `/data/${loc}.json`;
 const TWEMOJI_OPTS = { folder: 'svg', ext: '.svg' };
 const METEOCONS_BASE = 'https://cdn.jsdelivr.net/npm/@meteocons/svg@0.1.0/fill';
@@ -77,7 +76,6 @@ function hideEl(id) {
   const el = document.getElementById(id);
   if (!el) return;
   el.classList.add('hidden');
-  el.style.display = 'none';
 }
 
 function showSkeleton() { showEl('skeleton-state'); }
@@ -586,7 +584,7 @@ function ciBar(fc, unit) {
       </div>
       <div class="g-ci-bar__labels">
         <span class="g-ci-bar__lo">${ci90_lo.toFixed(1)}${unit}</span>
-        <span class="g-ci-bar__note">CI 80%</span>
+        <span class="g-ci-bar__note">CI 90%</span>
         <span class="g-ci-bar__hi">${ci90_hi.toFixed(1)}${unit}</span>
       </div>
     </div>`;
@@ -767,7 +765,6 @@ function renderIndicatorChips(indicators) {
 function computeNwpDelta(modelVal, guazzaVal, kind) {
   if (modelVal == null || guazzaVal == null) return { text: '', cls: '' };
   const delta = modelVal - guazzaVal;
-  const absD  = Math.abs(delta);
   const sign  = delta >= 0 ? '+' : '';
   const fmt   = delta.toFixed(1);
   if (kind === 'temp') {
@@ -1406,7 +1403,7 @@ function _buildChartDatasets(canvas, points, p) {
   // per prime (order alto) così le linee centrali restano in primo piano.
   const tempLo = points.filter(pt => pt.temp_ci80_lo != null).map(pt => ({ x: pt.ts, y: pt.temp_ci80_lo }));
   const tempHi = points.filter(pt => pt.temp_ci80_hi != null).map(pt => ({ x: pt.ts, y: pt.temp_ci80_hi }));
-  if (SHOW_BANDS && tempLo.length && tempHi.length) {
+  if (tempLo.length && tempHi.length) {
     datasets.push({
       type: 'line', label: 'Temp CI 80% (low)',
       data: tempLo,
@@ -1427,7 +1424,7 @@ function _buildChartDatasets(canvas, points, p) {
   // fill: '+1' colora l'area tra ci80_lo (dataset N) e ci80_hi (dataset N+1).
   const precipLo = points.filter(pt => pt.precip_ci80_lo != null).map(pt => ({ x: pt.ts, y: pt.precip_ci80_lo }));
   const precipHi = points.filter(pt => pt.precip_ci80_hi != null).map(pt => ({ x: pt.ts, y: pt.precip_ci80_hi }));
-  if (SHOW_BANDS && precipLo.length && precipHi.length) {
+  if (precipLo.length && precipHi.length) {
     datasets.push({
       type: 'bar', label: 'Precip CI 80% (low)',
       data: precipLo, backgroundColor: 'rgba(96,165,250,0.08)',
@@ -1468,7 +1465,7 @@ function _buildChartDatasets(canvas, points, p) {
 }
 
 // Bande CI 80%: sempre visibili (fisso).
-const SHOW_BANDS = true;
+
 
 // Helper: convert hex color (#rrggbb) a rgba(r,g,b,a) per fill semi-trasparente.
 function hexToRgba(hex, alpha) {

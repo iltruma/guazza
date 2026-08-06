@@ -115,7 +115,7 @@ input[type="range"]:focus-visible {
 .hidden { display: none !important; }
 
 /* Utility */
-.g-title-group { display: flex; flex-direction: column; gap: 2px; }
+
 
 /* === Twemoji === */
 img.emoji {
@@ -1188,7 +1188,7 @@ img.emoji {
   margin-left: 4px;
   vertical-align: baseline;
 }
-.g-delta--muted { color: var(--text-3); }
+
 .g-delta--warm  { color: var(--warm); background: var(--warm-bg); }
 .g-delta--cold  { color: var(--cold); background: var(--cold-bg); }
 .g-delta--wet   { color: var(--rosso);  background: var(--rosso-bg); }
@@ -1241,7 +1241,7 @@ img.emoji {
 .g-skill__seg-btn.is-active {
   color: var(--text-1);
   background: var(--surface-1);
-  box-shadow: var(--shadow-1);
+  box-shadow: 0 1px 3px rgba(8,8,8,0.4);
 }
 
 .g-skill__wrap { padding: 8px 8px 0; height: 240px; }
@@ -1256,19 +1256,6 @@ img.emoji {
 }
 @media (min-width: 768px) { .g-skill__caption { padding: 8px 24px 18px; } }
 
-/* === Skill history: due grafici affiancati (T max / T min) === */
-.g-skill__hist {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-  padding: 8px 8px 0;
-}
-@media (min-width: 768px) {
-  .g-skill__hist { grid-template-columns: 1fr 1fr; gap: 12px; padding: 8px 12px 0; }
-}
-.g-skill__hist-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.g-skill__hist-col .g-chart-wrap { height: 220px; }
-@media (min-width: 768px) { .g-skill__hist-col .g-chart-wrap { height: 260px; } }
 
 /* =============================================================
    CHART (in right column)
@@ -1733,8 +1720,8 @@ img.emoji {
   to   { transform: translateY(-50%) scale(1); }
 }
 @keyframes stale-pulse {
-  0%, 100% { border-color: rgba(107,127,212,0.20); }
-  50%       { border-color: rgba(107,127,212,0.50); }
+  0%, 100% { border-color: var(--giallo-bd); }
+  50%       { border-color: var(--giallo); }
 }
 @keyframes badge-bounce {
   0%   { transform: scale(0); }
@@ -1890,12 +1877,6 @@ img.emoji {
 }
 
 /* ── MAE per orizzonte ───────────────────────────────────────── */
-.aff-horizon {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
 /* Override: align-items flex-start (titolo multiriga) + flex-wrap */
 .aff-horizon__header {
   align-items: flex-start;
@@ -1926,12 +1907,6 @@ img.emoji {
 }
 
 /* ── Rolling error chart ─────────────────────────────────────── */
-.aff-rolling {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
 /* Override: g-card__header non ha flex-wrap */
 .aff-rolling__header { flex-wrap: wrap; }
 
