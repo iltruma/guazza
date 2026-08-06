@@ -17,7 +17,7 @@
 | Componente | Stato |
 |---|---|
 | Pipeline 6h | `guazza-forecast` — forecasts → features → predict+DLE+JSON |
-| Ingest | `guazza-ingest historical/daily/realtime` (SIR + Open-Meteo + Netatmo) |
+| Ingest | `guazza-ingest historical/realtime` (SIR + Open-Meteo + Netatmo); ingestion daily in `guazza-review` |
 | Modello | LightGBM quantile + CQR (cal_days=90) + ACI + rain_clf (hurdle stadio 1) |
 | NWP | 4 modelli: ECMWF IFS, ICON-EU, AROME France, ICON-2I |
 | Location | 6: casa_campi, lavoro_cosimo, lavoro_madda, casa_cesto, casa_nicco, casa_cercina |
@@ -54,6 +54,12 @@ Deploy prod: reset DB schema (cape_jkg), `guazza-ingest historical` su k8s, `gua
 `skill_history.json` si popolerà automaticamente dopo ~1 settimana di operatività in prod.
 
 ---
+
+## Sessione 2026-08-06 — daily fuori dal cron, review con finestra di recupero
+
+- `guazza-ingest daily` rimosso dallo scheduling: l'ingestion giornaliera era duplicata 1:1 in `guazza-review` (stessa data, stesso orario). Resta come strumento manuale (recupero giorni mancanti con `--date`, `--netatmo-all`).
+- `guazza-review` ingesta la finestra [ieri-7, ieri] (SIR CSV + OM historical + multilead): costo rete invariato (il CSV SIR restituisce comunque tutto lo storico), auto-guarigione dai run persi entro una settimana. Netatmo daily resta su ieri.
+- Da fare nell'infra repo (astra): rimuovere il CronJob `guazza-ingest daily`.
 
 ## Sessione 2026-08-04 — CV, cleanup ML, LEAD_BUCKETS giornalieri
 

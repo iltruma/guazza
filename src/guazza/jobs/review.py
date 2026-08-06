@@ -1,10 +1,12 @@
-"""Job CLI: review giornaliero — obs ieri + backfill + ACI + skill-history + monitor + train/skill condizionali.
+"""Job CLI: review giornaliero — obs [ieri-7, ieri] + backfill + ACI + skill-history + monitor + train/skill condizionali.
 
 Gira 1×/giorno alle 06:00 UTC, dopo che SIR ha pubblicato i dati validati di ieri.
 Risponde a: "com'è andata ieri e il modello è ancora calibrato?"
 
 Passi in sequenza:
-  1. Ingestion obs ieri: SIR CSV delta + OM historical + OM multilead + Netatmo daily + QC
+  1. Ingestion finestra [ieri-7, ieri]: SIR CSV delta + OM historical + OM multilead + Netatmo daily + QC
+     (finestra di recupero: un run perso viene auto-riparato dal successivo; il costo
+     rete è invariato — il CSV SIR restituisce comunque tutto lo storico)
   2. Backfill obs su predictions passate (ts_valid <= ieri)
   3. Backfill obs su benchmark_forecasts passati
   4. Ricalcolo ACI da tutta la history
@@ -214,9 +216,11 @@ def cmd_run(
     dry_run: bool = typer.Option(False, "--dry-run", help="Salta scritture, esegue solo monitor"),
     force_train: bool = typer.Option(False, "--force-train", help="Forza train anche se artefatti recenti"),
 ) -> None:
-    """Review giornaliero: obs ieri + backfill + ACI + skill-history + monitor + train condizionale."""
+    """Review giornaliero: ingest [ieri-7, ieri] + backfill + ACI + skill-history + monitor + train condizionale."""
     if not date_str:
         date_str = (datetime.now(tz=UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+    ingest_start = (date_obj - timedelta(days=7)).isoformat()
 
     with job_run("job_review") as stats:
         locations, stations = load_configs(config_dir)
@@ -224,10 +228,10 @@ def cmd_run(
         with DuckDBClient(db_path=db_path) as db:
             db.init_schema()
 
-            # ── 1. Ingestion obs ieri ────────────────────────────────────────
+            # ── 1. Ingestion finestra [ieri-7, ieri] ─────────────────────────
             if not dry_run:
                 sir_total = _ingest_sir_historical_range(
-                    db, locations, stations, date_str, date_str
+                    db, locations, stations, ingest_start, date_str
                 )
                 logger.info(f"review SIR: {sir_total} record")
 
@@ -246,7 +250,7 @@ def cmd_run(
 
                 fetch_openmeteo_historical_batch(
                     locations=locations,
-                    start_date=date_str,
+                    start_date=ingest_start,
                     end_date=om_end_date,
                     on_records=_on_hist,
                 )
@@ -261,13 +265,12 @@ def cmd_run(
 
                 fetch_openmeteo_multilead_batch(
                     locations=locations,
-                    start_date=date_str,
+                    start_date=ingest_start,
                     end_date=om_end_date,
                     on_records=_on_ml,
                 )
                 logger.info(f"review Open-Meteo multilead: {ml_total} record")
 
-                date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
                 nd = aggregate_netatmo_daily(db, target_day=date_obj, min_samples=6)
                 logger.info(f"review Netatmo: {nd['rows']} record")
 
@@ -321,7 +324,7 @@ def cmd_run(
             logger.info(f"review train completato: n_train={artifacts.n_train} n_cal={artifacts.n_cal}")
             _run_skill_curve(db_path, output_dir, config_dir, model_dir)
 
-        stats.summary = f"date={date_str} dry_run={dry_run} force_train={force_train}"
+        stats.summary = f"window={ingest_start}..{date_str} dry_run={dry_run} force_train={force_train}"
 
 
 if __name__ == "__main__":

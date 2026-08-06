@@ -66,9 +66,9 @@ guazza/
  │   ├── monitor.py          # compute_coverage(), check_and_log(), update_aci_from_history()
  │   └── jobs/
  │       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
- │       ├── ingest.py       # Cron: historical / daily / realtime
+  │       ├── ingest.py       # historical (backfill one-shot) / daily (manuale) / realtime
  │       ├── forecast.py     # Cron 6h (02/08/14/20 UTC): NWP live → features → predict → JSON
- │       └── review.py       # Cron 1×/giorno (06:10 UTC): obs ieri + ACI + skill-history + train condizionale
+  │       └── review.py       # Cron 1×/giorno (06:10 UTC): ingest [ieri-7, ieri] + ACI + skill-history + train condizionale
 ├── data/
 │   ├── guazza.duckdb       # Database analitico (non committato)
 │   ├── models/             # Artefatti LightGBM artifacts.json + model-string .txt (non committati)

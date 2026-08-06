@@ -8,6 +8,16 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Changed
+- **`jobs/review.py`**: ingestion su finestra `[ieri-7, ieri]` (SIR CSV + Open-Meteo
+  historical + multilead) invece del solo ieri — un run perso viene auto-riparato
+  dal successivo. Costo rete invariato (il CSV SIR restituisce comunque tutto lo
+  storico; il filtro è in Python). Netatmo daily resta sul solo ieri.
+- **`guazza-ingest daily`**: rimosso dallo scheduling (era ridondante con
+  `guazza-review`, che esegue la stessa ingestion quotidiana). Il comando resta
+  come strumento operativo manuale: recupero giornate mancanti (`--date`),
+  `--only-sir`/`--only-openmeteo`, backfill Netatmo (`--netatmo-all`).
+
 ## [0.15.0] - 2026-08-06
 
 ### Added

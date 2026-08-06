@@ -3,7 +3,9 @@
 Tre comandi:
 
   historical  — one-shot: backfill completo SIR CSV + Open-Meteo historical + multilead (2022→oggi)
-  daily       — cron 1×/giorno: delta di ieri (SIR CSV + OM historical lead=0 + OM multilead + Netatmo daily)
+  daily       — delta di ieri (SIR CSV + OM historical lead=0 + OM multilead + Netatmo daily).
+                Non schedulato: l'ingestion giornaliera è in `guazza-review` (finestra [ieri-7, ieri]).
+                Uso manuale: recupero giornate mancanti (--date), backfill Netatmo (--netatmo-all).
   realtime    — cron ogni 15-30 min: SIR actions.php + Netatmo + refresh JSON location
 
 I forecast NWP live e la pipeline ML sono in `guazza-forecast`.
@@ -368,16 +370,15 @@ def cmd_daily(
 ) -> None:
     """Delta incrementale giornaliero: SIR CSV + Open-Meteo historical (lead=0) + multilead (lead 24-168h) + Netatmo daily.
 
-    Schedulare a ~06:00 UTC (SIR pubblica i dati validati del giorno precedente
-    tipicamente entro le 03:00-05:00 UTC).
+    Non schedulato: l'ingestion giornaliera è in `guazza-review`, che ingesta la
+    finestra [ieri-7, ieri] per auto-guarirsi dai run persi. Questo comando resta
+    come strumento operativo manuale:
+      - recupero di giornate mancanti con `--date`
+      - `--only-sir` / `--only-openmeteo` per re-ingest di una singola sorgente
+      - `--netatmo-all` per il backfill Netatmo daily di tutti i giorni accumulati
 
-    Dipendenza temporale: schedulare PRIMA della pipeline (es. 06:00 UTC, pipeline
-    alle 02/08/14/20 UTC). La pipeline del run successivo recupera i dati via
-    backfill_prediction_obs — ma skill-history di quella data resta vuota fino al
-    run pipeline dopo l'ingest. Spostare il daily dopo le 08:00 UTC ritarda di un
-    ciclo il backfill.
-
-    Usa --netatmo-all per il backfill iniziale di tutti i giorni Netatmo accumulati.
+    SIR pubblica i dati validati del giorno precedente tipicamente entro le
+    03:00-05:00 UTC.
     """
     if only_sir and only_openmeteo:
         typer.echo("Errore: --only-sir e --only-openmeteo sono mutualmente esclusivi.")
