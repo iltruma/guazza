@@ -131,7 +131,36 @@
       <p id="coverage-caption" class="g-skill__caption"></p>
     </section>
 
-    <!-- 4. ERRORE ROLLING NEL TEMPO -->
+    <!-- 4. P(PIOGGIA) — BRIER PER ORIZZONTE -->
+    <section id="aff-rainprob-card" class="g-card hidden">
+      <div class="g-card__header aff-horizon__header">
+        <div class="aff-title">
+          <span class="g-section__kicker aff-title__kicker">P(pioggia) · D+0 → D+7 · soglia 0.2mm</span>
+          <span class="aff-title__main">Quando dice che piove, ci azzecca?</span>
+          <span id="rainprob-sub" class="aff-title__sub"></span>
+        </div>
+      </div>
+      <div class="aff-horizon__legend" id="rainprob-legend" aria-hidden="true">
+        <span class="g-chart-legend__item aff-legend-item">
+          <span class="g-chart-legend__dot aff-legend-dot aff-legend-dot--guazza"></span>Guazza (prob.)
+        </span>
+        <span class="g-chart-legend__item aff-legend-item" style="color:var(--text-3)">
+          <span class="aff-legend-dash" style="color:rgba(148,163,174,0.60)"></span>NWP consensus binario
+        </span>
+        <span class="g-chart-legend__item aff-legend-item" style="font-size:0.5rem;color:var(--text-3)">
+          Più in basso = più azzeccata
+        </span>
+      </div>
+      <div class="g-chart-scroll aff-horizon__chart-scroll">
+        <div class="aff-horizon__canvas-wrap">
+          <canvas id="aff-rainprob-chart"
+            aria-label="Brier score della probabilità di pioggia per orizzonte da D+0 a D+7"></canvas>
+        </div>
+      </div>
+      <p id="rainprob-caption" class="g-skill__caption"></p>
+    </section>
+
+    <!-- 5. ERRORE ROLLING NEL TEMPO -->
     <section id="aff-rolling-card" class="g-card hidden">
       <div class="g-card__header aff-rolling__header">
         <div class="aff-title">
@@ -183,7 +212,7 @@
       <p id="rolling-caption" class="g-skill__caption"></p>
     </section>
 
-    <!-- 5. CHI VINCE SULLA TEMPERATURA? -->
+    <!-- 6. CHI VINCE SULLA TEMPERATURA? -->
     <section id="aff-winner-temp-card" class="g-card hidden">
       <div class="g-card__header aff-rolling__header">
         <div class="aff-title">
@@ -212,7 +241,7 @@
       <p id="winner-temp-caption" class="g-skill__caption"></p>
     </section>
 
-    <!-- 6. CHI VINCE SULLE PRECIPITAZIONI? -->
+    <!-- 7. CHI VINCE SULLE PRECIPITAZIONI? -->
     <section id="aff-winner-precip-card" class="g-card hidden">
       <div class="g-card__header aff-rolling__header">
         <div class="aff-title">

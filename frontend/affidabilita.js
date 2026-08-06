@@ -4,9 +4,10 @@
 //   1. Ranking compatto (D+1, per-modello da skill_history)
 //   2. MAE per orizzonte D+0..D+7 (Guazza vs NWP-consensus da skill.json)
 //   3. Copertura intervalli CI80/CI90 per orizzonte (coverage da skill.json)
-//   4. Errore rolling nel tempo (errore giornaliero |forecast−actual| da skill_history)
-//   5. Chi vince sulla temperatura? (Win Rate bar + barre giornaliere vincitore)
-//   6. Chi vince sulle precipitazioni? (stesso schema, solo wet days)
+//   4. P(pioggia): Brier per orizzonte D+0..D+7 (rain_prob da skill.json)
+//   5. Errore rolling nel tempo (errore giornaliero |forecast−actual| da skill_history)
+//   6. Chi vince sulla temperatura? (Win Rate bar + barre giornaliere vincitore)
+//   7. Chi vince sulle precipitazioni? (stesso schema, solo wet days)
 //
 // Self-contained: nessuna dipendenza da app.js.
 
@@ -71,6 +72,7 @@ let rollingWindow  = 90;         // giorni; 0 = totale
 
 let horizonChart    = null;
 let coverageChart   = null;
+let rainProbChart   = null;
 let rollingChart    = null;
 let winnerTempChart = null;
 let winnerPrecipChart = null;
@@ -508,7 +510,133 @@ function drawCoverageChart(pts) {
   });
 }
 
-// ── 4. Errore rolling nel tempo ────────────────────────────────────────────────
+// ── 4. P(pioggia): Brier della probabilità per orizzonte ─────────────────────
+
+function renderRainProb() {
+  const loc = skillData?.locations?.[affLocId];
+  if (!loc?.rain_prob) { hideEl('aff-rainprob-card'); return; }
+
+  const pts = loc.rain_prob;
+  if (!pts?.length || !pts.some(p => p.brier_g != null || p.brier_n != null)) {
+    hideEl('aff-rainprob-card'); return;
+  }
+  showEl('aff-rainprob-card');
+
+  const d1 = fmtDate(skillData.window_start);
+  const d2 = fmtDate(skillData.window_end);
+  document.getElementById('rainprob-sub').textContent = `${d1}→${d2}`;
+  document.getElementById('rainprob-caption').textContent =
+    `Brier score della probabilità di pioggia (soglia 0.2mm): più basso è meglio. ` +
+    `Guazza = probabilità del modello in produzione; NWP = consensus binario sopra soglia. ` +
+    `Nel tooltip, la probabilità media nei giorni piovosi (vorresti alta) e asciutti (vorresti bassa). ` +
+    `Fonte: skill.json, stessa finestra della skill. Si popola dal deploy di questa versione.`;
+
+  drawRainProbChart(pts);
+}
+
+function drawRainProbChart(pts) {
+  const canvas = document.getElementById('aff-rainprob-chart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (rainProbChart) { rainProbChart.destroy(); rainProbChart = null; }
+
+  const axis   = cssVar('--chart-axis');
+  const grid   = cssVar('--chart-grid');
+  const iris   = MODEL_COLORS.guazza;      // Guazza = iris solida (come CI 80%)
+  const nwpClr = 'rgba(148,163,174,0.60)'; // NWP = neutro tratteggiato (come consensus)
+
+  const labels  = pts.map(p => `D+${p.lead_h / 24}`);
+  const brierG  = pts.map(p => p.brier_g ?? null);
+  const brierN  = pts.map(p => p.brier_n ?? null);
+
+  rainProbChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Guazza (prob.)',
+          data: brierG,
+          borderColor: iris,
+          backgroundColor: iris,
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          spanGaps: true,
+          tension: 0.3,
+          order: 1,
+        },
+        {
+          label: 'NWP consensus',
+          data: brierN,
+          borderColor: nwpClr,
+          backgroundColor: nwpClr,
+          borderDash: [5, 4],
+          borderWidth: 1.5,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          spanGaps: true,
+          tension: 0.3,
+          order: 2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: {
+          grid: { color: grid },
+          ticks: { color: axis, font: { family: 'JetBrains Mono, monospace', size: 11 } },
+        },
+        y: {
+          grid: { color: grid },
+          min: 0,
+          max: 1,
+          ticks: {
+            color: axis,
+            font: { family: 'JetBrains Mono, monospace', size: 11 },
+            callback: v => v.toFixed(2),
+          },
+          title: { display: true, text: 'Brier', color: axis, font: { size: 10 } },
+        },
+      },
+      plugins: {
+        legend: { display: false },  // legenda HTML sopra
+        tooltip: {
+          backgroundColor: 'rgba(19,19,19,0.97)',
+          borderColor: 'rgba(255,255,255,0.09)',
+          borderWidth: 1,
+          titleColor: axis,
+          bodyColor: cssVar('--text-2'),
+          callbacks: {
+            label: (item) => {
+              const v = item.raw;
+              return v != null
+                ? `${item.dataset.label}: ${v.toFixed(3)}`
+                : `${item.dataset.label}: —`;
+            },
+            afterBody: (items) => {
+              const i = items[0]?.dataIndex;
+              const p = pts[i];
+              if (!p) return '';
+              const lines = [];
+              if (p.n != null) lines.push(`Campioni: ${p.n}`);
+              if (p.p_wet_g != null && p.p_dry_g != null) {
+                lines.push(
+                  `prob media: piovosi ${(p.p_wet_g * 100).toFixed(0)}% · asciutti ${(p.p_dry_g * 100).toFixed(0)}%`
+                );
+              }
+              return lines;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+// ── 5. Errore rolling nel tempo ────────────────────────────────────────────────
 
 function renderRolling() {
   const loc = histData?.locations?.[affLocId];
@@ -654,6 +782,7 @@ function renderAll() {
   renderRanking();
   renderHorizon();
   renderCoverage();
+  renderRainProb();
   renderRolling();
   renderWinnerTemp();
   renderWinnerPrecip();
@@ -938,7 +1067,7 @@ function drawWinnerChart(canvasId, chartRef, dates, winners, unit) {
   return newChart;
 }
 
-// ── 5. Chi vince sulla temperatura? ──────────────────────────────────────────
+// ── 6. Chi vince sulla temperatura? ──────────────────────────────────────────
 
 function renderWinnerTemp() {
   const loc = histData?.locations?.[affLocId];
@@ -994,7 +1123,7 @@ function renderWinnerTemp() {
     `Fonte: skill_history.json lead 24h.`;
 }
 
-// ── 6. Chi vince sulle precipitazioni? ───────────────────────────────────────
+// ── 7. Chi vince sulle precipitazioni? ───────────────────────────────────────
 
 function renderWinnerPrecip() {
   const loc = histData?.locations?.[affLocId];
@@ -1084,7 +1213,8 @@ function renderWinnerPrecip() {
     `Solo wet days (osservato o almeno un forecast ≥${WET_THRESHOLD}mm). ` +
     `Ogni barra = un giorno. Colore = modello con errore assoluto minore quel giorno, anche di poco. ` +
     `Altezza = vantaggio sul secondo classificato. ` +
-    `${winDays} wet days nel periodo · Fonte: skill_history.json lead 24h.`;
+    `${winDays} wet days nel periodo · Fonte: skill_history.json lead 24h. ` +
+    `La qualità della probabilità di pioggia è nella sezione P(pioggia).`;
 }
 
 // ── Event listener: winner temp toggle ───────────────────────────────────────
