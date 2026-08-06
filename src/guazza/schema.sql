@@ -176,22 +176,6 @@ CREATE TABLE IF NOT EXISTS station_weights (
 );
 
 -- ── Log fetch stazioni Netatmo dinamiche ────────────────────────────────────
-CREATE TABLE IF NOT EXISTS netatmo_fetch_log (
-    fetched_at   TIMESTAMP NOT NULL,
-    location_id  VARCHAR   NOT NULL,
-    station_id   VARCHAR   NOT NULL,
-    lat          DOUBLE    NOT NULL,
-    lon          DOUBLE    NOT NULL,
-    alt_m        INTEGER,
-    distance_km  DOUBLE    NOT NULL,
-    delta_elev_m DOUBLE    NOT NULL,
-    weight       DOUBLE    NOT NULL,
-    temperature  DOUBLE,
-    humidity     DOUBLE,
-    rain_1h      DOUBLE,
-    wind_speed   DOUBLE,
-    PRIMARY KEY (fetched_at, location_id, station_id)
-);
 
 -- ── Flag qualità dati osservativi ────────────────────────────────────────
 -- Popolata da qc.compute_quality_flags() — ricalcolo idempotente full-replace.

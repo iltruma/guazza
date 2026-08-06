@@ -1,6 +1,6 @@
 """Fetcher Netatmo — getpublicdata real-time con QC (range, cross-validation, vs SIR).
 
-Output: righe wide per `observations` (granularity='realtime') + log in `netatmo_fetch_log`.
+Output: righe wide per `observations` (granularity='realtime').
 """
 
 from __future__ import annotations
@@ -327,34 +327,10 @@ def save_netatmo_to_db(
     stations: list[_StationData],
     fetched_at: datetime,
 ) -> None:
-    """Scrive in netatmo_fetch_log e observations (wide, una riga per stazione)."""
+    """Scrive in observations (wide, una riga per stazione)."""
     if not stations:
         logger.warning(f"[{location_id}] Nessuna stazione da salvare")
         return
-
-    # netatmo_fetch_log
-    df_log = pd.DataFrame(
-        [[fetched_at, location_id, sd.mac,
-          sd.lat, sd.lon, sd.alt_m,
-          sd.distance_km, sd.delta_elev_m, sd.weight,
-          sd.measures.get("temp_c"), sd.measures.get("humidity_pct"),
-          sd.measures.get("rain_1h"), sd.measures.get("wind_speed_ms")]
-         for sd in stations],
-        columns=["fetched_at", "location_id", "station_id", "lat", "lon", "alt_m",
-                 "distance_km", "delta_elev_m", "weight",
-                 "temperature", "humidity", "rain_1h", "wind_speed"],
-    )
-    db.register_df("_stg_nml", df_log)
-    db.execute("""
-        INSERT INTO netatmo_fetch_log
-            (fetched_at, location_id, station_id, lat, lon, alt_m,
-             distance_km, delta_elev_m, weight, temperature, humidity, rain_1h, wind_speed)
-        SELECT fetched_at, location_id, station_id, lat, lon, alt_m,
-               distance_km, delta_elev_m, weight, temperature, humidity, rain_1h, wind_speed
-        FROM _stg_nml
-        ON CONFLICT (fetched_at, location_id, station_id) DO NOTHING
-    """)
-    db.unregister_df("_stg_nml")
 
     # observations — wide, una riga per stazione (PK source+station_id+ts)
     obs_rows: list[list[Any]] = []
@@ -405,8 +381,7 @@ def save_netatmo_to_db(
         db.unregister_df("_stg_nmo")
 
     logger.info(
-        f"[{location_id}] Salvate {len(stations)} stazioni in netatmo_fetch_log, "
-        f"{len(obs_rows)} osservazioni in observations"
+        f"[{location_id}] Salvate {len(obs_rows)} osservazioni Netatmo in observations"
     )
     log_scrape(f"netatmo:{location_id}", "ok", rows=len(obs_rows))
 
