@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "guazza"
-version = "0.14.1"
+version = "0.15.0"
 description = "Previsioni meteo iper-locali per microclimi toscani"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -41,7 +41,6 @@ dev = [
 guazza-ingest         = "guazza.jobs.ingest:app"
 guazza-review         = "guazza.jobs.review:app"
 guazza-forecast       = "guazza.jobs.forecast:app"
-guazza-backup         = "guazza.jobs.backup:app"
 guazza-storage        = "guazza.storage:app"
 
 [tool.hatch.build.targets.wheel]

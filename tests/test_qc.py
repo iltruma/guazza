@@ -40,7 +40,6 @@ def test_no_flags_clean_data(db: DuckDBClient) -> None:
         _insert_obs(db, "STA1", t0 + timedelta(days=i), tmin_c=5.0 + i, tmax_c=15.0 + i, precip_mm=1.0)
     result = compute_quality_flags(db)
     assert result["total"] == 0
-    db.__exit__(None, None, None)
 
 
 def test_spike_tmin(db: DuckDBClient) -> None:
@@ -50,7 +49,6 @@ def test_spike_tmin(db: DuckDBClient) -> None:
     result = compute_quality_flags(db)
     assert result["total"] >= 1
     assert result.get("spike_tmin", 0) >= 1
-    db.__exit__(None, None, None)
 
 
 def test_spike_tmax(db: DuckDBClient) -> None:
@@ -60,7 +58,6 @@ def test_spike_tmax(db: DuckDBClient) -> None:
     result = compute_quality_flags(db)
     assert result["total"] >= 1
     assert result.get("spike_tmax", 0) >= 1
-    db.__exit__(None, None, None)
 
 
 def test_inversion_temp(db: DuckDBClient) -> None:
@@ -69,7 +66,6 @@ def test_inversion_temp(db: DuckDBClient) -> None:
     result = compute_quality_flags(db)
     assert result["total"] >= 1
     assert result.get("inversion_temp", 0) >= 1
-    db.__exit__(None, None, None)
 
 
 def test_range_precip_high(db: DuckDBClient) -> None:
@@ -78,7 +74,6 @@ def test_range_precip_high(db: DuckDBClient) -> None:
     result = compute_quality_flags(db)
     assert result["total"] >= 1
     assert result.get("range_precip_high", 0) >= 1
-    db.__exit__(None, None, None)
 
 
 def test_range_precip_high_realtime(db: DuckDBClient) -> None:
@@ -86,7 +81,6 @@ def test_range_precip_high_realtime(db: DuckDBClient) -> None:
     _insert_obs(db, "STA1", t0, precip_mm=PRECIP_HIGH_MM + 1, granularity="realtime")
     result = compute_quality_flags(db)
     assert result.get("range_precip_high", 0) >= 1
-    db.__exit__(None, None, None)
 
 
 def test_below_spike_threshold_no_flag(db: DuckDBClient) -> None:
@@ -95,7 +89,6 @@ def test_below_spike_threshold_no_flag(db: DuckDBClient) -> None:
     _insert_obs(db, "STA1", t0 + timedelta(days=1), tmin_c=10.0 + SPIKE_TEMP_C, tmax_c=25.0)
     result = compute_quality_flags(db)
     assert result["total"] == 0
-    db.__exit__(None, None, None)
 
 
 def test_spike_isolated_per_station(db: DuckDBClient) -> None:
@@ -109,7 +102,6 @@ def test_spike_isolated_per_station(db: DuckDBClient) -> None:
         "SELECT COUNT(*) FROM quality_flags WHERE station_id = 'STA2'"
     ).fetchone()[0]
     assert sta2_flags == 0
-    db.__exit__(None, None, None)
 
 
 def test_idempotent(db: DuckDBClient) -> None:
@@ -118,7 +110,6 @@ def test_idempotent(db: DuckDBClient) -> None:
     r1 = compute_quality_flags(db)
     r2 = compute_quality_flags(db)
     assert r1 == r2
-    db.__exit__(None, None, None)
 
 
 def test_breakdown_keys(db: DuckDBClient) -> None:
@@ -128,4 +119,3 @@ def test_breakdown_keys(db: DuckDBClient) -> None:
     assert "total" in result
     assert "inversion_temp" in result
     assert result["total"] == result["inversion_temp"]
-    db.__exit__(None, None, None)

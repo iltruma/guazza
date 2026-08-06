@@ -26,6 +26,26 @@ from loguru import logger  # noqa: E402
 from guazza._logging import log_scrape  # noqa: E402
 from guazza._paths import DEFAULT_CONFIG_DIR, DEFAULT_DB_PATH, DEFAULT_OUTPUT_DIR  # noqa: E402
 
+
+def filter_locations(
+    locations_all: dict[str, object],
+    requested: list[str] | None,
+) -> dict[str, object]:
+    """Filtra locations_all alle sole location richieste, con validazione.
+
+    Se requested è None o vuoto, restituisce tutte le location invariate.
+    Esce con un messaggio d'errore se una location richiesta non esiste.
+    """
+    if not requested:
+        return locations_all
+    unknown = set(requested) - set(locations_all)
+    if unknown:
+        typer.echo(f"Errore: location sconosciute: {sorted(unknown)}")
+        typer.echo(f"Disponibili: {list(locations_all.keys())}")
+        raise typer.Exit(1)
+    return {k: v for k, v in locations_all.items() if k in requested}
+
+
 DB_OPTION = typer.Option(DEFAULT_DB_PATH, "--db", help="Path file DuckDB")
 CONFIG_DIR_OPTION = typer.Option(
     DEFAULT_CONFIG_DIR, "--config-dir", help="Directory YAML config"

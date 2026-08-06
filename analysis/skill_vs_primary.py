@@ -20,22 +20,14 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import typer
-import yaml
 
-from guazza.models import _TARGET_NWP_MEAN, FEATURE_COLS, TARGETS, _train_lgbm
+from guazza.models import _TARGET_NWP_MEAN, FEATURE_COLS, TARGETS, train_lgbm
+from guazza.weights import primary_stations
 
 app = typer.Typer(add_completion=False)
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_DB = REPO / "data" / "guazza.duckdb"
-
-
-def _primary_stations(config_dir: Path) -> dict[str, str]:
-    """location_id -> stazione SIR primaria (ground truth temperatura)."""
-    data = yaml.safe_load((config_dir / "locations.yaml").read_text())
-    return {loc_id: spec["sir_station_id"]
-            for loc_id, spec in data["locations"].items()
-            if spec.get("sir_station_id")}
 
 
 def _load_features(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
@@ -97,7 +89,7 @@ def _walk_forward_predictions(
             mask = df_train[col].notna()
             if mask.sum() < 50:
                 continue
-            model = _train_lgbm(df_train.loc[mask, FEATURE_COLS], df_train.loc[mask, col], 0.50)
+            model = train_lgbm(df_train.loc[mask, FEATURE_COLS], df_train.loc[mask, col], 0.50)
             block[f"pred_{target}"] = model.predict(df_test[FEATURE_COLS])
             block[f"nwp_{target}"] = df_test[_TARGET_NWP_MEAN[target]].values
             block[f"wgt_{target}"] = df_test[col].values
@@ -137,7 +129,7 @@ def main(
     config_dir: Path = typer.Option(REPO / "config", help="Dir config YAML"),
     n_splits: int = typer.Option(4, help="Numero di fold walk-forward"),
 ) -> None:
-    stations = _primary_stations(config_dir)
+    stations = primary_stations(config_dir)
     con = duckdb.connect(str(db), read_only=True)
     df = _load_features(con)
     primary = _load_primary_obs(con, stations)

@@ -48,6 +48,7 @@ from guazza.jobs._common import (
     CONFIG_DIR_OPTION,
     DB_OPTION,
     OUTPUT_DIR_OPTION,
+    filter_locations,
     job_run,
 )
 from guazza.netatmo_daily import aggregate_netatmo_daily
@@ -267,18 +268,8 @@ def cmd_historical(
     if not end_date:
         end_date = datetime.now(tz=UTC).strftime("%Y-%m-%d")
 
-    locations_all, stations = load_configs(Path(config_dir))
-
-    # Filtra location se specificate
-    if location:
-        unknown = set(location) - set(locations_all)
-        if unknown:
-            typer.echo(f"Errore: location sconosciute: {sorted(unknown)}")
-            typer.echo(f"Disponibili: {list(locations_all.keys())}")
-            raise typer.Exit(1)
-        locations = {k: v for k, v in locations_all.items() if k in location}
-    else:
-        locations = locations_all
+    locations_all, stations = load_configs(config_dir)
+    locations = filter_locations(locations_all, location)
 
     run_sir = not only_openmeteo
     run_om = not only_sir
@@ -394,16 +385,8 @@ def cmd_daily(
     if not date:
         date = (datetime.now(tz=UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    locations_all, stations = load_configs(Path(config_dir))
-
-    if location:
-        unknown = set(location) - set(locations_all)
-        if unknown:
-            typer.echo(f"Errore: location sconosciute: {sorted(unknown)}")
-            raise typer.Exit(1)
-        locations = {k: v for k, v in locations_all.items() if k in location}
-    else:
-        locations = locations_all
+    locations_all, stations = load_configs(config_dir)
+    locations = filter_locations(locations_all, location)
 
     run_sir = not only_openmeteo
     run_om = not only_sir
@@ -489,7 +472,7 @@ def cmd_realtime(
     Schedulare ogni 15-30 minuti.
     SIR ha granularità ~15 min; Netatmo aggiorna ogni 10 min circa.
     """
-    locations, stations = load_configs(Path(config_dir))
+    locations, stations = load_configs(config_dir)
 
     if dry_run:
         typer.echo("[dry-run] Nessuna scrittura effettuata.")

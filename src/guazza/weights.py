@@ -135,6 +135,21 @@ def load_configs(
     return locations_raw["locations"], stations_raw
 
 
+def primary_stations(config_dir: Path | None = None) -> dict[str, str]:
+    """Mappa location_id → sir_station_id per le location con stazione SIR primaria.
+
+    La stazione primaria è quella definita come `sir_station_id` in locations.yaml.
+    Usata per calcolare skill/backtest rispetto a osservazioni SIR di riferimento.
+    """
+    d = config_dir or DEFAULT_CONFIG_DIR
+    data = yaml.safe_load((d / "locations.yaml").read_text())
+    return {
+        loc_id: spec["sir_station_id"]
+        for loc_id, spec in data["locations"].items()
+        if spec.get("sir_station_id")
+    }
+
+
 def refresh_station_weights(
     db: DuckDBClient,
     locations: dict[str, Any],

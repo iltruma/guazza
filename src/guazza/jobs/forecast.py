@@ -26,6 +26,13 @@ import typer
 from loguru import logger
 
 from guazza._logging import setup_logging
+from guazza.aci import apply_aci_correction, get_aci_pair
+from guazza.db_queries import (
+    compute_coverage_30d,
+    get_current_conditions,
+    get_daily_weather_code,
+    get_nwp_model_comparison,
+)
 from guazza.features import build_features_daily
 from guazza.fetch_openmeteo import fetch_openmeteo_all_locations
 from guazza.indicators import evaluate_all, load_indicators, log_results
@@ -38,20 +45,14 @@ from guazza.jobs._common import (
 from guazza.models import (
     TARGETS,
     _lead_time_bucket,
-    apply_aci_correction,
-    get_aci_pair,
     load_artifacts,
     predict_frame,
 )
 from guazza.output import (
     build_signals,
     build_signals_today,
-    compute_coverage_30d,
     compute_hourly_profile,
     expected_precip,
-    get_current_conditions,
-    get_daily_weather_code,
-    get_nwp_model_comparison,
     write_location_json,
 )
 from guazza.storage import DuckDBClient

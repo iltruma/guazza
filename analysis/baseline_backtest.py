@@ -18,7 +18,8 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import typer
-import yaml
+
+from guazza.weights import primary_stations
 
 app = typer.Typer(add_completion=False)
 
@@ -28,14 +29,6 @@ OUT_DIR = REPO / "analysis" / "out"
 
 SEASON = {12: "DJF", 1: "DJF", 2: "DJF", 3: "MAM", 4: "MAM", 5: "MAM",
           6: "JJA", 7: "JJA", 8: "JJA", 9: "SON", 10: "SON", 11: "SON"}
-
-
-def _primary_stations(config_dir: Path) -> dict[str, str]:
-    """location_id -> stazione SIR primaria (ground truth temperatura)."""
-    data = yaml.safe_load((config_dir / "locations.yaml").read_text())
-    return {loc_id: spec["sir_station_id"]
-            for loc_id, spec in data["locations"].items()
-            if spec.get("sir_station_id")}
 
 
 def _load_daily(con: duckdb.DuckDBPyConnection, stations: dict[str, str]) -> pd.DataFrame:
@@ -127,7 +120,7 @@ def main(
     config_dir: Path = typer.Option(REPO / "config", help="Dir config YAML"),
     test_year: int = typer.Option(2025, help="Anno di test (train = anni precedenti)"),
 ) -> None:
-    stations = _primary_stations(config_dir)
+    stations = primary_stations(config_dir)
     con = duckdb.connect(str(db), read_only=True)
     df = _add_multimodel(_load_daily(con, stations))
     con.close()

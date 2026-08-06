@@ -9,12 +9,8 @@ from dataclasses import dataclass
 
 from loguru import logger
 
-from guazza.models import (
-    ACI_LEARNING_RATE,
-    LEAD_BUCKETS,
-    AdaptiveConformalizer,
-    _lead_time_bucket,
-)
+from guazza.aci import ACI_LEARNING_RATE, AdaptiveConformalizer
+from guazza.models import LEAD_BUCKETS, _lead_time_bucket
 from guazza.storage import DuckDBClient
 
 DRIFT_TOLERANCE_PP: float = 0.05

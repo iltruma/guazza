@@ -16,22 +16,15 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import typer
-import yaml
 
-from guazza.models import _TARGET_NWP_MEAN, FEATURE_COLS, TARGETS, _train_lgbm
+from guazza.models import _TARGET_NWP_MEAN, FEATURE_COLS, TARGETS, train_lgbm
+from guazza.weights import primary_stations
 
 app = typer.Typer(add_completion=False)
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_DB = REPO / "data" / "guazza.duckdb"
 LEADS = [0, 24, 48, 72, 96, 120, 144, 168]
-
-
-def _primary_stations(config_dir: Path) -> dict[str, str]:
-    data = yaml.safe_load((config_dir / "locations.yaml").read_text())
-    return {loc_id: spec["sir_station_id"]
-            for loc_id, spec in data["locations"].items()
-            if spec.get("sir_station_id")}
 
 
 def _load_features(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
@@ -61,7 +54,7 @@ def main(
     window_start: str = typer.Option("2025-10-15", help="Inizio finestra multi-lead (test)"),
     embargo_days: int = typer.Option(7, help="Giorni di embargo tra train e finestra"),
 ) -> None:
-    stations = _primary_stations(config_dir)
+    stations = primary_stations(config_dir)
     con = duckdb.connect(str(db), read_only=True)
     df = _load_features(con)
     primary = _load_primary_obs(con, stations)
@@ -76,7 +69,7 @@ def main(
     for target in TARGETS:
         col = f"target_{target}"
         mask = train[col].notna()
-        models[target] = _train_lgbm(train.loc[mask, FEATURE_COLS], train.loc[mask, col], 0.50)
+        models[target] = train_lgbm(train.loc[mask, FEATURE_COLS], train.loc[mask, col], 0.50)
     typer.echo(f"Train: {len(train)} righe ≤ {cutoff} | Test: finestra ≥ {win_start}")
 
     test = df[df["target_date"] >= win_start].copy()

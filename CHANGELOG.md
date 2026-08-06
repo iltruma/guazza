@@ -8,6 +8,66 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-06
+
+### Added
+- **`src/guazza/aci.py`**: modulo dedicato per Adaptive Conformal Inference
+  (`AdaptiveConformalizer`, `apply_aci_correction`, `get_aci_pair`, costanti ACI).
+  Estratto da `models.py` per separare la logica di calibrazione online
+  da training e inference.
+- **`src/guazza/cv.py`**: modulo dedicato per walk-forward cross-validation
+  (`walk_forward_cv`). Estratto da `models.py` — la CV è usata solo offline
+  (analisi, test); il path di produzione usa `train_all()` + `predict_frame()`.
+- **`src/guazza/db_queries.py`**: modulo dedicato per le query DuckDB di lettura
+  (`get_current_conditions`, `compute_coverage_30d`, `get_daily_weather_code`,
+  `get_nwp_model_comparison`, `get_nwp_models_hourly`, helper `_dewpoint`,
+  `_apparent_temp`, `_WMO_SEVERITY`). Estratto da `output.py`.
+- **`filter_locations()`** in `jobs/_common.py`: helper condiviso per filtrare
+  e validare le location richieste via `--location`. Deduplicato da `ingest.py`
+  (era duplicato in `cmd_historical` e `cmd_daily`).
+- **`primary_stations()`** in `weights.py`: mappa `location_id → sir_station_id`
+  per le location con stazione SIR primaria. Deduplicato da `review.py` e dai tre
+  script di analisi (`backtest_multilead`, `baseline_backtest`, `skill_vs_primary`).
+- **`_base_lgbm_params()`** in `models.py`: parametri LightGBM condivisi tra
+  regressore quantile e classificatore binario, eliminando la duplicazione tra
+  `_lgbm_params()` e `_train_rain_classifier()`.
+- **`_train_quantile_bundle()`** in `models.py`: helper interno che allena i 5
+  modelli quantile + CQR per un singolo target. Riusa la logica condivisa tra
+  `train_all()` e `walk_forward_cv()`.
+
+### Changed
+- **`models.py`**: rimossi `ACI_*` costanti, `AdaptiveConformalizer`,
+  `apply_aci_correction`, `get_aci_pair`, `walk_forward_cv` (spostati nei nuovi
+  moduli `aci.py` e `cv.py`). `_train_lgbm` rinominata in `train_lgbm` (pubblica;
+  usata dagli script di analisi).
+- **`output.py`**: rimossi `_dewpoint`, `_apparent_temp`, `_get`, `_WMO_SEVERITY`,
+  `_modal_weather_code`, `compute_coverage_30d`, `get_current_conditions`,
+  `get_daily_weather_code`, `get_nwp_model_comparison`, `get_nwp_models_hourly`
+  (spostati in `db_queries.py`). `output.py` ora contiene solo la pipeline
+  di costruzione dei segnali e la scrittura JSON.
+- **`jobs/forecast.py`**: import aggiornati ai nuovi moduli (`aci`, `db_queries`).
+- **`jobs/ingest.py`**: `load_configs` chiamata con `config_dir` (stringa → Path
+  già gestito in `weights.load_configs`); validazione location centralizzata in
+  `filter_locations`.
+- **`jobs/review.py`**: `_primary_stations` sostituita da `weights.primary_stations`;
+  rimosso import `yaml` non più necessario.
+- **`analysis/backtest_multilead.py`**, **`analysis/baseline_backtest.py`**,
+  **`analysis/skill_vs_primary.py`**: `_primary_stations` locale → `weights.primary_stations`;
+  `_train_lgbm` → `train_lgbm`; rimosso import `yaml` non più necessario.
+- **`jobs/backup.py`** rimosso (entry point `guazza-backup` eliminato da `pyproject.toml`).
+
+### Tests
+- **`test_models.py`**: fixture `trained_artifacts` (module-scope) condivisa tra
+  tutti i test che richiedono artifacts allenati — elimina 5 training separati.
+  Fixture `cv_results` (module-scope) condivisa tra i test CV — elimina 2 training
+  separati. Fixture `db_with_features` per i test che non richiedono artefatti.
+  Import ACI spostati da `guazza.models` a `guazza.aci`.
+- **`test_monitor.py`**: fixture `db_with_predictions` al posto di `db` generica.
+- **`test_output.py`**: import `_WMO_SEVERITY`, `_dewpoint`, `_modal_weather_code`,
+  `compute_coverage_30d`, `get_*` spostati da `guazza.output` a `guazza.db_queries`.
+- **`test_fetchers.py`**, **`test_features.py`**, **`test_qc.py`**: cleanup import
+  e fixture per allineamento ai moduli refactored.
+
 ## [0.14.1] - 2026-08-05
 
 ### Changed
@@ -818,7 +878,14 @@ Bootstrap iniziale del progetto.
 - `docs/known_issues.md`: problemi noti e workaround
 - Agenti subagent per collaborazione multi-modello (Claude, Kimi)
 
-[Unreleased]: https://github.com/cosimo/guazza/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/cosimo/guazza/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/cosimo/guazza/compare/v0.14.1...v0.15.0
+[0.14.1]: https://github.com/cosimo/guazza/compare/v0.14.0...v0.14.1
+[0.14.0]: https://github.com/cosimo/guazza/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/cosimo/guazza/compare/v0.12.6...v0.13.0
+[0.12.6]: https://github.com/cosimo/guazza/compare/v0.12.5...v0.12.6
+[0.12.5]: https://github.com/cosimo/guazza/compare/v0.12.0...v0.12.5
+[0.12.0]: https://github.com/cosimo/guazza/compare/v0.11.2...v0.12.0
 [0.6.1]: https://github.com/cosimo/guazza/compare/v0.6.0...v0.6.1
 [0.5.0]: https://github.com/cosimo/guazza/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/cosimo/guazza/compare/v0.4.0...v0.4.1

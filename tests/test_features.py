@@ -55,13 +55,11 @@ def test_build_returns_rows(db: DuckDBClient) -> None:
     _populate(db)
     n = build_features_daily(db)
     assert n > 0
-    db.__exit__(None, None, None)
 
 
 def test_build_requires_station_weights(db: DuckDBClient) -> None:
     with pytest.raises(ValueError, match="station_weights"):
         build_features_daily(db)
-    db.__exit__(None, None, None)
 
 
 def test_lead_time_h_positive(db: DuckDBClient) -> None:
@@ -71,7 +69,6 @@ def test_lead_time_h_positive(db: DuckDBClient) -> None:
         "SELECT MIN(lead_time_h) FROM features_daily"
     ).fetchone()
     assert row is not None and row[0] > 0
-    db.__exit__(None, None, None)
 
 
 def test_nwp_aggregation_tmin_tmax(db: DuckDBClient) -> None:
@@ -84,7 +81,6 @@ def test_nwp_aggregation_tmin_tmax(db: DuckDBClient) -> None:
           AND ecmwf_tmin_c IS NOT NULL
     """).fetchone()
     assert bad is not None and bad[0] == 0
-    db.__exit__(None, None, None)
 
 
 def test_precip_daily_is_sum(db: DuckDBClient) -> None:
@@ -96,7 +92,6 @@ def test_precip_daily_is_sum(db: DuckDBClient) -> None:
     ).fetchone()
     assert row is not None
     assert abs(row[0] - 12.0) < 0.01
-    db.__exit__(None, None, None)
 
 
 def test_target_present_for_observed_dates(db: DuckDBClient) -> None:
@@ -108,7 +103,6 @@ def test_target_present_for_observed_dates(db: DuckDBClient) -> None:
         FROM features_daily
     """).fetchone()
     assert pct is not None and pct[0] > 50.0
-    db.__exit__(None, None, None)
 
 
 def test_shared_station_contributes_via_weights(db: DuckDBClient) -> None:
@@ -135,7 +129,6 @@ def test_shared_station_contributes_via_weights(db: DuckDBClient) -> None:
     ).fetchone()
     assert row is not None and row[0] is not None
     assert row[0] < 0.0
-    db.__exit__(None, None, None)
 
 
 def test_obs_features_use_previous_day(db: DuckDBClient) -> None:
@@ -148,7 +141,6 @@ def test_obs_features_use_previous_day(db: DuckDBClient) -> None:
         "SELECT COUNT(*) FROM features_daily WHERE obs_tmin_c IS NOT NULL"
     ).fetchone()
     assert row is not None and row[0] > 0
-    db.__exit__(None, None, None)
 
 
 def test_climatology_present(db: DuckDBClient) -> None:
@@ -158,7 +150,6 @@ def test_climatology_present(db: DuckDBClient) -> None:
         "SELECT COUNT(*) FROM features_daily WHERE clim_tmin_mean IS NOT NULL"
     ).fetchone()
     assert row is not None and row[0] > 0
-    db.__exit__(None, None, None)
 
 
 def test_idempotent(db: DuckDBClient) -> None:
@@ -166,7 +157,6 @@ def test_idempotent(db: DuckDBClient) -> None:
     n1 = build_features_daily(db)
     n2 = build_features_daily(db)
     assert n1 == n2
-    db.__exit__(None, None, None)
 
 
 def test_spread_with_partial_models(db: DuckDBClient) -> None:
@@ -183,7 +173,6 @@ def test_spread_with_partial_models(db: DuckDBClient) -> None:
           AND icon2i_tmin_c IS NULL
     """).fetchone()
     assert row is not None and row[0] > 0
-    db.__exit__(None, None, None)
 
 
 def test_anomaly_target_columns_present(db: DuckDBClient) -> None:
@@ -208,7 +197,6 @@ def test_anomaly_target_columns_present(db: DuckDBClient) -> None:
         WHERE target_tmin_anom_c IS NOT NULL AND target_tmax_anom_c IS NOT NULL
     """).fetchone()
     assert populated is not None and populated[0] > 0
-    db.__exit__(None, None, None)
 
 
 def test_anomaly_target_equals_obs_minus_clim(db: DuckDBClient) -> None:
@@ -226,4 +214,3 @@ def test_anomaly_target_equals_obs_minus_clim(db: DuckDBClient) -> None:
     assert row is not None
     obs, clim, anom = row
     assert abs(obs - clim - anom) < 1e-9
-    db.__exit__(None, None, None)

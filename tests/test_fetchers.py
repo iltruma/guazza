@@ -71,13 +71,16 @@ def _mock_response(csv_text: str) -> MagicMock:
     return resp
 
 
+def _mock_httpx_client(resp: MagicMock) -> MagicMock:
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    client.get = MagicMock(return_value=resp)
+    return client
+
+
 def _patched_sir_fetch(station_id: str, sensor_type: str, csv_text: str, location_id: str = "") -> list[dict[str, Any]]:
-    mock_resp = _mock_response(csv_text)
-    mock_client = MagicMock()
-    mock_client.__enter__ = MagicMock(return_value=mock_client)
-    mock_client.__exit__ = MagicMock(return_value=False)
-    mock_client.get = MagicMock(return_value=mock_resp)
-    with patch("guazza.fetch_sir.httpx.Client", return_value=mock_client):
+    with patch("guazza.fetch_sir.httpx.Client", return_value=_mock_httpx_client(_mock_response(csv_text))):
         return cast(list[dict[str, Any]], fetch_sir_historical(station_id, sensor_type, location_id))
 
 
@@ -201,12 +204,8 @@ def test_fetch_sir_realtime_parses_json() -> None:
     mock_resp.status_code = 200
     mock_resp.json = MagicMock(return_value=mock_data)
     mock_resp.raise_for_status = MagicMock()
-    mock_client = MagicMock()
-    mock_client.__enter__ = MagicMock(return_value=mock_client)
-    mock_client.__exit__ = MagicMock(return_value=False)
-    mock_client.get = MagicMock(return_value=mock_resp)
 
-    with patch("guazza.fetch_sir.httpx.Client", return_value=mock_client):
+    with patch("guazza.fetch_sir.httpx.Client", return_value=_mock_httpx_client(mock_resp)):
         record = fetch_sir_realtime("TOS01001215")
 
     assert record["source"] == "sir_toscana"
@@ -228,12 +227,8 @@ def test_fetch_sir_realtime_dash_precip() -> None:
     mock_resp = MagicMock()
     mock_resp.json = MagicMock(return_value=mock_data)
     mock_resp.raise_for_status = MagicMock()
-    mock_client = MagicMock()
-    mock_client.__enter__ = MagicMock(return_value=mock_client)
-    mock_client.__exit__ = MagicMock(return_value=False)
-    mock_client.get = MagicMock(return_value=mock_resp)
 
-    with patch("guazza.fetch_sir.httpx.Client", return_value=mock_client):
+    with patch("guazza.fetch_sir.httpx.Client", return_value=_mock_httpx_client(mock_resp)):
         record = fetch_sir_realtime("TOS01001215")
 
     assert "precip_mm" not in record
@@ -775,11 +770,7 @@ def test_sir_realtime_precip_interval_1() -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = mock_json
     mock_resp.raise_for_status = MagicMock()
-    mock_client = MagicMock()
-    mock_client.__enter__ = MagicMock(return_value=mock_client)
-    mock_client.__exit__ = MagicMock(return_value=False)
-    mock_client.get = MagicMock(return_value=mock_resp)
-    with patch("guazza.fetch_sir.httpx.Client", return_value=mock_client):
+    with patch("guazza.fetch_sir.httpx.Client", return_value=_mock_httpx_client(mock_resp)):
         rec = fetch_sir_realtime("TOS99999999")
     assert rec["precip_mm"] == pytest.approx(3.4)
     assert rec["precip_interval_h"] == 1

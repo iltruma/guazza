@@ -1,14 +1,14 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-08-05 (v0.14.1)
+> Aggiornato: 2026-08-06 (v0.15.0)
 > Storico sprint → `CHANGELOG.md` · Decisioni → `docs/decisions.md` · Workaround attivi → `docs/known_issues.md`
 
 ## Stato
 
 | | |
 |---|---|
-| Versione | **0.14.1** |
-| Test | 36 verdi (`test_models.py`; suite completa ~41s) |
+| Versione | **0.15.0** |
+| Test | 315 verdi (suite completa ~41s) |
 | Lint / mypy | ✅ puliti |
 | Deploy | k3s astra/nebula, namespace `guazza`, Flux + SOPS — DB prod da resettare (schema `cape_jkg`) |
 

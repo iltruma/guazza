@@ -29,7 +29,6 @@ from typing import Any
 
 import pandas as pd
 import typer
-import yaml
 from loguru import logger
 
 from guazza._logging import setup_logging
@@ -51,7 +50,7 @@ from guazza.netatmo_daily import aggregate_netatmo_daily
 from guazza.qc import compute_quality_flags
 from guazza.skill_history import DEFAULT_DUMP_PATH, append_one, atomic_write_json, dump_payload
 from guazza.storage import DuckDBClient
-from guazza.weights import load_configs
+from guazza.weights import load_configs, primary_stations
 
 # ── Costanti ──────────────────────────────────────────────────────────────────
 
@@ -122,14 +121,6 @@ def _should_train(model_dir: Path, force_train: bool) -> bool:
         return True  # se non riesce a leggere, riallenare per sicurezza
 
 
-def _primary_stations(config_dir: Path) -> dict[str, str]:
-    data = yaml.safe_load((config_dir / "locations.yaml").read_text())
-    return {
-        loc_id: spec["sir_station_id"]
-        for loc_id, spec in data["locations"].items()
-        if spec.get("sir_station_id")
-    }
-
 
 def _run_skill_curve(
     db_path: Path,
@@ -140,7 +131,7 @@ def _run_skill_curve(
     embargo_days: int = 7,
 ) -> None:
     """Calcola la curva di skill Guazza vs NWP e scrive skill.json."""
-    stations = _primary_stations(config_dir)
+    stations = primary_stations(config_dir)
 
     with DuckDBClient(db_path=db_path, read_only=True) as db_client:
         df = db_client.execute("SELECT * FROM features_daily").df()
