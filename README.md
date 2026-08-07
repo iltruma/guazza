@@ -138,9 +138,6 @@ Motivazioni delle scelte in `docs/decisions.md`.
 # Backfill storico one-shot (SIR + Open-Meteo historical lead=0 + multilead lead 24-168h, 2022→oggi)
 uv run python -m guazza.jobs.ingest historical
 
-# Backfill Netatmo daily su tutti i giorni accumulati (one-shot, prima esecuzione):
-uv run python -m guazza.jobs.ingest daily --netatmo-all
-
 # Realtime SIR + Netatmo — schedulare ogni 15-30 min
 uv run python -m guazza.jobs.ingest realtime
 ```

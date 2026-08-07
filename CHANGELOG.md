@@ -8,6 +8,12 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Removed
+- **`guazza-ingest daily`**: comando CLI rimosso — l'ingestion giornaliera è in
+  `guazza-review` (finestra [ieri-7, ieri], auto-guarigione). Il backfill Netatmo
+  multi-giorno (`--netatmo-all`) non è più disponibile; `aggregate_netatmo_daily`
+  resta in uso da review per il giorno di finestra.
+
 ### Added
 - **P(pioggia) oraria `precip_prob_ml` nel profilo `hourly[]`**: prob daily del
   classificatore ML (`rain_clf.prob_rain`, BSS +0.16/+0.28) distribuita secondo il

@@ -1,18 +1,15 @@
 """Entry point cron — ingestion dati Guazza.
 
-Tre comandi:
+Due comandi:
 
   historical  — one-shot: backfill completo SIR CSV + Open-Meteo historical + multilead (2022→oggi)
-  daily       — delta di ieri (SIR CSV + OM historical lead=0 + OM multilead + Netatmo daily).
-                Non schedulato: l'ingestion giornaliera è in `guazza-review` (finestra [ieri-7, ieri]).
-                Uso manuale: recupero giornate mancanti (--date), backfill Netatmo (--netatmo-all).
   realtime    — cron ogni 15-30 min: SIR actions.php + Netatmo + refresh JSON location
 
+L'ingestion giornaliera è in `guazza-review` (finestra [ieri-7, ieri]).
 I forecast NWP live e la pipeline ML sono in `guazza-forecast`.
 
 Uso:
     uv run python -m guazza.jobs.ingest historical [--start-date 2022-01-01]
-    uv run python -m guazza.jobs.ingest daily
     uv run python -m guazza.jobs.ingest realtime
 
 Variabili d'ambiente:
@@ -53,7 +50,6 @@ from guazza.jobs._common import (
     filter_locations,
     job_run,
 )
-from guazza.netatmo_daily import aggregate_netatmo_daily
 from guazza.output import refresh_realtime_json
 from guazza.qc import compute_quality_flags
 from guazza.storage import DuckDBClient
@@ -246,7 +242,7 @@ def cmd_historical(
     """Backfill completo: SIR CSV + Open-Meteo historical (lead=0) + multilead (lead 24-168h).
 
     Da eseguire una volta sola per caricare lo storico di training completo.
-    Non schedulare come cron — usa 'daily' per il delta incrementale.
+    Non schedulare come cron — l'ingestion giornaliera è in `guazza-review`.
     Esempi:
         # Solo Open-Meteo per una location
         historical --only-openmeteo --location casa_campi
@@ -349,108 +345,6 @@ def cmd_historical(
 
             n_features = build_features_daily(db)
             typer.echo(f"Features: {n_features} righe in features_daily")
-
-        stats.rows = sir_total + om_total
-        stats.summary = f"SIR:{sir_total} OM:{om_total}"
-
-
-@app.command("daily")
-def cmd_daily(
-    db_path: Path = DB_OPTION,
-    config_dir: Path = CONFIG_DIR_OPTION,
-    date: str = typer.Option("", "--date", help="Giorno da caricare YYYY-MM-DD (default: ieri)"),
-    only_sir: bool = typer.Option(False, "--only-sir", help="Scarica solo SIR CSV, salta Open-Meteo"),
-    only_openmeteo: bool = typer.Option(False, "--only-openmeteo", help="Scarica solo Open-Meteo, salta SIR"),
-    location: list[str] | None = typer.Option(None, "--location", help="Limita a questa location (ripetibile)"),
-    om_model: list[str] | None = typer.Option(None, "--om-model", help="Limita Open-Meteo a questo modello (ripetibile)"),
-    netatmo_all: bool = typer.Option(False, "--netatmo-all", help="Backfill Netatmo daily su tutti i giorni accumulati (invece del solo giorno indicato)"),
-    netatmo_min_samples: int = typer.Option(6, "--netatmo-min-samples", help="Minimo campioni temp_c per aggregazione Netatmo daily"),
-    dry_run: bool = typer.Option(False, "--dry-run"),
-) -> None:
-    """Delta incrementale giornaliero: SIR CSV + Open-Meteo historical (lead=0) + multilead (lead 24-168h) + Netatmo daily.
-
-    Non schedulato: l'ingestion giornaliera è in `guazza-review`, che ingesta la
-    finestra [ieri-7, ieri] per auto-guarirsi dai run persi. Questo comando resta
-    come strumento operativo manuale:
-      - recupero di giornate mancanti con `--date`
-      - `--only-sir` / `--only-openmeteo` per re-ingest di una singola sorgente
-      - `--netatmo-all` per il backfill Netatmo daily di tutti i giorni accumulati
-
-    SIR pubblica i dati validati del giorno precedente tipicamente entro le
-    03:00-05:00 UTC.
-    """
-    if only_sir and only_openmeteo:
-        typer.echo("Errore: --only-sir e --only-openmeteo sono mutualmente esclusivi.")
-        raise typer.Exit(1)
-    if not date:
-        date = (datetime.now(tz=UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
-
-    locations_all, stations = load_configs(config_dir)
-    locations = filter_locations(locations_all, location)
-
-    run_sir = not only_openmeteo
-    run_om = not only_sir
-
-    typer.echo(f"Daily delta: {date} | location: {list(locations.keys())}")
-
-    if dry_run:
-        typer.echo("[dry-run] Nessuna scrittura effettuata.")
-        return
-
-    with job_run("job_daily") as stats:
-        sir_total = 0
-        om_total = 0
-        with DuckDBClient(db_path=db_path) as db:
-            db.init_schema()
-
-            if run_sir:
-                sir_total = _ingest_sir_historical_range(
-                    db, locations, stations, date, date
-                )
-                logger.info(f"daily SIR: {sir_total} record")
-
-            if run_om:
-                # OM historical: lead=0 (best-estimate retroattivo)
-                om_hist_total = 0
-
-                def _on_hist_daily(records: list[dict[str, Any]]) -> None:
-                    nonlocal om_hist_total
-                    om_hist_total += db.upsert_forecasts(records)
-
-                fetch_openmeteo_historical_batch(
-                    locations=locations,
-                    start_date=date,
-                    end_date=date,
-                    models=om_model or None,
-                    on_records=_on_hist_daily,
-                )
-                om_total += om_hist_total
-                logger.info(f"daily Open-Meteo historical: {om_hist_total} record")
-
-                # OM multilead: lead 24-168h (cosa i modelli prevedevano per ieri)
-                ml_total = 0
-
-                def _on_ml_daily(records: list[dict[str, Any]]) -> None:
-                    nonlocal ml_total
-                    ml_total += db.upsert_forecasts(records)
-
-                fetch_openmeteo_multilead_batch(
-                    locations=locations,
-                    start_date=date,
-                    end_date=date,
-                    on_records=_on_ml_daily,
-                )
-                om_total += ml_total
-                logger.info(f"daily Open-Meteo multilead: {ml_total} record")
-
-            # Aggregazione Netatmo: backfill completo con --netatmo-all,
-            # altrimenti solo il giorno indicato.
-            netatmo_target = None if netatmo_all else datetime.strptime(date, "%Y-%m-%d").date()
-            nd = aggregate_netatmo_daily(db, target_day=netatmo_target, min_samples=netatmo_min_samples)
-            logger.info(f"daily Netatmo: {nd['rows']} record")
-
-            qc = compute_quality_flags(db)
-            logger.info(f"daily QC: {qc['total']} flag")
 
         stats.rows = sir_total + om_total
         stats.summary = f"SIR:{sir_total} OM:{om_total}"
