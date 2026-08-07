@@ -42,6 +42,7 @@ guazza-ingest         = "guazza.jobs.ingest:app"
 guazza-review         = "guazza.jobs.review:app"
 guazza-forecast       = "guazza.jobs.forecast:app"
 guazza-storage        = "guazza.storage:app"
+guazza-hourly-correct = "guazza.hourly_corrector:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/guazza"]

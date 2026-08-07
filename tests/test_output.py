@@ -1753,3 +1753,64 @@ def test_write_location_json_prob_rain_none_without_clf(
     fc = data["days"][0]["forecasts"]["precip_mm"]
     assert "prob_rain" in fc
     assert fc["prob_rain"] is None
+
+
+# ── compute_hourly_profile — correttore orario ────────────────────────────────
+
+class _FakeCorrector:
+    """Correttore finto: predict(df) -> delta = 1.0 per h < 12, 3.0 per h >= 12.
+
+    Delta non costante: crea una distorsione di forma rilevabile anche dopo
+    il ri-ancoraggio a [tmin_p50, tmax_p50].
+    """
+
+    def predict(self, df: pd.DataFrame) -> list[float]:
+        row = df.iloc[0]
+        h = int(row["hour"])
+        return [1.0 if h < 12 else 3.0]
+
+
+def test_hourly_profile_corrector_shifts_curve(seeded_db: Path) -> None:
+    """Con corrector non costante, la curva corretta differisce dalla baseline
+    e mantiene min == tmin_p50 e max == tmax_p50 dopo il ri-ancoraggio."""
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    tmin, tmax = 5.0, 20.0
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        baseline = compute_hourly_profile(db, "casa_campi", "2026-05-19", tmin, tmax, 0.0)
+        corrected = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19", tmin, tmax, 0.0,
+            corrector=_FakeCorrector(),
+        )
+
+    assert baseline is not None
+    assert corrected is not None
+
+    # La curva corretta deve differire dalla baseline (delta non costante)
+    temps_base = [r["temp_c"] for r in baseline if r["temp_c"] is not None]
+    temps_corr = [r["temp_c"] for r in corrected if r["temp_c"] is not None]
+    assert temps_base != temps_corr, "La curva corretta deve differire dalla baseline"
+
+    # Dopo ri-ancoraggio: min ≈ tmin_p50, max ≈ tmax_p50
+    import pytest as pt
+    assert min(temps_corr) == pt.approx(tmin, abs=0.2)
+    assert max(temps_corr) == pt.approx(tmax, abs=0.2)
+
+
+def test_hourly_profile_corrector_none_identical_to_baseline(seeded_db: Path) -> None:
+    """corrector=None → output identico al baseline (confronto strutturale)."""
+    import json as _json
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        baseline = compute_hourly_profile(db, "casa_campi", "2026-05-19", 5.0, 20.0, 0.0)
+        no_corrector = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19", 5.0, 20.0, 0.0,
+            corrector=None,
+        )
+
+    # Confronto via JSON (gestisce NaN → null in modo uniforme)
+    def _normalize(lst: list | None) -> str:
+        return _json.dumps(lst, allow_nan=True)
+
+    assert _normalize(baseline) == _normalize(no_corrector)

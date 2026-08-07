@@ -31,6 +31,7 @@ from guazza.db_queries import (
     get_current_conditions,
     get_nwp_models_hourly,
 )
+from guazza.hourly_corrector import FEATURES, predict_delta
 
 if TYPE_CHECKING:
     from guazza.indicators import IndicatorResult
@@ -221,11 +222,14 @@ def compute_hourly_profile(
     tmax_ci80_hi: float | None = None,
     precip_ci80_lo: float | None = None,
     precip_ci80_hi: float | None = None,
+    corrector: Any = None,
 ) -> list[dict[str, float | None]] | None:
     """Profilo orario disaggregato da NWP ensemble, ancorato alle previsioni ML.
 
     Temperatura: rescaling lineare del profilo ensemble-mean da [raw_min, raw_max]
     a [tmin_p50, tmax_p50]. Se tmin_p50/tmax_p50 sono None usa i valori raw.
+    Se corrector è fornito, aggiunge un delta Δ(h) dalla shape normalizzata (correttore
+    orario opzionale) e ri-ancora il risultato ai bound ML daily.
 
     Bande CI 80% orarie (opzionali): due ulteriori rescaling con gli stessi bound
     NWP ma ancorati a (tmin_ci80_lo, tmax_ci80_lo) e (tmin_ci80_hi, tmax_ci80_hi).
@@ -348,14 +352,107 @@ def compute_hourly_profile(
         tmin_ci80_lo is not None and tmax_ci80_lo is not None
         and tmin_ci80_hi is not None and tmax_ci80_hi is not None
     )
+
+    # ── Correttore orario opzionale ───────────────────────────────────────────
+    # Calcola un delta Δ(h) per ogni ora disponibile e ri-ancora il profilo
+    # corretto ai bound ML daily (tmin_p50, tmax_p50).
+    final_temp: dict[int, float] = {}           # h → temp corretta ri-ancorata
+    band_lo_corrected: dict[int, float] = {}    # h → ci80_lo corretta ri-ancorata
+    band_hi_corrected: dict[int, float] = {}    # h → ci80_hi corretta ri-ancorata
+
+    if (
+        corrector is not None
+        and tmin_p50 is not None
+        and tmax_p50 is not None
+        and len(hour_data) >= 2
+    ):
+        span_raw = raw_max - raw_min
+        if span_raw > 0:
+            month = int(target_date[5:7])  # YYYY-MM-DD → mese
+
+            # shape_norm per ogni ora presente nel profilo NWP
+            shape_norm_by_h: dict[int, float] = {
+                h: (t_raw - raw_min) / span_raw
+                for h, (t_raw, _, _, _, _) in hour_data.items()
+            }
+
+            # Delta per ogni ora via correttore (None se feature mancanti/eccezione)
+            delta_by_hour: dict[int, float] = {}
+            for h, (_t_raw, hum, p_raw, _prob, wind) in hour_data.items():
+                feat_values: dict[str, Any] = {
+                    "hour":         h,
+                    "month":        month,
+                    "location_id":  location_id,
+                    "shape_norm":   shape_norm_by_h[h],
+                    "wc":           hour_wc_modal.get(h),
+                    "precip_flag":  1 if p_raw > 0.1 else 0,
+                    "wind_ms":      wind,
+                    "humidity_pct": hum,
+                }
+                row_feat = {f: feat_values[f] for f in FEATURES}
+                d = predict_delta(corrector, row_feat)
+                if d is not None:
+                    delta_by_hour[h] = d
+
+            if delta_by_hour:
+                p50_span = tmax_p50 - tmin_p50
+
+                # ── temp_c: shape_ml + delta, poi ri-ancora a [tmin_p50, tmax_p50]
+                corrected: dict[int, float] = {
+                    h: _rescale_temp_p50(hour_data[h][0]) + delta_by_hour[h]
+                    for h in delta_by_hour
+                }
+                corr_min = min(corrected.values())
+                corr_max = max(corrected.values())
+                if corr_max - corr_min > 0 and p50_span > 0:
+                    for h, v in corrected.items():
+                        final_temp[h] = round(
+                            tmin_p50 + (v - corr_min) / (corr_max - corr_min) * p50_span,
+                            1,
+                        )
+                else:
+                    mid = round((tmin_p50 + tmax_p50) / 2.0, 1)
+                    final_temp = dict.fromkeys(corrected, mid)
+
+                # ── Bande CI: stessa logica con ri-ancoraggio ai rispettivi bound
+                if has_temp_band:
+                    for band_out, t_lo, t_hi in (
+                        (band_lo_corrected, tmin_ci80_lo, tmax_ci80_lo),
+                        (band_hi_corrected, tmin_ci80_hi, tmax_ci80_hi),
+                    ):
+                        if t_lo is None or t_hi is None:
+                            continue
+                        c_band: dict[int, float] = {
+                            h: _rescale_temp(hour_data[h][0], t_lo, t_hi) + delta_by_hour[h]
+                            for h in delta_by_hour
+                        }
+                        b_min = min(c_band.values())
+                        b_max = max(c_band.values())
+                        b_span = t_hi - t_lo
+                        if b_max - b_min > 0 and b_span != 0:
+                            for h, v in c_band.items():
+                                band_out[h] = round(
+                                    t_lo + (v - b_min) / (b_max - b_min) * b_span, 1
+                                )
+                        else:
+                            mid_b = round((t_lo + t_hi) / 2.0, 1)
+                            for h in c_band:
+                                band_out[h] = mid_b
+
     for h in range(24):
         if h in hour_data:
             t_raw, hum, p_raw, prob, wind = hour_data[h]
             result.append({
                 "hour":          h,
-                "temp_c":        _rescale_temp_p50(t_raw),
-                "temp_ci80_lo":  _rescale_temp(t_raw, tmin_ci80_lo, tmax_ci80_lo) if has_temp_band else None,
-                "temp_ci80_hi":  _rescale_temp(t_raw, tmin_ci80_hi, tmax_ci80_hi) if has_temp_band else None,
+                "temp_c":        final_temp[h] if h in final_temp else _rescale_temp_p50(t_raw),
+                "temp_ci80_lo":  (
+                    band_lo_corrected[h] if h in band_lo_corrected
+                    else (_rescale_temp(t_raw, tmin_ci80_lo, tmax_ci80_lo) if has_temp_band else None)
+                ),
+                "temp_ci80_hi":  (
+                    band_hi_corrected[h] if h in band_hi_corrected
+                    else (_rescale_temp(t_raw, tmin_ci80_hi, tmax_ci80_hi) if has_temp_band else None)
+                ),
                 "humidity_pct":  round(hum, 0) if hum is not None else None,
                 "precip_mm":     round(p_raw * precip_scale, 2),
                 "precip_ci80_lo": round(p_raw * precip_scale_lo, 2) if precip_scale_lo > 0 else None,

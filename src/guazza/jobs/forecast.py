@@ -35,6 +35,7 @@ from guazza.db_queries import (
 )
 from guazza.features import build_features_daily
 from guazza.fetch_openmeteo import fetch_openmeteo_all_locations
+from guazza.hourly_corrector import load_corrector
 from guazza.indicators import evaluate_all, load_indicators, log_results
 from guazza.jobs._common import (
     CONFIG_DIR_OPTION,
@@ -143,6 +144,10 @@ def cmd_run(
 
             json_paths: list[Path] = []
 
+            corrector = load_corrector(model_dir)
+            if corrector is not None:
+                logger.info(f"hourly corrector attivo: {model_dir / 'hourly_corrector.lgb'}")
+
             for location_id, loc_df in df_all.groupby("location_id"):
                 location_id = str(location_id)
                 obs_summary = _fetch_obs_summary(db, location_id)
@@ -206,6 +211,7 @@ def cmd_run(
                             tmax_ci80_hi=pred["tmax_c"].get("ci80_hi"),
                             precip_ci80_lo=pred["precip_mm"].get("ci80_lo"),
                             precip_ci80_hi=pred["precip_mm"].get("ci80_hi"),
+                            corrector=corrector,
                         )
                         nwp_comparison = get_nwp_model_comparison(db, location_id, str(target_date_obj))
                         weather_code = get_daily_weather_code(db, location_id, str(target_date_obj))
