@@ -8,6 +8,25 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Added
+- **P(pioggia) oraria `precip_prob_ml` nel profilo `hourly[]`**: prob daily del
+  classificatore ML (`rain_clf.prob_rain`, BSS +0.16/+0.28) distribuita secondo il
+  timing NWP (`precip_prob` oraria normalizzata a max=1 sul giorno). Semantica
+  esplicita: P che l'ora h sia l'ora di pioggia, condizionato a giorno piovoso —
+  NON è una probabilità oraria calibrata e non somma a 1. `null` se la prob daily
+  manca o non c'è segnale NWP. Tooltip frontend: riga "P pioggia ML" nel grafico
+  daily/weekly (vista Guazza; i punti NWP non hanno il campo). (D-024, review oracle)
+
+### Fixed
+- **Bande CI80 orarie che si incrociavano con il correttore attivo**: il
+  ri-ancoraggio indipendente di p50 e bande (min-max separati) produceva
+  `lo > p50` e `lo > hi` con intervalli asimmetrici (CQR+ACI). Le bande sono ora
+  derivate dalla posizione normalizzata del p50 corretto: mappa monotona con bound
+  daily annidati → `lo ≤ p50 ≤ hi` garantita per costruzione. Ore senza delta e
+  casi degeneri invariati. (review oracle, P1)
+- **`eval_X`/`eval_y` → `eval_set`** in `train_corrector` (API sklearn canonica,
+  robusta ai futuri build LightGBM). (P3)
+
 ## [0.16.0] - 2026-08-07
 
 ### Added
