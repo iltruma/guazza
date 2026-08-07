@@ -1,4 +1,4 @@
-"""Job CLI: review giornaliero — obs [ieri-7, ieri] + backfill + ACI + skill-history + monitor + train/skill condizionali.
+"""Job CLI: review giornaliero — obs [ieri-7, ieri] + backfill + ACI + skill-history + monitor + skill + train condizionale.
 
 Gira 1×/giorno alle 06:00 UTC, dopo che SIR ha pubblicato i dati validati di ieri.
 Risponde a: "com'è andata ieri e il modello è ancora calibrato?"
@@ -13,7 +13,7 @@ Passi in sequenza:
   5. Skill-history append (ieri) + dump skill_history.json
   6. Monitor coverage ACI (30gg rolling)
   7. [condizionale] train_all() se artefatti > TRAIN_INTERVAL_DAYS giorni
-  8. [stesso gate] skill curve → skill.json
+  8. skill curve → skill.json (ogni giorno, non condizionale al train)
 
 Uso:
     uv run python -m guazza.jobs.review run
@@ -62,7 +62,7 @@ _MODEL_DIR_DEFAULT = Path(os.environ.get("MODEL_DIR", "/var/lib/guazza/models"))
 
 # Variabili per la skill curve (usate in _run_skill_curve)
 LEADS = [0, 24, 48, 72, 96, 120, 144, 168]
-MIN_SAMPLES_PER_LEAD = 5
+MIN_SAMPLES_PER_LEAD = 2
 _SKILL_VARS = ["tmin_c", "tmax_c"]
 
 
@@ -159,7 +159,7 @@ def _rain_prob_for(df: pd.DataFrame) -> list[dict[str, object]]:
     return points
 
 app = typer.Typer(
-    help="Review giornaliero: ingest [ieri-7, ieri] + backfill + ACI + skill-history + monitor + train condizionale.",
+    help="Review giornaliero: ingest [ieri-7, ieri] + backfill + ACI + skill-history + monitor + skill + train condizionale.",
     no_args_is_help=True,
 )
 
@@ -295,7 +295,7 @@ def cmd_run(
     dry_run: bool = typer.Option(False, "--dry-run", help="Salta scritture, esegue solo monitor"),
     force_train: bool = typer.Option(False, "--force-train", help="Forza train anche se artefatti recenti"),
 ) -> None:
-    """Review giornaliero: ingest [ieri-7, ieri] + backfill + ACI + skill-history + monitor + train condizionale."""
+    """Review giornaliero: ingest [ieri-7, ieri] + backfill + ACI + skill-history + monitor + skill + train condizionale."""
     if not date_str:
         date_str = (datetime.now(tz=UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
     date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -393,7 +393,7 @@ def cmd_run(
                     ping_monitor_alert()
                     logger.warning(f"review monitor: drift su {n_alerts} combinazioni — healthchecks /fail")
 
-        # ── 7-8. Train + skill condizionali (fuori dal writer DuckDB) ────────
+        # ── 7-8. Train condizionale + skill giornaliera (fuori dal writer DuckDB) ──
         # DuckDB è single-writer: il context manager writer è già chiuso.
         # train_all apre read_only internamente.
         if not dry_run and _should_train(model_dir, force_train):
@@ -401,6 +401,8 @@ def cmd_run(
             with DuckDBClient(db_path=db_path, read_only=True) as db_ro:
                 artifacts = train_all(db_ro, model_dir=model_dir, cal_days=90)
             logger.info(f"review train completato: n_train={artifacts.n_train} n_cal={artifacts.n_cal}")
+
+        if not dry_run:
             _run_skill_curve(db_path, output_dir, config_dir)
 
         stats.summary = f"window={ingest_start}..{date_str} dry_run={dry_run} force_train={force_train}"
