@@ -34,6 +34,8 @@ def log_scrape(scraper: str, status: str, rows: int | None = None, detail: str =
     bound = logger.bind(scraper=scraper, status=status)
     if rows is not None:
         bound = bound.bind(rows=rows)
+    message = f"scrape {scraper} {status}" + (f" rows={rows}" if rows is not None else "")
     if detail:
         bound = bound.bind(detail=detail)
-    bound.info(f"scrape {scraper} {status}" + (f" rows={rows}" if rows is not None else ""))
+        message += f" detail={detail}"
+    bound.info(message)

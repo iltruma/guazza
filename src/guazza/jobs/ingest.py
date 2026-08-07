@@ -199,7 +199,7 @@ def _ingest_sir_historical_range(
             log_scrape(f"sir_historical:{sid}:{idst}", "fail", detail=str(e))
             return None
 
-    results: list[tuple[str, str, list[dict[str, Any]]]] = []
+    total = 0
     for sid, idst, loc_id in tqdm(
         combos,
         desc="SIR historical",
@@ -208,13 +208,12 @@ def _ingest_sir_historical_range(
     ):
         result = _fetch_one(sid, idst, loc_id)
         if result:
-            results.append(result)
-
-    total = 0
-    for sid, idst, filtered in results:
-        db.upsert_sir_observations(filtered)
-        total += len(filtered)
-        logger.info(f"[{sid}] {idst}: {len(filtered)} righe ({start_date}→{end_date})")
+            _, _, filtered = result
+            # Upsert per-combo: se il job si interrompe a metà, i dati già
+            # scaricati restano persistiti (idempotente al riavvio).
+            db.upsert_sir_observations(filtered)
+            total += len(filtered)
+            logger.info(f"[{sid}] {idst}: {len(filtered)} righe ({start_date}→{end_date})")
 
     return total
 
