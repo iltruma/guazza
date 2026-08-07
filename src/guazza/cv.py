@@ -24,6 +24,7 @@ from guazza.models import (
     RAIN_THRESHOLD_MM,
     TARGETS,
     _apply_rain_calibration,
+    _es_val_split,
     _lead_time_bucket,
     _predict_level,
     _target_col,
@@ -53,10 +54,9 @@ def walk_forward_cv(
         Tupla (aggregate_df, per_bucket_df):
           - aggregate_df: 1 riga per (split, target) con metriche aggregate sul test set
           - per_bucket_df: 1 riga per (split, target, lead_bucket) — breakdown per bucket
-            di lead_time_h per diagnosticare la calibrazione CQR per orizzonte.
+            di lead_time_h (D+0..D+5+, bucket giornalieri — vedi LEAD_BUCKETS) per
+            diagnosticare la calibrazione CQR per orizzonte.
     """
-    from guazza.models import _es_val_split  # noqa: PLC0415
-
     df = load_features(db)
     if df.empty:
         raise ValueError("features_daily è vuota.")
