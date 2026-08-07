@@ -15,7 +15,7 @@ Uso:
 Variabili d'ambiente:
     DB_PATH           — path file DuckDB (default: /var/lib/guazza/guazza.duckdb)
     CONFIG_DIR        — directory YAML config (default: <repo>/config)
-    HEALTHCHECKS_URL  — URL ping Healthchecks.io (opzionale; se assente, ping saltato)
+    KUMA_PUSH_URL  — URL push Uptime Kuma (opzionale; se assente, push saltato)
 """
 
 from __future__ import annotations

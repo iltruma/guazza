@@ -1,4 +1,4 @@
-"""Helper condivisi dai job CLI cron: ping Healthchecks, ciclo di vita, opzioni typer.
+"""Helper condivisi dai job CLI cron: push Uptime Kuma, ciclo di vita, opzioni typer.
 
 Ogni job segue lo stesso ciclo: ping /start, lavoro, log_scrape finale + ping ok
 oppure log ERROR + ping /fail + exit 1. `job_run` lo incapsula una volta sola.
@@ -55,48 +55,51 @@ OUTPUT_DIR_OPTION = typer.Option(
 )
 
 
-def _resolve_healthchecks_url(job_name: str) -> str:
-    """Risolve l'URL Healthchecks.io per il job: prima HEALTHCHECKS_URL_{JOB_NAME_UPPER},
-    poi HEALTHCHECKS_URL come fallback. Restituisce stringa vuota se nessuna è configurata.
+def _resolve_push_url(job_name: str) -> str:
+    """Risolve l'URL push Uptime Kuma per il job: prima KUMA_PUSH_URL_{JOB_NAME_UPPER},
+    poi KUMA_PUSH_URL come fallback. Restituisce stringa vuota se nessuna è configurata.
     """
-    specific = os.environ.get(f"HEALTHCHECKS_URL_{job_name.upper()}", "").strip()
+    specific = os.environ.get(f"KUMA_PUSH_URL_{job_name.upper()}", "").strip()
     if specific:
         return specific
-    return os.environ.get("HEALTHCHECKS_URL", "").strip()
+    return os.environ.get("KUMA_PUSH_URL", "").strip()
 
 
 def ping_monitor_alert() -> None:
-    """Invia ping a HEALTHCHECKS_URL_MONITOR se configurata, altrimenti solo warning.
+    """Invia push a KUMA_PUSH_URL_MONITOR se configurata, altrimenti solo warning.
 
     Canale separato dal check principale del job: il drift ACI non è un
-    fallimento del job, quindi non deve sovrascrivere il ping ok finale.
+    fallimento del job, quindi non deve sovrascrivere il push up finale.
     """
-    url = os.environ.get("HEALTHCHECKS_URL_MONITOR", "").strip()
+    url = os.environ.get("KUMA_PUSH_URL_MONITOR", "").strip()
     if not url:
-        logger.warning("HEALTHCHECKS_URL_MONITOR non configurata — drift ACI non notificato")
+        logger.warning("KUMA_PUSH_URL_MONITOR non configurata — drift ACI non notificato")
         return
     try:
-        httpx.get(url.rstrip("/") + "/fail", timeout=5)
-        logger.info(f"Monitor alert inviato: {url}/fail")
+        httpx.get(url, params={"status": "down", "msg": "drift ACI"}, timeout=5)
+        logger.info(f"Push Uptime Kuma inviato: {url}?status=down (drift ACI)")
     except Exception as e:
-        logger.warning(f"Monitor alert ping fallito: {e}")
+        logger.warning(f"Push Uptime Kuma fallito: {e}")
 
 
-def ping_healthchecks(status: str = "", base_url: str = "") -> None:
-    """Invia ping a Healthchecks.io se l'URL è configurato (altrimenti skip).
+def push_job_status(job_name: str, ok: bool, base_url: str = "") -> None:
+    """Invia il push di stato a Uptime Kuma se l'URL è configurato (altrimenti skip).
 
-    status: "" = ok, "/fail" = fail, "/start" = start.
-    base_url: se vuoto, legge HEALTHCHECKS_URL dall'env (backward-compatible).
+    ok: True = status=up, False = status=down.
+    base_url: se vuoto, legge KUMA_PUSH_URL dall'env (backward-compatible).
     """
-    resolved = base_url.strip() or os.environ.get("HEALTHCHECKS_URL", "").strip()
+    resolved = base_url.strip() or os.environ.get("KUMA_PUSH_URL", "").strip()
     if not resolved:
         return
-    url = resolved.rstrip("/") + status
     try:
-        httpx.get(url, timeout=5)
-        logger.debug(f"Healthchecks ping: {url}")
+        httpx.get(
+            resolved.rstrip("/"),
+            params={"status": "up" if ok else "down", "msg": job_name},
+            timeout=5,
+        )
+        logger.debug(f"Push Uptime Kuma: {job_name} {'up' if ok else 'down'}")
     except Exception as e:
-        logger.warning(f"Healthchecks ping fallito: {e}")
+        logger.warning(f"Push Uptime Kuma fallito: {e}")
 
 
 @dataclass
@@ -111,15 +114,14 @@ class JobStats:
 def job_run(job_name: str) -> Generator[JobStats]:
     """Ciclo di vita standard di un job cron.
 
-    Ingresso: ping /start. Uscita ok: log_scrape(job_name, "ok", rows), ping ok,
-    echo del riepilogo con tempo trascorso. Eccezione: log ERROR con traceback,
-    ping /fail, exit code 1.
+    Ingresso: nessun ping (Uptime Kuma è interval-based, il push arriva a fine run).
+    Uscita ok: log_scrape(job_name, "ok", rows), push status=up, echo del riepilogo
+    con tempo trascorso. Eccezione: log ERROR con traceback, push status=down, exit 1.
 
-    L'URL Healthchecks.io viene risolto con HEALTHCHECKS_URL_{JOB_NAME_UPPER} come
-    primo candidato, con fallback a HEALTHCHECKS_URL.
+    L'URL Uptime Kuma viene risolto con KUMA_PUSH_URL_{JOB_NAME_UPPER} come
+    primo candidato, con fallback a KUMA_PUSH_URL.
     """
-    hc_url = _resolve_healthchecks_url(job_name)
-    ping_healthchecks("/start", base_url=hc_url)
+    push_url = _resolve_push_url(job_name)
     t0 = time.monotonic()
     stats = JobStats()
     try:
@@ -128,10 +130,10 @@ def job_run(job_name: str) -> Generator[JobStats]:
         raise
     except Exception as e:
         logger.exception(f"{job_name} fallito: {e}")
-        ping_healthchecks("/fail", base_url=hc_url)
+        push_job_status(job_name, ok=False, base_url=push_url)
         raise typer.Exit(1) from e
     elapsed = time.monotonic() - t0
     log_scrape(job_name, "ok", rows=stats.rows)
-    ping_healthchecks(base_url=hc_url)
+    push_job_status(job_name, ok=True, base_url=push_url)
     suffix = f" — {stats.summary}" if stats.summary else ""
     typer.echo(f"{job_name} completato in {elapsed:.0f}s{suffix}")

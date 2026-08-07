@@ -391,7 +391,7 @@ def cmd_run(
                 n_alerts = check_and_log(coverage_results)
                 if n_alerts > 0 and not dry_run:
                     ping_monitor_alert()
-                    logger.warning(f"review monitor: drift su {n_alerts} combinazioni — healthchecks /fail")
+                    logger.warning(f"review monitor: drift su {n_alerts} combinazioni — kuma push status=down")
 
         # ── 7-8. Train condizionale + skill giornaliera (fuori dal writer DuckDB) ──
         # DuckDB è single-writer: il context manager writer è già chiuso.

@@ -9,8 +9,8 @@
 # Prerequisiti:
 #   - uv installato e in PATH
 #   - Repo clonato in /opt/guazza con `uv sync` eseguito
-#   - .env compilato in /opt/guazza/.env (Netatmo, Healthchecks)
-#   - DB_PATH e HEALTHCHECKS_URL esportati (o in .env)
+#   - .env compilato in /opt/guazza/.env (Netatmo, Uptime Kuma push)
+#   - DB_PATH e KUMA_PUSH_URL esportati (o in .env)
 #
 # Logging: ogni job scrive JSON su stdout, rediretto in /var/log/guazza/<job>.jsonl
 # Logrotate consigliato: rotation daily, retention 30 days.
@@ -25,7 +25,7 @@ GUAZZA_DIR=/opt/guazza
 
 # Variabili d'ambiente per i job
 DB_PATH=/var/lib/guazza/guazza.duckdb
-# HEALTHCHECKS_URL=https://hc-ping.com/<uuid>  # decommentare e compilare
+# KUMA_PUSH_URL=https://kuma.lab.paroparo.it/api/push/<token>  # decommentare e compilare
 
 # ── Ogni 15 min: realtime (SIR actions.php + Netatmo) ─────────────────────────
 # SIR aggiorna ogni ~15 min, Netatmo ogni ~10 min.

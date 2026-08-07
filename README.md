@@ -16,7 +16,7 @@ Previsioni meteo iper-locali per 6 microclimi toscani. Sistema operativo persona
 git clone https://github.com/<tuo-user>/guazza.git
 cd guazza
 uv sync
-cp .env.example .env   # credenziali Netatmo + Healthchecks.io
+cp .env.example .env   # credenziali Netatmo + Uptime Kuma push
 ```
 
 Prerequisiti: Python 3.13+, [uv](https://docs.astral.sh/uv/).
@@ -83,7 +83,7 @@ guazza/
 │   ├── skill_history.py    # append_one(), dump_payload(), atomic_write_json() (usato da review)
 │   ├── monitor.py          # compute_coverage(), check_and_log(), update_aci_from_history()
 │   └── jobs/
-│       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
+│       ├── _common.py      # Helper job: push Uptime Kuma, job_run(), opzioni typer
 │       ├── ingest.py       # historical (backfill one-shot) / realtime
 │       ├── forecast.py     # Cron 6h (02/08/14/20 UTC): NWP live → features → predict → JSON
 │       └── review.py       # Cron 1×/giorno (06:10 UTC): ingest [ieri-7, ieri] + ACI + skill-history + train condizionale
@@ -188,7 +188,7 @@ docker run --rm -p 8080:8080 -v $(pwd)/data:/var/lib/guazza \
 
 # Uso locale: job CLI (es. backfill iniziale)
 docker run --rm -v $(pwd)/data:/var/lib/guazza -v $(pwd)/config:/app/config:ro \
-    -e HEALTHCHECKS_URL=https://hc-ping.com/<uuid> \
+    -e KUMA_PUSH_URL=https://kuma.lab.paroparo.it/api/push/<token> \
     -e NETATMO_CLIENT_ID=... -e NETATMO_CLIENT_SECRET=... \
     ghcr.io/iltruma/guazza:v0.9.0 guazza-ingest historical
 ```

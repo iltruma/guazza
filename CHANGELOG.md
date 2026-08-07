@@ -8,6 +8,15 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Changed
+- **Monitoring job: Healthchecks.io → Uptime Kuma push** (`_common.py`): env
+  `HEALTHCHECKS_URL*` rinominate in `KUMA_PUSH_URL` / `KUMA_PUSH_URL_{JOB}` /
+  `KUMA_PUSH_URL_MONITOR`. Semantica: push `status=up|down&msg={job}` a fine run
+  (il dead-man switch Kuma rileva i run mancati via intervallo heartbeat; niente
+  più `/start`, Kuma è interval-based). Canale monitor ACI invariato ma con
+  `status=down` invece di `/fail`. Docs allineate: AGENTS.md (tabella env,
+  checklist, scraper fragili), README, crontab.template, .env.example, D-019.
+
 ### Docs
 - **AGENTS.md allineato** alla pulizia: tabella stack completa in AGENTS.md (era "13 voci → README"), range decisioni D-001..D-024, regime cockpit esplicito ("niente session-log in status.md").
 - **Semplificazione cerimonia docs** (audit complessità @oracle): `docs/status.md` →

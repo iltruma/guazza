@@ -135,7 +135,7 @@ Prima di dichiarare un task completo:
 - [ ] `uv run python -m pytest` verde
 - [ ] `ruff check` zero warning, `mypy` pulito
 - [ ] `setup_logging()` in ogni nuovo job CLI
-- [ ] Healthchecks.io ping se job cron
+- [ ] Push Uptime Kuma se job cron
 - [ ] Nessun dead code o codice sperimentale residuo
 - [ ] `docs/known_issues.md` aggiornato se workaround
 - [ ] Commit proposto con formato `tipo(scope): descrizione`
@@ -227,8 +227,9 @@ Chiave formato `<sorgente>:<identificatore>`, senza suffissi `_batch`. Dove c'è
 il `logger.info` discorsivo non ripete le stesse informazioni (es. conteggio righe già in `rows=`).
 
 **Scraper fragili**: `try/except` con `tenacity` exponential backoff (3 tentativi,
-delay 60s/300s/600s); ping Healthchecks.io a fine run riuscito; se fallisce dopo tutti i
-retry: log ERROR, ping fail, non crashare — il prossimo cron riprova.
+delay 60s/300s/600s); push `status=up` a Uptime Kuma a fine run riuscito; se fallisce
+dopo tutti i retry: log ERROR, push `status=down`, non crashare — il prossimo cron
+riprova.
 
 **Decision Logic Engine**: ogni invocazione produce log in DuckDB (`indicator_log`) — schema in `docs/contract.md`.
 
@@ -241,6 +242,6 @@ retry: log ERROR, ping fail, non crashare — il prossimo cron riprova.
 | `DB_PATH` | `/var/lib/guazza/guazza.duckdb` | `data/guazza.duckdb` (flag `--db`) |
 | `MODEL_DIR` | `/var/lib/guazza/models` | `data/models` (flag `--model-dir`) |
 | `OUTPUT_DIR` | `/var/lib/guazza/output` | `data/output` (flag `--output-dir`) |
-| `HEALTHCHECKS_URL` | URL Healthchecks.io | non impostata → ping saltato |
+| `KUMA_PUSH_URL` | URL push Uptime Kuma (monitor Push, dead-man switch) | non impostata → push saltato; per-job: `KUMA_PUSH_URL_{JOB}` |
 | `CONFIG_DIR` | `{repo}/config` | auto-rilevato da `__file__` |
 

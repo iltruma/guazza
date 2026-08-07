@@ -363,8 +363,8 @@ campionaria è ≤ 10% di γ. ~30 giorni di produzione.
 **Monitor separato** (`src/guazza/monitor.py`): `coverage_30d` per (target,
 lead_bucket) in job indipendente dal predict. Motivo: feedback (coverage reale)
 e azione (correzione α_t) in un unico job rendono il loop non debuggabile; il
-monitor può fallire (`/fail` su Healthchecks) senza bloccare le previsioni e
-viceversa.
+monitor può fallire (push `status=down` su Uptime Kuma, `KUMA_PUSH_URL_MONITOR`)
+senza bloccare le previsioni e viceversa.
 
 **Conseguenze**:
 - Implementazione: `src/guazza/aci.py` (`ACI_COLD_START_N=30`); stato `aci_state`
