@@ -889,6 +889,61 @@ def test_current_conditions_shared_station_wind(seeded_db: Path) -> None:
     assert result["sources"]["temp_c"] == "realtime"
 
 
+def test_current_conditions_wind_dir_circular_mean(seeded_db: Path) -> None:
+    """wind_dir: media circolare (atan2), non scalare — 350° + 10° → ~0°, non 180°."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.executemany("""
+        INSERT INTO observations
+            (source, station_id, location_id, ts, granularity, temp_c, wind_dir_deg)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, [
+        ["sir_toscana", "ST_W1", "casa_campi", now - timedelta(minutes=5), "realtime", 10.0, 350.0],
+        ["sir_toscana", "ST_W2", "casa_campi", now - timedelta(minutes=5), "realtime", 10.0, 10.0],
+    ])
+    _seed_sir_weight(con, "ST_W1", "casa_campi")
+    _seed_sir_weight(con, "ST_W2", "casa_campi")
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    # Media circolare: 350+10 → 0° (la media scalare avrebbe dato 180°)
+    assert result["wind_dir_deg"] == pytest.approx(0.0)
+    assert result["sources"]["wind_dir_deg"] == "realtime"
+
+
+def test_current_conditions_nwp_wind_dir_circular_mean(seeded_db: Path) -> None:
+    """Fallback NWP: wind_dir media circolare tra i modelli (350° + 10° → ~0°)."""
+    from datetime import timedelta
+
+    import duckdb
+
+    now = datetime.now()
+    con = duckdb.connect(str(seeded_db))
+    con.executemany("""
+        INSERT INTO forecasts
+            (source, location_id, ts_run, ts_valid, lead_time_h, temp_c, wind_dir_deg)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, [
+        ["open_meteo_ecmwf_ifs", "casa_campi", now - timedelta(hours=2), now - timedelta(minutes=10), 2, 20.0, 350.0],
+        ["open_meteo_icon_eu", "casa_campi", now - timedelta(hours=1), now - timedelta(minutes=10), 1, 20.0, 10.0],
+    ])
+    con.close()
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = get_current_conditions(db, "casa_campi")
+
+    assert result is not None
+    assert result["wind_dir_deg"] == pytest.approx(0.0)
+    assert result["sources"]["wind_dir_deg"] == "nwp"
+
+
 def test_current_conditions_weighted_blend(seeded_db: Path) -> None:
     """Due stazioni con pesi diversi: media pesata, non media semplice."""
     from datetime import timedelta

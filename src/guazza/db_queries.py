@@ -144,7 +144,14 @@ _BLEND_SQL = """
         ROUND(SUM(humidity_pct * w) / NULLIF(SUM(CASE WHEN humidity_pct IS NOT NULL THEN w ELSE 0 END), 0), 0) AS humidity_pct,
         ROUND(SUM(precip_mm * w)    / NULLIF(SUM(CASE WHEN precip_mm    IS NOT NULL THEN w ELSE 0 END), 0), 2) AS precip_mm,
         ROUND(SUM(wind_speed_ms * w)/ NULLIF(SUM(CASE WHEN wind_speed_ms IS NOT NULL THEN w ELSE 0 END), 0), 1) AS wind_speed_ms,
-        ROUND(SUM(wind_dir_deg * w) / NULLIF(SUM(CASE WHEN wind_dir_deg IS NOT NULL THEN w ELSE 0 END), 0), 0) AS wind_dir_deg
+        -- wind_dir: media circolare pesata (atan2). La media scalare sbagliava vicino
+        -- al wraparound 0/360 (es. 350+10 → ~180 invece di ~0). Guard COUNT: se wind_dir
+        -- manca su tutte le righe → NULL. Niente NULLIF su x/y: y=0 è un caso normale
+        -- con venti cardinali (es. vento da 90°).
+        ROUND(CASE WHEN COUNT(wind_dir_deg) > 0 THEN
+            (DEGREES(ATAN2(SUM(SIN(RADIANS(wind_dir_deg)) * w),
+                           SUM(COS(RADIANS(wind_dir_deg)) * w))) + 360) % 360
+        END, 0) AS wind_dir_deg
     FROM obs
 """
 
@@ -168,7 +175,11 @@ _FALLBACK_SQL = """
         ROUND(AVG(humidity_pct), 0)                  AS humidity_pct,
         ROUND(AVG(precip_mm), 2)                     AS precip_mm,
         ROUND(AVG(wind_speed_ms), 1)                 AS wind_speed_ms,
-        ROUND(AVG(wind_dir_deg), 0)                  AS wind_dir_deg
+        -- Media circolare tra i modelli NWP (stesso wraparound 0/360 della media scalare)
+        ROUND(CASE WHEN COUNT(wind_dir_deg) > 0 THEN
+            (DEGREES(ATAN2(SUM(SIN(RADIANS(wind_dir_deg))),
+                           SUM(COS(RADIANS(wind_dir_deg))))) + 360) % 360
+        END, 0)                                      AS wind_dir_deg
     FROM f
 """
 

@@ -33,6 +33,11 @@ Versioning: major per sprint, minor per milestone interne.
   daily/weekly (vista Guazza; i punti NWP non hanno il campo). (D-024, review oracle)
 
 ### Fixed
+- **wind_dir media circolare in current conditions** (KI-020): la media pesata
+  scalare sbagliava vicino al wraparound 0/360° (es. 350°+10° → ~180° invece di
+  ~0°). Ora `atan2(Σw·sinθ, Σw·cosθ)` + wrap in `_BLEND_SQL` e nel fallback NWP
+  (`db_queries.py`), con guard `COUNT` sul non-null (y=0 è normale coi venti
+  cardinali). Test wraparound per blend e fallback.
 - **Chunk Open-Meteo dimezzati** (`_OM_CELL_BUDGET` 483_840 → 241_920): i chunk
   historical da ~1 anno (373gg) producevano risposte tanto grandi da far chiudere
   la connessione a metà trasferimento ("peer closed connection ... incomplete
