@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-08-07 (v0.15.0)
+> Aggiornato: 2026-08-07 (v0.16.0)
 > Storico sprint → `CHANGELOG.md` · Decisioni → `docs/decisions.md` · Workaround attivi → `docs/known_issues.md`
 
 ## Stato
@@ -106,4 +106,5 @@ Deploy prod: reset DB schema (cape_jkg), `guazza-ingest historical` su k8s, `gua
 ### Sessione 2026-08-04 — chunk size ingestion Open-Meteo
 
 - Budget-celle `_OM_CELL_BUDGET = 483_840`: chunk ottimale per modello via `_chunk_days(n_vars)`
-- Chunk risultanti: historical 474gg, ECMWF multilead 120gg, ICON-EU 211gg, AROME 845gg, ICON-2I 423gg
+- Chunk risultanti (budget originale): historical 474gg, ECMWF multilead 120gg, ICON-EU 211gg, AROME 845gg, ICON-2I 423gg
+- **Corretto 2026-08-07**: budget dimezzato a `241_920` (chunk da ~1 anno producevano conn drop "incomplete chunked read"). Chunk attuali: historical 186gg, ECMWF multilead 60gg, ICON-EU 105gg, AROME 420gg, ICON-2I 210gg — vedi commento in `fetch_openmeteo.py`.

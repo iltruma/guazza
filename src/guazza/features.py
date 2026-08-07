@@ -233,7 +233,7 @@ SELECT
     prev.tmax_c - prev2.tmax_c AS obs_tmax_gradient,
 
     -- Anomaly (obs D-1 − clim mensile). Non in FEATURE_COLS: esperimento parcheggiato
-    -- (vedi known_issues.md). Mantenute perché asserite dai test.
+    -- (vedi docs/archive/known_issues_resolved.md, KI-024). Mantenute perché asserite dai test.
     prev.tmin_c - c.clim_tmin_mean AS anom_tmin_c,
     prev.tmax_c - c.clim_tmax_mean AS anom_tmax_c,
 

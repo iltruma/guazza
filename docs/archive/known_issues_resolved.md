@@ -288,3 +288,67 @@ Rimosso anche `_OM_PREVIOUS_DAY_MAX` e l'elenco da `NWP_MODEL_PREFIXES`,
 **Workaround che era in uso**: il frontend `affidabilita.js` filtrava i NWP con
 almeno un valore non-null nella finestra corrente prima di disegnarli. GFS
 semplicemente non appariva. Reso obsoleto dalla rimozione del modello.
+
+---
+
+## KI-007 — ECMWF falso allarme precipitazioni su Toscana (osservazione preliminare)
+
+**Severità**: informativa
+**Stato**: chiuso come non conclusivo (2026-08-07) — obs monogiorno mai validata
+
+Osservazione del 2026-05-14 (singolo giorno, dichiarata non conclusiva):
+- TOS01001215 Scandicci: 0.0mm osservati, ECMWF 0.7mm, ICON-EU 0.5mm
+- TOS11000516 Casa Rota: 0.0mm osservati, ECMWF 2.0mm, ICON-EU 0.4mm
+
+In ~3 mesi nessuna analisi estesa su serie lunga è stata prodotta e nessuna
+azione ne dipendeva. Chiusa come rumore non azionabile — non riaprire su un
+singolo giorno senza validazione su serie storica.
+
+**Nota da preservare** (ground truth consolidato, unica informazione utile del
+KI): la finestra `pluvio0_24` nel CSV SIR è **mezzanotte–mezzanotte** (confermato
+confrontando CSV con dati Excel SIR). I valori CSV sono il riferimento corretto
+per il training — l'ipotesi iniziale 08:00–08:00 CEST era errata (basata su un
+confronto con cumulativo realtime SIR con finestra 09:00→09:00).
+
+---
+
+## KI-024 — Spike anomaly target: degradato in walk-forward CV (+28/+44% MAE)
+
+**Severità**: bassa (spike documentato, non in produzione)
+**Stato**: chiuso (2026-08-07) — path anomaly rimosso (commit 5083290), ricetta
+retry conservata sotto
+
+**Prova**: walk-forward CV 4 fold, 2023-01 → 2026-06, 4 modelli NWP.
+
+| Target | Baseline (status.md) | Anomaly | Δ MAE |
+|---|---|---|---|
+| tmin_c | 0.850 | 1.089 | **+28%** |
+| tmax_c | 0.813 | 1.168 | **+44%** |
+| precip_mm | 1.545 | 1.717 | +11% (precip NON era in ANOMALY_TARGETS — effetto collaterale: training set ridotto per tmin/tmax quando `clim_tmin_mean` è NULL, leggera instabilità CV) |
+
+Soglia di accettazione +3% MAE tmin/tmax: non centrata, rollback eseguito.
+
+**Causa probabile**: la climatologia usata (`clim_tmin_mean`, mensile, aggregata
+su 4 anni) è troppo "grezza" per essere un buon anchor di anomalia. La media
+mensile smussa la variabilità settimanale, e sui 4 anni del training è dominata
+da 2-3 stagionalità recenti climaticamente non rappresentative. Il modello
+impara l'anomalia ma non ha feature `anom_*_c` in `FEATURE_COLS` per collegarla
+al NWP, quindi deve re-imparare il livello assoluto dalle stesse feature che
+usava prima, con perdita netta.
+
+**Side-finding emerso dal test**: `coverage_80` nei fold recenti (2025-2026) è
+0.688/0.699 su tmin/tmax (target 0.80) — drift di calibrazione CQR già in atto.
+Risolto con ACI in v0.10.0 (vedi KI-023).
+
+**Ricetta retry** (se l'esperimento verrà riaperto):
+1. Sostituire `clim_tmin_mean` mensile con climatologia settimanale percentile
+   (10/50/90) calcolata su tutti gli anni SIR (2004+) invece dei soli 4 anni del training
+2. Aggiungere `anom_tmin_c`/`anom_tmax_c` direttamente in `FEATURE_COLS`
+3. Ripetere la misurazione: se Δ MAE ancora negativo, lasciare perdere l'anomalia come target
+
+**Chiusura**: `ANOMALY_TARGETS`, `_target_col` anomaly-path e `_invert_anomaly`
+rimossi (commit 5083290, 2026-08-04) — il KI attivo diceva "codice tenuto come
+regression test", non più vero. Le colonne SQL `anom_*` restano materializzate
+in `features_daily` e coperte dai test (commento in `features.py`), ma fuori
+`FEATURE_COLS`. `_TARGET_CLIM_COL` è vivo solo per init_score / predict residual
+(`models.py`), non per anomaly. Nessun fix pianificato.

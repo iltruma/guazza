@@ -8,6 +8,15 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Docs
+- **Revisione known_issues** (review @oracle): KI-007 e KI-024 archiviati
+  (obs non conclusiva; path anomaly rimosso in 5083290); KI-002/014/015/019/020
+  semplificati con testi verificati sul codice (corretta la fonte di
+  `pressure_hpa` = forecasts NWP; tagliata la diagnostica monouso di KI-019);
+  KI-004 invariato. Fix drift `docs/status.md`: header versione v0.16.0 e
+  `_OM_CELL_BUDGET` reale 241_920 (era 483_840). Commento in `features.py`
+  aggiornato al path archivio KI-024.
+
 ### Removed
 - **`guazza-ingest daily`**: comando CLI rimosso — l'ingestion giornaliera è in
   `guazza-review` (finestra [ieri-7, ieri], auto-guarigione). Il backfill Netatmo
