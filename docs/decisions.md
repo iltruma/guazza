@@ -663,3 +663,34 @@ produzione. Wording canonico per il case study:
 - La nota di esclusione è obbligatoria per onestà scientifica nel case study
 
 **Stato**: accettata (sessione 2026-08-04, council multi-modello unanime).
+
+## D-024 — Correttore orario: correzione di forma del profilo `hourly[]`
+
+**Contesto**: il profilo orario daily è la shape NWP ensemble-mean rescalata sugli
+anchor ML daily (`compute_hourly_profile`). Gli errori di forma (fase/ampiezza del
+ciclo diurno: inversione termica, nebbie, ritardo del massimo) sono sistematici per
+location. Il modello daily non può correggerli: non vede mai osservazioni orarie.
+
+**Decisione**: correttore di forma opzionale (LightGBM regression p50) addestrato sul
+residuo di shape `Δ(h) = obs_median(h) − shape_obs(h)` (shape normalizzata 0..1,
+residuo day-invariant; i bias additivi uniformi vengono assorbiti dall'ancoraggio e
+restano responsabilità dei daily anchor ML). Feature: hour, month, location_id,
+shape_norm, weather_code modale, flag precip, vento, umidità. Split cronologico con
+embargo 7gg; accettazione solo se improvement RMSE ≥ 15% su holdout, altrimenti
+nessun file (fallback = profilo attuale). In inferenza: Δ applicato alla curva
+ancorata ML + ri-ancoraggio a [tmin_p50, tmax_p50] e bande CI80 ai rispettivi bound
+→ livelli sempre ML daily, cambia solo la forma; contract JSON invariato.
+
+**Eccezione scoped a D-005**: il training usa osservazioni realtime NRT non validate
+(SIR realtime + Netatmo) come target di un bias di forma, non come valori di record.
+Mitigazioni obbligatorie: nuovi flag QC (`spike_realtime`, `stall_sensor`,
+`bias_solar`) + aggregazione mediana per slot con minimo campioni (3). D-005 resta
+in vigore per i target daily e le feature del modello principale.
+
+**Esclusioni**: precip orario (D-014: rumore), umidità; nessun impatto su CV/CQR/ACI.
+
+**Conseguenze**: dati sufficienti per l'allenamento arrivano dall'accumulo realtime
+in prod (~60 giorni/location); prima il correttore non è addestrato (cold-start
+silenzioso). La skill daily non si muove: il guadagno è l'onestà della curva.
+
+**Stato**: accettata (sessione 2026-08-07).

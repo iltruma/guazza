@@ -1,6 +1,6 @@
 # Guazza — Stato corrente
 
-> Aggiornato: 2026-08-06 (v0.15.0)
+> Aggiornato: 2026-08-07 (v0.15.0)
 > Storico sprint → `CHANGELOG.md` · Decisioni → `docs/decisions.md` · Workaround attivi → `docs/known_issues.md`
 
 ## Stato
@@ -42,6 +42,7 @@ Fold 1-2 (pre-ott 2024) sono lead=0-only, non rappresentativi del sistema con mu
 - **P2** — ACI in cold start (pass-through su CQR statico per le prime 30 osservazioni per bucket). Auto-risolto dopo ~30gg di operatività.
 
 ### Da implementare
+- **P9** — Scheduling `guazza-hourly-correct train` (settimanale, dentro `guazza-review` o CronJob) quando lo storico realtime in prod ≥ 60gg/location. Codice pronto (D-024); oggi nessun DB ha dati sufficienti.
 - **P5** — Backtest multi-anno multi-stagione. Si accumula forward dal deploy (Sprint 8+).
 - **P7** — `uv_index` come dato (NWP). Nessuna nuova dipendenza; ingestion + schema + features + JSON `hourly[]`/`current`.
 - **P8** — Heat index (Steadman/Rothfusz) + ondata di calore come indicatore DLE. Solo dati già presenti (T+RH realtime).
@@ -54,6 +55,13 @@ Deploy prod: reset DB schema (cape_jkg), `guazza-ingest historical` su k8s, `gua
 `skill_history.json` si popolerà automaticamente dopo ~1 settimana di operatività in prod.
 
 ---
+
+## Sessione 2026-08-07 — correttore orario + QC realtime esteso
+
+- **Correttore orario** (commit 2e014fd, D-024): nuovo modulo `hourly_corrector.py` + CLI `guazza-hourly-correct` (train/eval/status). LightGBM p50 sul residuo di shape Δ(h) = obs_mediana − shape NWP normalizzata; embargo 7gg, split cronologico, salvataggio solo con improvement RMSE ≥ 15% su holdout. `compute_hourly_profile` accetta il correttore: delta + ri-ancoraggio a [tmin_p50, tmax_p50] e bande CI80 ai rispettivi bound — livelli sempre ML daily, cambia solo la forma; fallback automatico se il file manca.
+- **QC realtime** (`qc.py`): 3 flag nuovi nel batch idempotente — `spike_realtime` (Δ>8°C entro 90min), `stall_sensor` (costante ≥180min), `bias_solar` (Netatmo 10-17 locali + cielo sereno NWP modale) — consumati dal dataset del correttore.
+- **Dati**: nessun DB ha ancora storico realtime sufficiente (prod da resettare); il training si attiva da solo quando l'accumulo raggiunge ~60gg/location (P9).
+- Nota: 2 test pre-esistenti rotti su HEAD (`test_save_netatmo_to_db_inserts_fetch_log`, `test_save_netatmo_to_db_idempotent`): referenziano `netatmo_fetch_log`, tabella rimossa in 54ed68f — fuori scope, da sistemare in task dedicato.
 
 ## Sessione 2026-08-06 — daily fuori dal cron, review con finestra di recupero
 

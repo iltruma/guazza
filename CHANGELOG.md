@@ -8,6 +8,20 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+### Added
+- **Correttore orario (`hourly_corrector.py`)**: nuovo modulo + CLI `guazza-hourly-correct`
+  (train/eval/status). LightGBM regression che impara il delta sistematico tra la forma
+  NWP oraria e le osservazioni realtime per (location, ora): dataset con mediana per slot
+  (min 3 campioni), split cronologico con embargo 7gg, salvataggio solo se improvement
+  RMSE ≥ 15% su holdout (`hourly_corrector.lgb` in MODEL_DIR, altrimenti fallback).
+  `compute_hourly_profile` applica il delta e ri-ancora a [tmin_p50, tmax_p50] e bande
+  CI80 ai rispettivi bound (livelli sempre ML daily, cambia solo la forma). Training
+  possibile quando lo storico realtime in prod raggiunge ~60 giorni/location (D-024).
+- **QC realtime esteso (`qc.py`)**: 3 nuovi flag nel batch idempotente —
+  `spike_realtime` (Δ>8°C entro 90min), `stall_sensor` (temperatura costante ≥180min),
+  `bias_solar` (Netatmo 10-17 locali con cielo sereno da weather_code NWP modale).
+  Consumati dal dataset del correttore.
+
 ### Changed
 - **`jobs/review.py`**: ingestion su finestra `[ieri-7, ieri]` (SIR CSV + Open-Meteo
   historical + multilead) invece del solo ieri — un run perso viene auto-riparato
