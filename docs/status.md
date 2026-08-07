@@ -27,15 +27,9 @@
 
 ## Risultati CV (fold 3-4, unici rappresentativi del sistema in prod)
 
-| Target | Skill MAE vs NWP | Note |
-|---|---|---|
-| tmax_c | +30-32% ✅ | Robusto, model-agnostic — obiettivo raggiunto |
-| tmin_c | +7-25% ✅ | Positivo ma variabile per location (casa_nicco bias~0) |
-| precip_mm | +3-11% ≈0 | Ceiling strutturale (ground truth rumoroso, D-014) |
-| rain_clf | BSS +0.16/+0.28, AUC 0.73-0.79 ✅ | P(pioggia) funziona |
+Skill vs NWP-ensemble: numeri canonici → `D-016` (tmax +30-32%, tmin +7-25%, precip ceiling, rain_clf BSS +0.16/+0.28; fold 1-2 esclusi → D-023).
 
 Coverage CI80: 72-76% (target 80%) — ACI corregge in produzione dopo ~30gg warm-up.
-Fold 1-2 (pre-ott 2024) sono lead=0-only, non rappresentativi del sistema con multilead.
 
 ## Coda
 
