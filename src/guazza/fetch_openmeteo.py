@@ -79,8 +79,12 @@ OM_MODELS: list[str] = [
 ]
 
 # Budget celle per HTTP call Open-Meteo (free tier per-minute limit).
-# Tarato su ECMWF multilead (28 vars, 6 loc): 120gg × 24h × 28 × 6 ≈ 483_840.
-_OM_CELL_BUDGET = 483_840
+# Dimezzato da 483_840 (2026-08-07): chunk da ~1 anno (373gg per historical)
+# producevano risposte tanto grandi da far chiudere la connessione a metà
+# trasferimento ("peer closed connection ... incomplete chunked read").
+# Con 241_920: historical 186gg, ECMWF multilead 60gg, ICON-EU 105gg,
+# AROME 420gg, ICON-2I 210gg.
+_OM_CELL_BUDGET = 241_920
 _OM_N_LOCATIONS = 6  # numero fisso di location del progetto
 
 
