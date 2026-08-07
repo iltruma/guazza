@@ -207,10 +207,12 @@ def test_realtime_happy_path(cfg_dir: Path, tmp_path: Path) -> None:
             "ts": datetime(2026, 5, 15, 10, 30, tzinfo=UTC),
             "granularity": "realtime",
             "temp_c": 18.0,
+            "level_m": 3.2,  # idro: richiesto dal merge per-stazione in cmd_realtime
         },
     }
 
     with (
+        patch("guazza.jobs.ingest.fetch_sir_bulk_realtime", return_value={}),
         patch("guazza.jobs.ingest.fetch_sir_stations_realtime", return_value=sir_realtime),
         patch("guazza.jobs.ingest.fetch_netatmo_all_locations", return_value={}),
     ):

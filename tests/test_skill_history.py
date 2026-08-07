@@ -29,18 +29,6 @@ from guazza.storage import DuckDBClient
 # ── fixtures: query SQL mockate in DataFrame ────────────────────────────────
 
 
-def _mk_guazza(loc: str, tmin: float, tmax: float, precip: float) -> tuple:
-    return (loc, tmin, tmax, precip)
-
-
-def _mk_nwp(src: str, loc: str, tmin: float, tmax: float, precip: float) -> tuple:
-    return (src, loc, tmin, tmax, precip)
-
-
-def _mk_actual(loc: str, tmin: float, tmax: float, precip: float) -> tuple:
-    return (loc, tmin, tmax, precip)
-
-
 # ── _collect_rows ──────────────────────────────────────────────────────────
 
 

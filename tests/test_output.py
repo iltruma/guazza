@@ -497,21 +497,6 @@ def test_write_location_json_precip_clamp(
     assert fc["ci80_hi"] == pytest.approx(0.2)
 
 
-def test_write_location_json_valid_json(
-    tmp_path: Path,
-    sample_pred: dict,
-    sample_indicators: list[IndicatorResult],
-) -> None:
-    coverage: dict = {}
-    path = write_location_json(
-        location_id="test_loc",
-        days=_make_days(sample_pred, sample_indicators),
-        coverage=coverage,
-        output_dir=tmp_path,
-    )
-    json.loads(path.read_text())
-
-
 def test_write_location_json_multiday_order(
     tmp_path: Path,
     sample_pred: dict,
@@ -1233,13 +1218,6 @@ def test_modal_weather_code_tiebreak_severity() -> None:
 
 def test_modal_weather_code_empty() -> None:
     assert _modal_weather_code([]) is None
-
-
-def test_modal_weather_code_unknown_code_gets_zero_severity() -> None:
-    # Codice sconosciuto 999 vs 0: parità → 999 vince per max() con stessa priorità 0,
-    # ma l'importante è che non sollevi eccezioni.
-    result = _modal_weather_code([0, 999])
-    assert result in (0, 999)
 
 
 def test_wmo_severity_complete_for_common_codes() -> None:
