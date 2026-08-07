@@ -230,26 +230,31 @@ def _build_location_rows(
         k: _modal_weather_code(v) for k, v in wc_codes.items()
     }
 
-    # 2. Obs realtime mediane per (local_date, hour) con ≥ MIN_SAMPLES_PER_SLOT campioni
+    # 2. Obs realtime pesate per (local_date, hour) con ≥ MIN_SAMPLES_PER_SLOT campioni.
+    #    Media pesata via station_weights (stesso schema di obs_weighted_daily e current JSON)
+    #    per coerenza con il ground truth daily usato dal modello ML.
     #    Esclude righe con flag_type in EXCLUDE_FLAGS
     exclude_sql = ", ".join(f"'{f}'" for f in EXCLUDE_FLAGS)
     obs_df = db.execute(f"""
         SELECT
-            CAST(ts AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome' AS DATE) AS local_date,
-            HOUR(ts AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome')         AS hour,
-            MEDIAN(temp_c) AS obs_median,
+            CAST(o.ts AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome' AS DATE) AS local_date,
+            HOUR(o.ts AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome')         AS hour,
+            SUM(o.temp_c * sw.weight)
+                / NULLIF(SUM(CASE WHEN o.temp_c IS NOT NULL THEN sw.weight ELSE 0 END), 0)
+                AS obs_median,
             COUNT(*)       AS n_samples
-        FROM observations
-        WHERE granularity = 'realtime'
-          AND location_id = ?
-          AND temp_c IS NOT NULL
-          AND CAST(ts AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome' AS DATE) <= ?
+        FROM observations o
+        JOIN station_weights sw
+          ON o.station_id = sw.station_id AND sw.location_id = ?
+        WHERE o.granularity = 'realtime'
+          AND o.temp_c IS NOT NULL
+          AND CAST(o.ts AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome' AS DATE) <= ?
           AND NOT EXISTS (
               SELECT 1 FROM quality_flags qf
-              WHERE qf.source = observations.source
-                AND qf.station_id = observations.station_id
-                AND qf.ts = observations.ts
-                AND qf.granularity = observations.granularity
+              WHERE qf.source = o.source
+                AND qf.station_id = o.station_id
+                AND qf.ts = o.ts
+                AND qf.granularity = o.granularity
                 AND qf.flag_type IN ({exclude_sql})
           )
         GROUP BY local_date, hour

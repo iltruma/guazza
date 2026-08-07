@@ -106,6 +106,18 @@ def _insert_synthetic_data(db: DuckDBClient) -> None:
     """)
     db.unregister_df("_stg_obs")
 
+    # station_weights per le stazioni sintetiche (pesi uniformi)
+    station_ids = [f"ST_{src}_{k}" for src in sources_obs for k in range(n_obs_per_slot)]
+    w = 1.0 / len(station_ids)
+    sw_rows = [{"station_id": sid, "source": "sir_toscana", "location_id": _LOC, "weight": w} for sid in station_ids]
+    sw_df = pd.DataFrame(sw_rows)
+    db.register_df("_stg_sw", sw_df)
+    db.execute("""
+        INSERT OR REPLACE INTO station_weights (station_id, source, location_id, weight)
+        SELECT station_id, source, location_id, weight FROM _stg_sw
+    """)
+    db.unregister_df("_stg_sw")
+
 
 # ── Fixture condivisa: DB seeded + dataset + modello addestrato ───────────────
 # Costruisce tutto UNA SOLA VOLTA per tutti i test che richiedono il modello.
