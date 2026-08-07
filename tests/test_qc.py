@@ -189,6 +189,21 @@ def test_stall_7_rows_30min_flags(db: DuckDBClient) -> None:
     assert result.get("stall_sensor", 0) >= 1
 
 
+def test_stall_whole_run_flagged(db: DuckDBClient) -> None:
+    """Run >= 3h → flaggata l'INTERA run, non solo la coda (P5, review oracle)."""
+    t0 = datetime(2024, 6, 1, 8, 0)
+    n = 8  # 8 righe a 30 min = run di 210 min
+    for i in range(n):
+        _insert_obs(db, "RT5", t0 + timedelta(minutes=30 * i), temp_c=15.0, granularity="realtime")
+    result = compute_quality_flags(db)
+    assert result.get("stall_sensor", 0) == n
+    rows = db.execute(
+        "SELECT ts FROM quality_flags WHERE flag_type = 'stall_sensor' ORDER BY ts"
+    ).fetchall()
+    assert len(rows) == n
+    assert rows[0][0] == t0  # anche il primo campione della run è flaggato
+
+
 def test_stall_gap_breaks_run(db: DuckDBClient) -> None:
     """Run rotta da gap > 90 min → nessun flag stall."""
     t0 = datetime(2024, 6, 1, 8, 0)

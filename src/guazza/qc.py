@@ -100,6 +100,9 @@ def _insert_stall_flags(db: DuckDBClient) -> None:
     """Flag sensore bloccato: temp_c costante (arrot. a STALL_ROUND decimale) per >= STALL_MINUTES min.
 
     Un gap temporale > 90 min rompe la run (reimposta il gruppo).
+    Viene flaggata l'INTERA run (tutti i campioni) se la sua durata totale
+    supera la soglia — non solo la coda: l'esclusione nel dataset del correttore
+    deve coprire tutto il periodo di stallo.
     """
     db.execute(f"""
         INSERT INTO quality_flags
@@ -108,14 +111,17 @@ def _insert_stall_flags(db: DuckDBClient) -> None:
             source, station_id, ts, granularity,
             'stall_sensor', 'temp_c',
             temp_c,
-            'run_min=' || date_diff('minute', run_start, ts)::VARCHAR
+            'run_total_min=' || date_diff('minute', run_start, run_end)::VARCHAR
               || ' temp=' || ROUND(temp_c, 1)::VARCHAR
         FROM (
             SELECT
                 source, station_id, ts, granularity, temp_c, grp,
                 MIN(ts) OVER (
                     PARTITION BY source, station_id, grp
-                ) AS run_start
+                ) AS run_start,
+                MAX(ts) OVER (
+                    PARTITION BY source, station_id, grp
+                ) AS run_end
             FROM (
                 SELECT
                     source, station_id, ts, granularity, temp_c,
@@ -148,7 +154,7 @@ def _insert_stall_flags(db: DuckDBClient) -> None:
                 ) change_sub
             ) grp_sub
         ) run_sub
-        WHERE date_diff('minute', run_start, ts) >= {STALL_MINUTES}
+        WHERE date_diff('minute', run_start, run_end) >= {STALL_MINUTES}
     """)
 
 
@@ -159,6 +165,9 @@ def _insert_bias_solar_flags(db: DuckDBClient) -> None:
     La moda del weather_code è calcolata in Python (pattern output.py hour_wc_modal).
     """
     # Step 1: weather_code per (location, local_date, local_hour) — run più recente per (source, ts_valid)
+    # Bound temporale (P4, review oracle): servono solo i weather_code delle date con
+    # osservazioni Netatmo realtime flaggabili — la subquery evita di caricare
+    # l'intero storico forecasts a ogni run del batch QC.
     wc_rows = db.execute("""
         SELECT location_id, local_date, local_hour, weather_code
         FROM (
@@ -169,6 +178,13 @@ def _insert_bias_solar_flags(db: DuckDBClient) -> None:
                 weather_code
             FROM forecasts
             WHERE weather_code IS NOT NULL
+              AND CAST(ts_valid AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome' AS DATE) >= (
+                  SELECT MIN(CAST(ts AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Rome' AS DATE))
+                  FROM observations
+                  WHERE granularity = 'realtime'
+                    AND source = 'netatmo'
+                    AND temp_c IS NOT NULL
+              )
             QUALIFY ROW_NUMBER() OVER (
                 PARTITION BY source, location_id, ts_valid
                 ORDER BY ts_run DESC

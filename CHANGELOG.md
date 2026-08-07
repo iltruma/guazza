@@ -26,6 +26,12 @@ Versioning: major per sprint, minor per milestone interne.
   casi degeneri invariati. (review oracle, P1)
 - **`eval_X`/`eval_y` → `eval_set`** in `train_corrector` (API sklearn canonica,
   robusta ai futuri build LightGBM). (P3)
+- **QC realtime**: `stall_sensor` flagga l'intera run di stallo (durata totale ≥180min,
+  non solo la coda) — l'esclusione dal dataset del correttore copre tutto il periodo;
+  `bias_solar` limita i weather_code alle date con osservazioni Netatmo realtime
+  (subquery MIN, niente carico dell'intero storico). (P4/P5, review oracle)
+- **`docs/contract.md`**: descrizione bande CI80 con correttore attivo + campo
+  `precip_prob_ml` documentato.
 
 ## [0.16.0] - 2026-08-07
 

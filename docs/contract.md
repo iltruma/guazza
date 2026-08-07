@@ -60,6 +60,7 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
           "precip_ci80_lo": float | null,
           "precip_ci80_hi": float | null,
           "precip_prob": float | null,
+          "precip_prob_ml": float | null,
           "wind_speed_ms": float | null,
           "weather_code": int | null
         }
@@ -86,40 +87,47 @@ File: `data/output/{location_id}.json` (uno per location, sovrascritto ad ogni r
 - `precip_mm.prob_rain` è la probabilità P(precip > 0.2mm) emessa dal classificatore binario LightGBM calibrato con isotonic regression. `null` se il classificatore non è presente negli artifacts (es. modello vecchio, cold-start). Se presente, questo valore sostituisce anche `P(precip > 0.2mm)` nel SignalBag del DLE.
 - `days[].indicators.*.rule_text` è il testo della regola YAML che ha prodotto il verdetto, per debugging e trasparenza.
 - ~~`days[0].intraday`~~ rimosso 2026-06-27: la correzione aritmetica D+0 di Tmin/Tmax con le osservazioni SIR realtime generava valori assurdi in assenza di letture notturne (Tmin = 36°C di pomeriggio). Le card `tmin_c`/`tmax_c` per D+0 sono ora la previsione ML pura, identica al grafico orario. Gli **indicatori DLE** (panni, motorino, gelata) continuano a usare `build_signals_today()` con realtime (decisione D-015).
-- `days[].hourly[].temp_ci80_lo/hi` e `precip_ci80_lo/hi` sono le **bande di confidenza orarie CI 80%** derivate per interpolazione dal forecast daily (rescaling dello stesso profilo NWP grezzo con bound `tmin_c.ci80_lo/hi`, `tmax_c.ci80_lo/hi`, `precip_mm.ci80_lo/hi`). Sono `null` se i bound daily sono assenti (es. cold-start CI o modello NWP). Le bande orarie non esistono per il vento (solo `wind_speed_ms` puntuale). Il frontend le usa per disegnare la fascia d'incertezza nei grafici daily/weekly (toggle "Banda CI 80%").
+- `days[].hourly[].temp_ci80_lo/hi` e `precip_ci80_lo/hi` sono le **bande di confidenza orarie CI 80%** derivate per interpolazione dal forecast daily (rescaling dello stesso profilo NWP grezzo con bound `tmin_c.ci80_lo/hi`, `tmax_c.ci80_lo/hi`, `precip_mm.ci80_lo/hi`). Con il **correttore orario attivo** (D-024) le bande di temperatura sono derivate dalla posizione normalizzata del p50 corretto negli stessi bound daily annidati (`lo ≤ p50 ≤ hi` garantita per costruzione). Sono `null` se i bound daily sono assenti (es. cold-start CI o modello NWP). Le bande orarie non esistono per il vento (solo `wind_speed_ms` puntuale). Il frontend le usa per disegnare la fascia d'incertezza nei grafici daily/weekly (toggle "Banda CI 80%").
+- `days[].hourly[].precip_prob_ml` è la **P(pioggia) oraria ML**: probabilità che l'ora h sia l'ora di pioggia, condizionato a giorno piovoso — la prob daily del classificatore (`precip_mm.prob_rain`) distribuita secondo il timing NWP (`precip_prob` oraria normalizzata a max=1 sul giorno). NON è una probabilità oraria calibrata e non somma a 1. `null` se `prob_rain` è assente, se nessuna ora ha `precip_prob` non-null o se il massimo giornaliero è 0. Il frontend la mostra nel tooltip dei grafici daily/weekly (vista Guazza).
 
 ## `skill.json` — curva di skill (file globale)
 
 File separato `data/output/skill.json`, **uno solo** (non per-location): generato da
-`jobs/review.py` come parte del review giornaliero, letto dal frontend per la sezione "Quanto è affidabile".
-Misura retrospettiva MAE Guazza vs consensus NWP per orizzonte D+0…D+7, contro il
-**termometro SIR primario** di ogni location (verità indipendente, non il target pesato).
+`jobs/review.py` ogni giorno (non condizionale al train), letto dal frontend per la sezione "Quanto è affidabile".
+Misura retrospettiva MAE Guazza vs consensus NWP per orizzonte D+0…D+7, contro le
+**osservazioni SIR pesate** (`obs_weighted_daily`) di ogni location.
 
 ```json
 {
-  "generated_at": "2026-06-05T...Z",
-  "ground_truth": "sir_primary",
-  "window_start": "2025-10-15",
-  "window_end": "2026-06-05",
+  "generated_at": "2026-08-06T...Z",
+  "ground_truth": "sir_weighted",
+  "window_start": "2026-05-07",
+  "window_end": "2026-07-30",
   "embargo_days": 7,
   "leads_h": [0, 24, 48, 72, 96, 120, 144, 168],
-  "min_samples_per_lead": 5,
+  "min_samples_per_lead": 2,
   "locations": {
     "casa_cercina": {
       "sir_station_id": "TOS01001215",
       "tmin_c": [{"lead_h": 0, "n": 232, "mae_nwp": 1.85, "mae_ml": 1.46, "skill_pct": 21.1}, ...],
-      "tmax_c": [{...}, ...]
+      "tmax_c": [{...}, ...],
+      "coverage": {
+        "tmax_c": [{"lead_h": 0, "n": 232, "cov80": 0.74, "cov90": 0.85}, ...],
+        "tmin_c": [{...}, ...]
+      },
+      "rain_prob": [{"lead_h": 0, "n": 87, "brier_g": 0.148, "brier_n": 0.175, "p_wet_g": 0.62, "p_dry_g": 0.08}, ...]
     }
   }
 }
 ```
 
-- Solo `tmin_c` e `tmax_c`: la MAE su precip è troppo rumorosa per una curva pulita.
-- Un punto con `n < min_samples_per_lead` ha `mae_*`/`skill_pct` a `null` (campione insufficiente).
+- `tmin_c` e `tmax_c`: curva MAE per orizzonte (Guazza vs consensus NWP).
+- `coverage`: copertura empirica CI80/CI90 dalle predictions di produzione (CQR+ACI).
+- `rain_prob`: Brier score P(pioggia) (Guazza prob vs baseline NWP binaria, soglia 0.2mm).
+- Un punto con `n < min_samples_per_lead` ha i campi numerici a `null` (campione insufficiente).
 - `skill_pct = (1 − mae_ml/mae_nwp)·100`; negativo = Guazza peggiora il NWP su quella location/lead.
-- `window_end` è l'ultima data con osservazione SIR reale (le date forecast future sono escluse).
-- Finestra limitata dall'archivio `previous_dayN` di Open-Meteo (~ott 2025→oggi): è una
-  finestra di mesi, non lifetime — il frontend lo dichiara esplicitamente.
+- Finestra mobile: `window_days=90` giorni scorrevoli con `embargo_days=7` (le osservazioni più
+  recenti non ancora validate sono escluse). `window_start` e `window_end` cambiano ogni giorno.
 
 ## `skill_history.json` — time series forecast vs actual (file globale)
 
