@@ -30,7 +30,8 @@ gestire la sparsità storica.
   soglia. Nessun problema osservato.
 - **Historical Forecast API** (`historical-forecast-api.open-meteo.com`): rate
   limit per IP molto più aggressivo. Il backfill `historical` (2022→oggi)
-  genera ~70 richieste a causa del temporal chunking (D-012) e satura la quota.
+  genera ~70 richieste a causa del temporal chunking (`_OM_CELL_BUDGET` in
+  `fetch_openmeteo.py`) e satura la quota.
   Una volta scattato il limite, il 429 arriva immediatamente sulla prima
   richiesta — non è una questione di frequenza intra-run ma di quota IP
   cumulativa. Le risposte 429 **non** includono `Retry-After`.

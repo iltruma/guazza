@@ -95,7 +95,7 @@ resta come monitor leggero; non è letto dal frontend principale.
 **Contesto**: 6 location, dati storici limitati per location.
 
 **Opzioni**:
-1. 4 modelli indipendenti per location
+1. Modelli indipendenti per location (uno per ciascun modello NWP — 4 oggi)
 2. 1 modello globale con `location_id` come feature categorica
 
 **Scelta**: opzione 2.
@@ -205,12 +205,17 @@ non batte il NWP sull'intensità in mm.
 1. **Presenza pioggia** → segnale primario = `rain_clf` (hurdle stadio 1,
    BSS +0.16/+0.28, AUC 0.73-0.79): `P(precip > 0.2mm)` nel DLE e in UI
    (`build_signals` in `output.py`), `rain_prob` persistita in `predictions`.
-   Niente ensemble-NWP nel DLE per la presenza pioggia.
+   Niente ensemble-NWP nel DLE per la presenza pioggia. Naming: `rain_clf` è
+   l'artifact interno (dict `pred`); nel JSON di output il campo è
+   `precip_mm.prob_rain` (contract.md), la UI legge `rain_prob`.
 2. **Intensità mm** → ceiling dichiarato: i quantili ML restano in output solo
-   come display/CI, nessuna claim di skill. Wet regressor rimosso (2026-08-04,
-   skill negativo in 3/4 fold).
+   come display/CI, senza claim di skill sull'intensità; `precip_mm.mean` resta
+   il valore atteso E[precip] per valutazione economica/rischio (contract.md),
+   non una predizione puntuale da citare come skill. Wet regressor rimosso
+   (2026-08-04, skill negativo in 3/4 fold).
 3. **Nessun modello orario precip** (conferma D-024): `precip_prob_ml` oraria =
-   prob daily ML distribuita sul timing NWP, non prob oraria calibrata.
+   prob daily ML distribuita sul timing NWP — non un modello orario indipendente,
+   non prob oraria calibrata.
 
 L'ensemble NWP resta il segnale per vento/umidità/nebbia.
 
@@ -277,8 +282,18 @@ NWP-ensemble-mean su target pesato:
 - **precip +3-11% ≈ 0** — ceiling strutturale (D-014), nessuna claim di skill.
 - **rain_clf BSS +0.16/+0.28** — P(pioggia) funziona.
 
-Dettaglio per-location e confronto vs gauge primario (KI-022, backtest multilead
-D+0..D+7): materiale case study — storico completo in git.
+**Caveat metodologico (fold 1-2 esclusi)**: i fold 1-2 (pre-ott 2024) misurano lo
+skill contro ICON-EU singolo (unico modello con archivio multilead pre-2024); i fold
+3-4 contro l'ensemble a 4 modelli, baseline più forte — benchmark eterogenei non
+aggregabili in una metrica unica (D-023).
+
+**Skill vs gauge primario indipendente** (post-KI-022, `analysis/skill_vs_primary.py`):
+tmin **+8%**, tmax **+26%** — il target pesato è un proxy del microclima, il gauge è
+la verità osservata; backtest multilead D+0..D+7: tmin +13…+33%, tmax +5…+13% vs gauge.
+Nel case study si riportano entrambi (vs target e vs gauge), per location.
+
+Dettaglio per-location (KI-022, backtest multilead D+0..D+7): materiale case study —
+storico completo in git.
 
 **Conseguenza**: lo stesso baseline va usato per il confronto esterno (LAMMA) quando
 `benchmark_forecasts` sarà popolata. Onestà sul baseline = credibilità del case study.
