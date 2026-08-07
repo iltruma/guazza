@@ -352,3 +352,34 @@ regression test", non più vero. Le colonne SQL `anom_*` restano materializzate
 in `features_daily` e coperte dai test (commento in `features.py`), ma fuori
 `FEATURE_COLS`. `_TARGET_CLIM_COL` è vivo solo per init_score / predict residual
 (`models.py`), non per anomaly. Nessun fix pianificato.
+
+---
+
+## KI-020 — current conditions: wind_dir scalare + remediation *_obs
+
+**Severità**: bassa
+**Stato**: risolto (2026-08-07) — fix wind_dir + remediation no-op
+
+Due residui emersi dal fix del JOIN `station_weights` (2026-05-29):
+
+1. **wind_dir media scalare**: `get_current_conditions` aggregava la direzione
+   del vento con media pesata scalare `Σ(dir·w)/Σw`, non circolare. Vicino al
+   wraparound 0/360° il blend era errato (350°+10° → ~180° invece di ~0°).
+   **Risolto** (commit 5f72c3e): media circolare
+   `atan2(Σw·sinθ, Σw·cosθ)` + wrap `+360 % 360` in `_BLEND_SQL` e nel fallback
+   NWP (`db_queries.py`), con guard `COUNT` sul wind_dir non-null (niente
+   NULLIF su x/y: y=0 è normale coi venti cardinali). Test wraparound per
+   blend e fallback in `test_output.py`.
+
+2. **Remediation `predictions.*_obs`**: le righe backfillate con la vecchia
+   logica (JOIN su `location_id`) non si autoricalcolavano (guard
+   `tmin_obs IS NULL`). **Chiusa come no-op** (2026-08-07): `predictions` è
+   vuota sul DB locale (0 righe) e il DB prod verrà ricreato da zero al deploy
+   (schema `cape_jkg`) — nessun dato stale da correggere. La SQL una-tantum
+   documentata qui sotto resta valida per qualsiasi DB che avesse righe
+   pre-fix:
+   ```sql
+   UPDATE predictions SET tmin_obs = NULL, tmax_obs = NULL, precip_obs = NULL
+   WHERE location_id IN ('casa_nicco', 'lavoro_cosimo');
+   ```
+   poi rieseguire `predict` (o il backfill).

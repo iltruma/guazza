@@ -16,6 +16,10 @@ Versioning: major per sprint, minor per milestone interne.
   KI-004 invariato. Fix drift `docs/status.md`: header versione v0.16.0 e
   `_OM_CELL_BUDGET` reale 241_920 (era 483_840). Commento in `features.py`
   aggiornato al path archivio KI-024.
+- **KI-020 chiuso**: dopo il fix wind_dir (5f72c3e), la remediation
+  `predictions.*_obs` è no-op — `predictions` vuota sul DB locale e DB prod da
+  ricreare da zero (schema `cape_jkg`). Spostato in
+  `docs/archive/known_issues_resolved.md`.
 
 ### Removed
 - **`guazza-ingest daily`**: comando CLI rimosso — l'ingestion giornaliera è in

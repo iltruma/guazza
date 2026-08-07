@@ -84,34 +84,3 @@ per IP a ~4 s TTFB. Diagnostica 2026-05-26: nessun client-side workaround
 ~28 combo station×sensor → ~120 s wall-clock irriducibili sul path storico;
 fetch sequenziale obbligatorio (`_ingest_sir_historical_range`, niente
 `max_workers>1`). Proxy multi-IP fuori scope / ToS. Non sostituire httpx.
-
----
-
-## KI-020 — Remediation `predictions.*_obs` (stazioni condivise)
-
-**Severità**: bassa
-**Stato**: remediation pendente; wind_dir circolare risolto (2026-08-07)
-
-`get_current_conditions` / backfill pesano via `station_weights` (JOIN
-`station_id`). Residuo unico:
-
-1. **Remediation `predictions.*_obs`** (zona rossa — scrittura DuckDB):
-   `backfill_prediction_obs` aggiorna solo `tmin_obs IS NULL`. Righe
-   backfillate con la vecchia logica (JOIN `location_id`) restano stale su
-   location con stazioni condivise (`casa_nicco`, `lavoro_cosimo`), salvo
-   reset DB. Una-tantum:
-   ```sql
-   UPDATE predictions SET tmin_obs = NULL, tmax_obs = NULL, precip_obs = NULL
-   WHERE location_id IN ('casa_nicco', 'lavoro_cosimo');
-   ```
-   poi `predict` / backfill. Mostrare e confermare prima di eseguire.
-   Se il DB prod viene ricreato da zero (coda status), questo punto decade.
-
-**Risolto (2026-08-07)**: la media scalare di `wind_dir_deg` (wraparound
-0/360 errato: 350°+10° → ~180° invece di ~0°) è stata sostituita con la media
-circolare `atan2(Σw·sinθ, Σw·cosθ)` + wrap `+360 % 360`, con guard `COUNT` su
-wind_dir non-null (niente NULLIF su x/y: y=0 è normale con venti cardinali).
-Applicata a `_BLEND_SQL` e al fallback NWP in `db_queries.py`. Test wraparound
-(350+10 → 0, blend e fallback) in `test_output.py`.
-
----
