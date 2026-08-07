@@ -9,6 +9,7 @@ Versioning: major per sprint, minor per milestone interne.
 ## [Unreleased]
 
 ### Docs
+- **AGENTS.md allineato** alla pulizia: tabella stack completa in AGENTS.md (era "13 voci → README"), range decisioni D-001..D-024, regime cockpit esplicito ("niente session-log in status.md").
 - **Semplificazione cerimonia docs** (audit complessità @oracle): `docs/status.md` →
   cockpit (stato, coda, prossima mossa; session-log rimossi, storia in CHANGELOG);
   `docs/decisions.md` snellita (D-019/D-020/D-021/D-022/D-024: narrativa compressa,

@@ -34,7 +34,7 @@ Cloud Architect e Solution Architect con background ML applicato. Programmatore 
 
 ## Stack blindato
 
-Scelte validate da debate multi-modello. **Non proporre alternative** a meno che un bug tecnico reale le imponga. Tabella completa (13 voci) → `README.md` §Architettura.
+Scelte validate da debate multi-modello. **Non proporre alternative** a meno che un bug tecnico reale le imponga. Tabella completa → sotto; dettagli deploy → `README.md` §Architettura.
 
 | Componente | Scelta | Vincolo operativo |
 |---|---|---|
@@ -63,7 +63,7 @@ Se uno di questi appare come dipendenza necessaria, segnalarlo e proporre altern
 
 ## Decisioni scientifiche — blindate
 
-Hard stop operativi (vedi dettaglio in `docs/decisions.md`, D-001..D-022):
+Hard stop operativi (vedi dettaglio in `docs/decisions.md`, D-001..D-024; D-007/D-011/D-012 rimosse):
 
 - **ERA5 mai come predittore di forecast** (solo climatologia statica o ground truth alternativo)
 - **Embargo ≥ 7 giorni in CV** (autocorrelazione sinottica)
@@ -208,7 +208,7 @@ Mai copiare la stessa tabella in due file.
 1. **Leggere `docs/status.md`** a inizio sessione
 2. **Fermarsi sui punti aperti** — non inventare valori per soglie, coordinate, o endpoint non testati. Segnalare e proporre un default. Aspettare conferma se bloccante.
 3. **Aggiornare `docs/known_issues.md`** se si trovano workaround non ovvi
-4. **Suggerire aggiornamento a `docs/status.md`** a fine sessione
+4. **Suggerire aggiornamento a `docs/status.md`** a fine sessione — **cockpit**: solo header + coda (tick/add/close P); niente session-log in `status.md` (→ `CHANGELOG.md`)
 5. **Protocollo fine sessione** — riepilogo breve in 3 punti: **Fatto** (file, commit, tag) · **Non fatto / Bloccato** · **Prossimo suggerito**. Non ripetere dettagli già nel commit o nel codice.
 
 Per modifiche strutturali: vedi §Regole di modifica del codice — Gate analisi funzionale.
