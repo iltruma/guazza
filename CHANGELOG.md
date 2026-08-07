@@ -8,6 +8,8 @@ Versioning: major per sprint, minor per milestone interne.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-07
+
 ### Added
 - **Correttore orario (`hourly_corrector.py`)**: nuovo modulo + CLI `guazza-hourly-correct`
   (train/eval/status). LightGBM regression che impara il delta sistematico tra la forma

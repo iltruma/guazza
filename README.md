@@ -214,7 +214,7 @@ container su GitHub Container Registry, allineata a `pyproject.toml`:
 
 L'immagine è single-stage: `python:3.13-slim` + `uv` (binario ufficiale) + nginx + frontend statico. Il
 container gira come utente non-root (UID 1000), include nginx sulla porta 8080
-per il servizio web e gli entry point CLI (`guazza-ingest`, `guazza-forecast`, `guazza-review`) per i job schedulati.
+per il servizio web e gli entry point CLI (`guazza-ingest`, `guazza-forecast`, `guazza-review`, `guazza-hourly-correct`) per i job schedulati.
 
 ### Procedura di rilascio
 

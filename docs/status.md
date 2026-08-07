@@ -7,7 +7,7 @@
 
 | | |
 |---|---|
-| Versione | **0.15.0** |
+| Versione | **0.16.0** |
 | Test | 315 verdi (suite completa ~41s) |
 | Lint / mypy | ✅ puliti |
 | Deploy | k3s astra/nebula, namespace `guazza`, Flux + SOPS — DB prod da resettare (schema `cape_jkg`) |
