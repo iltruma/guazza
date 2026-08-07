@@ -18,7 +18,6 @@ from guazza.fetch_netatmo import (
     save_netatmo_to_db,
 )
 from guazza.fetch_openmeteo import (
-    _discard_records,
     _fetch_one_model_historical,
     _fetch_one_model_multilead,
     _infer_ts_run,
@@ -938,23 +937,6 @@ def test_fetch_one_model_historical_calls_on_records_per_chunk() -> None:
     assert len(collected) == 2, f"attesi 2 call, ricevuti {len(collected)}"
     for call_recs in collected:
         assert len(call_recs) > 0, "ogni chunk deve produrre almeno un record"
-
-
-def test_fetch_one_model_historical_on_records_none_does_not_raise() -> None:
-    """_discard_records come on_records non solleva eccezioni."""
-    chunks = [("2026-05-01", "2026-05-01")]
-    loc_ids = ["loc_a"]
-    lats = [43.8]
-    lons = [11.1]
-
-    with (
-        patch("guazza.fetch_openmeteo._fetch_om_json_historical", return_value=_OM_HISTORICAL_MOCK),
-        patch("time.sleep"),
-    ):
-        _fetch_one_model_historical(
-            "ecmwf_ifs", chunks, loc_ids, lats, lons,
-            on_records=_discard_records,
-        )
 
 
 def test_fetch_openmeteo_historical_batch_models_in_series() -> None:

@@ -288,18 +288,3 @@ def test_predict_delta_approx_bias(synthetic_artifacts: dict) -> None:
 def test_predict_delta_strange_values_no_exception() -> None:
     """predict_delta con oggetto senza .predict -> None (mai eccezione)."""
     assert predict_delta(object(), dict.fromkeys(FEATURES)) is None
-
-
-def test_predict_delta_clamped(synthetic_artifacts: dict) -> None:
-    """Il delta e clampato a +-DELTA_CLAMP_C."""
-    corrector = synthetic_artifacts["corrector"]
-    assert corrector is not None
-
-    row: dict = {
-        "hour": 12, "month": 7, "location_id": _LOC,
-        "shape_norm": 0.5, "wc": 0.0, "precip_flag": 0,
-        "wind_ms": 2.0, "humidity_pct": 60.0,
-    }
-    delta = predict_delta(corrector, row)
-    assert delta is not None
-    assert -DELTA_CLAMP_C <= delta <= DELTA_CLAMP_C

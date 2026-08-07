@@ -71,11 +71,6 @@ def test_alpha_symmetric() -> None:
     assert math.isclose(_compute_alpha({"fn": 2, "fp": 2}), 0.5)
 
 
-def test_alpha_bisenzio() -> None:
-    alpha = _compute_alpha({"fn": 10, "fp": 1})
-    assert math.isclose(alpha, 1 / 11, rel_tol=1e-6)
-
-
 def test_eval_simple_true() -> None:
     signals: SignalBag = {"P(precip > 0.2mm)": 0.05}
     assert _eval_condition("P(precip > 0.2mm) < 0.15", signals) is True

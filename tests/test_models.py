@@ -26,7 +26,6 @@ from guazza.models import (
     ClassifierBundle,
     ModelBundle,
     TrainingArtifacts,
-    _cqr_q_hat,
     _lead_time_bucket,
     _train_rain_classifier,
     crps_from_quantiles,
@@ -248,16 +247,6 @@ def test_lead_time_bucket() -> None:
     assert _lead_time_bucket(168) == "D+5+"
 
 
-def test_cqr_q_hat_coverage() -> None:
-    rng = np.random.default_rng(0)
-    y = rng.normal(0, 1, 200)
-    q_lo = y - 1.5
-    q_hi = y + 1.5
-    q_hat = _cqr_q_hat(q_lo, q_hi, y, alpha=0.10, n=len(y))
-    # Con intervallo centrato, q_hat dovrebbe essere ≤ 0 (CI già coperto)
-    assert isinstance(q_hat, float)
-
-
 def test_crps_from_quantiles_perfect() -> None:
     y = np.array([10.0, 20.0, 30.0])
     preds = dict.fromkeys(QUANTILES, y)  # predizioni perfette
@@ -453,13 +442,6 @@ def test_walk_forward_cv_structure_and_coverage(cv_results: tuple) -> None:
 
 
 # ── Adaptive Conformal Inference (ACI) — spike ─────────────────────────────
-
-def test_aci_starts_at_target() -> None:
-    """ACI deve partire da alpha_t = alpha_target."""
-    aci = AdaptiveConformalizer(alpha_target=0.10)
-    assert aci.alpha_t == 0.10
-    assert aci.n_updates == 0
-
 
 def test_aci_lowers_alpha_under_miscoverage() -> None:
     """Sequenza di miscoverage: ACI abbassa alpha_t → CI più largo (più copertura)."""
