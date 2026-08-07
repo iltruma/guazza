@@ -18,6 +18,12 @@ Versioning: major per sprint, minor per milestone interne.
   daily/weekly (vista Guazza; i punti NWP non hanno il campo). (D-024, review oracle)
 
 ### Fixed
+- **Upsert SIR per-combo in `ingest historical`**: prima accumulava tutti i fetch
+  e scriveva solo alla fine — un crash a metà perdeva tutto. Ora ogni combo
+  stazione+sensore viene upsertata subito dopo il download (idempotente al riavvio).
+- **Finestra temporale nei log scrape Open-Meteo**: `detail` (es. `2024-01-01 to
+  2024-03-15`) ora compare nel messaggio di `log_scrape` (openmeteo_historical/
+  multilead) e non solo nei record extra.
 - **Bande CI80 orarie che si incrociavano con il correttore attivo**: il
   ri-ancoraggio indipendente di p50 e bande (min-max separati) produceva
   `lo > p50` e `lo > hi` con intervalli asimmetrici (CQR+ACI). Le bande sono ora
