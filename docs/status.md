@@ -65,6 +65,7 @@ Deploy prod: reset DB schema (cape_jkg), `guazza-ingest historical` su k8s, `gua
 - **P(pioggia) oraria** (`precip_prob_ml` in `hourly[]`): prob daily ML (`rain_clf.prob_rain`) distribuita sul timing NWP (`precip_prob` normalizzata a max=1). Semantica esplicita: P che l'ora h sia l'ora di pioggia dato giorno piovoso — non è prob oraria calibrata. Tooltip frontend "P pioggia ML" (vista Guazza daily/weekly). Nessun nuovo modello/target (opzione 1 oracle; classificatore orario rifiutato: D-014/D-005).
 - **Follow-up review oracle (fatti in sessione)**: P4 — `bias_solar` ora limita i weather_code alle date con osservazioni Netatmo realtime flaggabili (subquery su MIN data obs — niente dipendenza da oggi, niente carico dell'intero storico); P5 — `stall_sensor` flagga l'**intera** run di stallo (durata totale ≥180min), non solo la coda: l'esclusione dal dataset del correttore copre tutto il periodo (test dedicato run di 210min → 8/8 righe flaggate); `docs/contract.md` aggiornato (bande CI80 con correttore + campo `precip_prob_ml`).
 - Nota: 2 test riferivano `netatmo_fetch_log` (tabella rimossa in 54ed68f) — sistemati in sessione (test della feature rimossa eliminato, idempotenza su observations preservata).
+- **Revisione decisioni** (review @oracle, commit 65969bb): rimosse D-007/D-011/D-012, semplificate D-013/D-016, aggiornati D-003/D-004/D-005/D-014/D-017/D-019/D-020/D-024 — dettaglio in `docs/decisions.md` (tombstones in coda). Nessun cambio di logica.
 
 ## Sessione 2026-08-06 — daily fuori dal cron, review con finestra di recupero
 
