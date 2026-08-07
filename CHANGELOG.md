@@ -9,6 +9,14 @@ Versioning: major per sprint, minor per milestone interne.
 ## [Unreleased]
 
 ### Docs
+- **Semplificazione cerimonia docs** (audit complessità @oracle): `docs/status.md` →
+  cockpit (stato, coda, prossima mossa; session-log rimossi, storia in CHANGELOG);
+  `docs/decisions.md` snellita (D-019/D-020/D-021/D-022/D-024: narrativa compressa,
+  scelta + conseguenza operativa, nessuna perdita di endpoint/parametri);
+  `README.md` collassato (rimossa tabella sprint duplicata e drift: feature 32,
+  `ingest daily` rimosso, moduli aci/cv/hourly_corrector/db_queries, docs/contract,
+  `affidabilita.html`; fusa "Come ricostruire da zero" in "Primo forecast";
+  eliminato snippet backfill skill_history monouso; layout frontend compresso).
 - **Revisione decisioni** (review @oracle): rimosse D-007 (canonica in AGENTS.md),
   D-011 e D-012 (implementative, in `fetch_openmeteo.py`/KI-004); semplificate
   D-013 (solo set finale 4 modelli) e D-016 (decisione + numeri canonici fold 3-4,
@@ -33,6 +41,14 @@ Versioning: major per sprint, minor per milestone interne.
   `guazza-review` (finestra [ieri-7, ieri], auto-guarigione). Il backfill Netatmo
   multi-giorno (`--netatmo-all`) non è più disponibile; `aggregate_netatmo_daily`
   resta in uso da review per il giorno di finestra.
+- **`polars`, `boto3` da `pyproject.toml`**: nessun uso in alcun file (grep
+  completo) — deps morte da audit complessità. `boto3` era dichiarato per backup
+  R2 ma mai importato; backup resta operazione manuale/esterna.
+
+### Fixed
+- **`affidabilita.html` mancante nell'immagine Docker**: il `COPY` in `Dockerfile`
+  copiava solo `index.html app.js style.css` — la pagina affidabilità era un 404
+  in produzione. Aggiunto al `COPY` (audit complessità).
 
 ### Added
 - **P(pioggia) oraria `precip_prob_ml` nel profilo `hourly[]`**: prob daily del

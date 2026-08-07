@@ -334,55 +334,43 @@ SIR realtime (CET naive, UTC+1 fisso), fonti esterne con timestamp locale, Netat
 
 **Data**: 2026-06-27
 
-**Contesto**: KI-023 — walk-forward CV 2025-2026 mostra drift di calibrazione CQR:
-`coverage_80` = 0.688/0.699 vs target 0.80 su tmin/tmax, scarto di 5-11pp.
-Il calibration set statico (364 righe, feb-mag 2026) non è rappresentativo
-dei dati di produzione futuri. Due vie correttive possibili.
+**Contesto**: KI-023 — walk-forward CV 2025-2026: drift di calibrazione CQR,
+`coverage_80` = 0.688/0.699 vs target 0.80 (tmin/tmax); il calibration set statico
+non è rappresentativo dei dati di produzione futuri.
 
-**Opzioni**:
-1. **Online LightGBM**: riaddestrare periodicamente il modello su dati freschi
-2. **Adaptive Conformal Inference (ACI)**: Gibbs & Candès 2021 — correggere
-   solo la confidenza (α_t adattivo), modello congelato
+**Opzioni**: (1) online LightGBM — riaddestramento periodico su dati freschi;
+(2) ACI (Gibbs & Candès 2021) — correggere solo la confidenza (α_t adattivo),
+modello congelato.
 
 **Scelta**: opzione 2 (ACI).
 
-**Motivazione**:
-- Il drift osservato è di **calibrazione** (la predizione puntuale è decente,
-  ma i bound CI sono troppo stretti), non di accuratezza (MAE non degradato
-  significativamente). Correggere la confidenza è sufficiente e molto più
-  economico di riaddestrare un LightGBM con 4 modelli NWP.
-- ACI richiede solo le coppie (prediction, actual) già presenti in
-  `predictions.*_obs` — nessun accesso alle feature originali, nessun
-  accumulo di training set, nessun costo computazionale.
-- Online LightGBM su DuckDB single-writer in un CronJob k8s è fragile:
-  richiede lock, accumulo features, retrain periodico. Da valutare solo se
-  dopo 30-60gg di ACI la copertura è in target ma il MAE cresce.
+**Motivazione**: il drift è di **calibrazione**, non di accuratezza (MAE non
+degradato) → correggere la confidenza è sufficiente e molto più economico.
+ACI richiede solo le coppie (prediction, actual) già in `predictions.*_obs` —
+nessun accumulo di training set. Online LightGBM su DuckDB single-writer in un
+CronJob k8s è fragile (lock, retrain periodico); da valutare solo se dopo 30-60gg
+di ACI la copertura è in target ma il MAE cresce.
 
 **Algoritmo**: `alpha_{t+1} = clip(alpha_t + γ·(α_target − err_t), ε, 1−ε)`
 con γ = 0.005, ε = 0.01. Mapping α → larghezza CI: `width_corrected =
-width_CQR · (α_target / α_t)`. Dopo il cold start, la copertura long-run
-marginale converge a 1−α_target indipendentemente dal distribution shift.
+width_CQR · (α_target / α_t)`. Coverage long-run marginale converge a 1−α_target.
 
 **Cold start N=30**: le prime 30 osservazioni usano CQR statico invariato
-(`n_updates < 30` → ACI in bypass). Motivazione: sotto 30 aggiornamenti
-la stima di α_t è dominata dal rumore (un singolo errore sposta α del
-3-5%); 30 è il punto in cui la varianza campionaria è ≤ 10% di γ.
-Equivalente a ~30 giorni di produzione (una observation al giorno per
-target, dopo che D+0…D+7 sono backfillati).
+(`n_updates < 30` → ACI in bypass): sotto 30 aggiornamenti α_t è dominato dal
+rumore (un errore sposta α del 3-5%); 30 è il punto in cui la varianza
+campionaria è ≤ 10% di γ. ~30 giorni di produzione.
 
-**Monitor separato** (`src/guazza/monitor.py`): calcola `coverage_30d` per
-(target, lead_bucket) aggregato, indipendente dal predict job. Due motivi:
-1. Il predict job aggiorna ACI e genera previsioni — confondere feedback
-   (coverage reale) e azione (correzione α_t) in un unico job rende il
-   loop non debuggabile.
-2. Separazione = il monitor può fallire (`/fail` su Healthchecks) senza
-   bloccare la generazione delle previsioni, e viceversa.
+**Monitor separato** (`src/guazza/monitor.py`): `coverage_30d` per (target,
+lead_bucket) in job indipendente dal predict. Motivo: feedback (coverage reale)
+e azione (correzione α_t) in un unico job rendono il loop non debuggabile; il
+monitor può fallire (`/fail` su Healthchecks) senza bloccare le previsioni e
+viceversa.
 
 **Conseguenze**:
 - Implementazione: `src/guazza/aci.py` (`ACI_COLD_START_N=30`); stato `aci_state`
   in DuckDB persiste α_t per (target, lead_bucket) — sopravvive ai restart.
-- Nessuna modifica al contract JSON: il consumatore vede i bound CI di
-  sempre, semplicemente corretti da ACI quando warm.
+- Nessuna modifica al contract JSON: il consumatore vede i bound CI di sempre,
+  corretti da ACI quando warm.
 - Se dopo 30-60gg di operatività la copertura è in target ma il MAE cresce
   → riaprire l'opzione online LightGBM (Sprint 10+).
 
@@ -390,42 +378,26 @@ target, dopo che D+0…D+7 sono backfillati).
 
 **Data**: 2026-06-27
 
-**Contesto**: la pagina affidabilità (`affidabilita.html`) mostra solo una
-curva MAE per lead, aggregata su tutta la finestra skill. L'utente chiede
-"vorrei vedere se i modelli ci hanno preso nel passato" — un grafico che
-mostri, per ogni giorno passato, il forecast emesso a D-1 vs l'osservato
-a D, per ogni modello. Time series pura, non aggregata.
+**Contesto**: la pagina affidabilità mostrava solo una curva MAE aggregata;
+serviva una time series giorno-per-giorno (forecast D-1 vs osservato D, per modello).
 
-**Alternative considerate**:
-- **A. Riscrittura full di un JSON time series a ogni run**: job che interroga
-  DuckDB, ricostruisce tutte le time series, scrive il JSON. Semplice ma
-  O(window_size) a ogni run — scala male, complica il backfill incrementale.
-- **B. Append giornaliero + dump on-demand**: tabella DuckDB dedicata
-  `skill_history_daily` con PK composta, append idempotente di ~21 righe per
-  location al giorno. Il `dump` ricostruisce il JSON dalla tabella quando
-  serve. **Scelto.**
-- **C. Computed on-demand nel frontend**: il frontend interroga DuckDB
-  direttamente via API. Scartato: rompe il pattern "frontend statico, nginx
-  serve JSON", aggiunge complessità operativa (auth, latency, lock).
-
-**Decisione**: B.
+**Alternative**:
+- **A. Riscrittura full JSON a ogni run**: O(window_size), complica il backfill.
+- **B. Append giornaliero + dump on-demand**: tabella `skill_history_daily` con PK
+  composta, append idempotente di ~21 righe/location/giorno; il `dump` ricostruisce
+  il JSON dalla tabella. **Scelto.**
+- **C. Computed on-demand nel frontend**: rompe "frontend statico, nginx serve
+  JSON" (auth, latency, lock). Scartato.
 
 **Conseguenze**:
-- Ogni giorno il job `skill_history append` aggiunge 21 × 6 location = ~126
-  righe a `skill_history_daily`. Costo: pochi ms.
-- Il JSON `skill_history.json` viene rigenerato on-demand dal comando `dump`
-  (scrittura atomica). Veloce (DuckDB fa la query su ~21 × N × 6 location
-  e la restituisce come lista Python).
-- Backfill: il comando `append --days N` itera all'indietro, sfruttando la
-  PK per idempotenza. Eseguibile in qualsiasi momento senza rischiare
-  duplicati.
+- Il job `skill_history append` aggiunge ~126 righe/giorno (21 × 6 location);
+  il JSON `skill_history.json` è rigenerato on-demand dal comando `dump`
+  (scrittura atomica). Backfill: `append --days N` iterativo all'indietro,
+  idempotente per PK.
 - Il frontend ha accesso alla finestra completa (la tabella è la verità) e
-  può filtrare lato client per 7gg / 30gg / totale. Niente logica di finestra
-  lato backend.
-
-**Limitazione**: la PK include `lead_h` (oggi fisso a 24h) per future
-estensioni multi-lead (es. confrontare forecast D+0 vs D+3 nel tempo).
-Per ora il JSON espone solo lead 24h.
+  filtra lato client. Niente logica di finestra lato backend.
+- **Limitazione**: la PK include `lead_h` (oggi fisso 24h) per future estensioni
+  multi-lead; per ora il JSON espone solo lead 24h.
 
 **Confini con `skill.json` (2026-08-06)**: `skill_history_daily` = time series
 giorno-per-giorno (MAE per modello nel tempo, lead fisso 24h); `skill.json` =
@@ -436,38 +408,28 @@ la fonte della curva skill (predictions di produzione), non questo canale.
 
 ## D-021 — Nowcast temporale 30-60 min via Blitzortung
 
-**Contesto**: il sistema attuale (4 NWP + obs + ML) copre bene forecast
-orarie/giornaliere e realtime, ma manca un segnale anticipatorio per
-"sta arrivando un temporale nei prossimi 30-60 min". Le celle convettive
-si formano su scale che i NWP a 9km non risolvono in tempo.
+**Contesto**: i NWP a 9km non risolvono le celle convettive in tempo; manca un
+segnale anticipatorio per "temporale in arrivo nei prossimi 30-60 min".
 
-**Decisione**: Blitzortung (fulmini real-time free) come fonte scelta per
-il nowcast "temporale in arrivo". Mantiene l'architettura attuale intatta
-per forecast e realtime; Blitzortung aggiunge solo il segnale anticipatorio
-mancante (precursore canonico del temporale, 30-60 min prima della cella).
+**Decisione**: Blitzortung (fulmini real-time free) come fonte per il nowcast
+"temporale in arrivo". Aggiunge solo il segnale anticipatorio mancante, senza
+toccare l'architettura forecast/realtime.
 
-**Alternative scartate e perché**:
-- **Parsing tile PNG di RainViewer**: fragile, bandwidth, complessità
-- **Tomorrow.io Free Plan**: vendor lock-in, validazione NASA limitata a CONUS,
-  incoerente con l'architettura "4 NWP + obs + ML" (sostituirebbe il modello
-  proprietario interno). Resta opzione per usi non-core futuri (fallback vento
-  o altri parametri opzionali)
-- **Heuristic realtime** (∆p Netatmo, salto vento SIR, spike RH): orizzonte
-  0-15 min, troppo tardi per "30-60 min"
+**Alternative scartate**: parsing tile PNG RainViewer (fragile, bandwidth);
+Tomorrow.io Free Plan (vendor lock-in, incoerente con "4 NWP + obs + ML");
+heuristic realtime ∆p/salto vento/spike RH (orizzonte 0-15 min, troppo corto).
 
 **Implementazione prevista**:
 - API: `https://data.blitzortung.org/Data/Protected/lightning.json` (free, no
   auth per query basse; rate limit ~1 query/5s)
-- Strategia: strikes ultimi 30-60 min nel raggio di 50km dalla location; se
-  presenti, ETA = distanza del più vicino / velocità tipica (~40 km/h)
+- Strategia: strikes ultimi 30-60 min nel raggio di 50km dalla location; ETA =
+  distanza del più vicino / velocità tipica (~40 km/h)
 - Output JSON: `"storm_approaching": {"eta_min": 25, "intensity": "light"|"moderate"|"heavy"}`
   in `current`
 - Indicatore DLE opzionale (stile "panni") con semaforo allerta
 
 **Limitazione accettata**: Blitzortung copre solo temporali con fulmini, non
-pioggia generica. Per pioggia nei prossimi 30-60 min senza temporale non c'è
-alternativa accettabile libera. Se il caso d'uso si amplia, riaprire la
-discussione.
+pioggia generica senza temporale. Se il caso d'uso si amplia, riaprire.
 
 **Stato**: accettata, da implementare (coda `status.md` §D-021).
 
@@ -476,13 +438,12 @@ discussione.
 ## D-022 — Allerte meteo Protezione Civile via allertameteo.app
 
 **Contesto**: il sistema segnala rischi meteo operativi (panni, motorino,
-gelata), ma non le **allerte ufficiali** della Protezione Civile. L'utente
-deve consultare un sito esterno per sapere se oggi/domani c'è un'allerta
-arancione sul suo comune.
+gelata), ma non le **allerte ufficiali** della Protezione Civile (oggi/domani
+sul comune dell'utente).
 
-**Decisione**: allertameteo.app (community, free, no key) come fonte scelta
-per le allerte meteo ufficiali. Mantiene l'architettura "4 NWP + obs + ML"
-intatta; aggiunge solo il segnale "allerta" che non esiste oggi nel prodotto.
+**Decisione**: allertameteo.app (community, free, no key) come fonte per le
+allerte meteo ufficiali. Aggiunge solo il segnale "allerta" che non esiste
+oggi nel prodotto.
 
 **Cosa fornisce**: allerte per oggi e domani su 4 livelli (verde/giallo/
 arancione/rosso), per 3 tipologie di rischio: idraulico, temporali,
@@ -492,7 +453,7 @@ idrogeologico.
 JSON, free, no auth, no rate limit. Endpoint metadata: `/api/regioni`,
 `/api/province`, `/api/comuni`, `/api/zone`. Storico: `/api/storico/download`.
 
-**Sorgente dati**: i bollettini sono sincronizzati dal repo ufficiale
+**Sorgente dati**: bollettini sincronizzati dal repo ufficiale
 `pcm-dpc/IT-alert-Hub` e dai Centri Funzionali regionali, qualità alta;
 servizio terze parti senza SLA.
 
@@ -511,21 +472,18 @@ Sesto Fiorentino 048043 — da verificare).
 }
 ```
 
-**Indicatore DLE opzionale** (stile "panni"): semaforo 4 colori basato sul
-livello massimo fra oggi/domani, con verdict testuale ("Stai in casa" per
-arancione+, ecc.).
+**Indicatore DLE opzionale**: semaforo 4 colori sul livello massimo
+oggi/domani, con verdict testuale.
 
-**Schedule**: 1 fetch ogni 6h è sufficiente (bollettino emesso 1 volta/giorno,
-con aggiornamenti durante eventi). Schedulabile in coda alla `pipeline 6h`.
+**Schedule**: 1 fetch ogni 6h (bollettino 1×/giorno, aggiornamenti durante
+eventi), in coda alla pipeline 6h.
 
-**Rischio accettato**: allertameteo.app è singolo developer, niente SLA.
-**Fallback**: DPC repo GitHub
+**Rischio accettato**: singolo developer, niente SLA. **Fallback**: repo DPC
 `pcm-dpc/DPC-Bollettini-Criticita-Idrogeologica-Idraulica` (PDF/ZIP ufficiale,
-serve parser) — da implementare solo se allertameteo.app sparisce.
+serve parser) — solo se allertameteo.app sparisce.
 
 **Complementare a D-021**: D-021 (Blitzortung) = nowcast breve fulmini;
-D-022 (allertameteo) = allerte ufficiali 24-48h ahead. Insieme coprono
-"sta arrivando" + "è previsto".
+D-022 = allerte ufficiali 24-48h ahead.
 
 **Stato**: accettata, da implementare (coda `status.md` §D-022).
 
@@ -579,18 +537,18 @@ produzione. Wording canonico per il case study:
 
 **Contesto**: il profilo orario daily è la shape NWP ensemble-mean rescalata sugli
 anchor ML daily (`compute_hourly_profile`). Gli errori di forma (fase/ampiezza del
-ciclo diurno: inversione termica, nebbie, ritardo del massimo) sono sistematici per
-location. Il modello daily non può correggerli: non vede mai osservazioni orarie.
+ciclo diurno) sono sistematici per location; il modello daily non li vede perché
+non osserva mai dati orari.
 
 **Decisione**: correttore di forma opzionale (LightGBM regression p50) addestrato sul
 residuo di shape `Δ(h) = obs_median(h) − shape_obs(h)` (shape normalizzata 0..1,
-residuo day-invariant; i bias additivi uniformi vengono assorbiti dall'ancoraggio e
-restano responsabilità dei daily anchor ML). Feature: hour, month, location_id,
-shape_norm, weather_code modale, flag precip, vento, umidità. Split cronologico con
-embargo 7gg; accettazione solo se improvement RMSE ≥ 15% su holdout, altrimenti
-nessun file (fallback = profilo attuale). In inferenza: Δ applicato alla curva
-ancorata ML + ri-ancoraggio a [tmin_p50, tmax_p50] e bande CI80 ai rispettivi bound
-→ livelli sempre ML daily, cambia solo la forma; contract JSON invariato.
+day-invariant; i bias additivi restano responsabilità dei daily anchor ML). Feature:
+hour, month, location_id, shape_norm, weather_code modale, flag precip, vento,
+umidità. Split cronologico con embargo 7gg; accettazione solo se improvement RMSE
+≥ 15% su holdout, altrimenti nessun file (fallback = profilo attuale). In inferenza:
+Δ applicato alla curva ancorata ML + ri-ancoraggio a [tmin_p50, tmax_p50] e bande
+CI80 ai rispettivi bound → livelli sempre ML daily, cambia solo la forma; contract
+JSON invariato.
 
 **Eccezione scoped a D-005**: il training usa osservazioni realtime NRT non validate
 (SIR realtime + Netatmo) come target di un bias di forma, non come valori di record.
@@ -598,7 +556,8 @@ Mitigazioni obbligatorie: nuovi flag QC (`spike_realtime`, `stall_sensor`,
 `bias_solar`) + aggregazione mediana per slot con minimo campioni (3). D-005 resta
 in vigore per i target daily e le feature del modello principale.
 
-**Esclusioni**: precip orario (D-014: ceiling intensità, nessun target orario), umidità; nessun impatto su CV/CQR/ACI.
+**Esclusioni**: precip orario (D-014: ceiling intensità, nessun target orario),
+umidità; nessun impatto su CV/CQR/ACI.
 
 **Conseguenze**: dati sufficienti per l'allenamento arrivano dall'accumulo realtime
 in prod (~60 giorni/location); prima il correttore non è addestrato (cold-start

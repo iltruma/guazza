@@ -6,34 +6,48 @@ Previsioni meteo iper-locali per 6 microclimi toscani. Sistema operativo persona
 
 **Tesi**: i modelli numerici pubblici (ECMWF, ICON-EU, app commerciali) sbagliano sistematicamente sui microclimi specifici generati da orografia, fondi valle e isole di calore. Questo progetto lo dimostra empiricamente e produce un sistema che fa misurabilmente meglio.
 
-**Costo infrastruttura**: ~€2/mese (dominio). Server: Dell Optiplex Micro 3050 — homelab NixOS `nebula` (k3s). Accesso interno `guazza.lab.paroparo.it`; pubblico `guazza.it` via Tailscale Funnel (DNS Cloudflare) — da riportare su nebula.
+**Infrastruttura**: Dell Optiplex Micro 3050 — homelab NixOS `nebula` (k3s), ~€2/mese (dominio). Pubblico `guazza.it` via Tailscale Funnel (DNS Cloudflare) — da riportare su nebula.
 
 ---
 
 ## Setup locale
 
-### Prerequisiti
-
-- Python 3.13+
-- [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
-
-### Installazione
-
 ```bash
 git clone https://github.com/<tuo-user>/guazza.git
 cd guazza
 uv sync
-cp .env.example .env
-# Compila .env con le credenziali Netatmo e Healthchecks.io
+cp .env.example .env   # credenziali Netatmo + Healthchecks.io
 ```
 
-### Verifica installazione
+Prerequisiti: Python 3.13+, [uv](https://docs.astral.sh/uv/).
+
+Verifica:
 
 ```bash
 uv run ruff check src/ && uv run mypy src/
 uv run pytest tests/ -v
 DB_PATH=/tmp/guazza_test.duckdb uv run python -m guazza.storage verify-schema
 ```
+
+---
+
+## Primo forecast
+
+```bash
+# 1. Schema DuckDB
+uv run python -m guazza.storage init-schema
+
+# 2. Backfill storico (lento — SIR + Open-Meteo 2022→oggi)
+uv run python -m guazza.jobs.ingest historical
+
+# 3. Training (o lasciare che review lo faccia al primo run)
+uv run python -m guazza.jobs.review run --force-train
+
+# 4. Forecast (feature build, predict, DLE+JSON)
+uv run python -m guazza.jobs.forecast run
+```
+
+In produzione i job girano come CronJob k8s (namespace `guazza`); per install dev: `deploy/crontab.template`.
 
 ---
 
@@ -55,63 +69,41 @@ guazza/
 │   ├── fetch_netatmo.py    # Netatmo realtime + QC (range, cross, vs SIR)
 │   ├── _paths.py           # Path di default da env (DB_PATH, CONFIG_DIR, OUTPUT_DIR)
 │   ├── weights.py          # Pesi stazione→location, ring upstream pluvio
-│   ├── features.py         # build_features_daily() — 50 feature, tabella materializzata
+│   ├── features.py         # build_features_daily() — 32 feature, tabella materializzata
 │   ├── models.py           # LightGBM quantile + CQR, train_all(), predict(), predict_frame()
+│   ├── aci.py              # Adaptive Conformal Inference (α_t per target×lead)
+│   ├── cv.py               # walk_forward_cv, crps_from_quantiles (case study)
+│   ├── hourly_corrector.py # Correttore di forma profilo orario (D-024) + CLI
+│   ├── db_queries.py       # Query SQL per current conditions e blend NWP
 │   ├── indicators.py       # Decision Logic Engine: evaluate_all(), log_results()
 │   ├── output.py           # build_signals(), build_signals_today(), write_location_json(), refresh_realtime_json()
 │   ├── qc.py               # Quality control osservazioni SIR (chiamato da ingest)
 │   ├── _logging.py         # setup_logging() + log_scrape() — TTY pretty / cron JSON
 │   ├── netatmo_daily.py    # Accumulo Netatmo realtime → daily (forward-looking storico)
- │   ├── skill_history.py    # append_one(), dump_payload(), atomic_write_json() (usato da review)
- │   ├── monitor.py          # compute_coverage(), check_and_log(), update_aci_from_history()
- │   └── jobs/
- │       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
-  │       ├── ingest.py       # historical (backfill one-shot) / daily (manuale) / realtime
- │       ├── forecast.py     # Cron 6h (02/08/14/20 UTC): NWP live → features → predict → JSON
-  │       └── review.py       # Cron 1×/giorno (06:10 UTC): ingest [ieri-7, ieri] + ACI + skill-history + train condizionale
-├── data/
-│   ├── guazza.duckdb       # Database analitico (non committato)
-│   ├── models/             # Artefatti LightGBM artifacts.json + model-string .txt (non committati)
-│   └── output/             # JSON per il frontend (non committati)
-├── frontend/               # index.html, app.js, style.css (statico, CSS custom, CDN via jsDelivr)
+│   ├── skill_history.py    # append_one(), dump_payload(), atomic_write_json() (usato da review)
+│   ├── monitor.py          # compute_coverage(), check_and_log(), update_aci_from_history()
+│   └── jobs/
+│       ├── _common.py      # Helper job: ping Healthchecks, job_run(), opzioni typer
+│       ├── ingest.py       # historical (backfill one-shot) / realtime
+│       ├── forecast.py     # Cron 6h (02/08/14/20 UTC): NWP live → features → predict → JSON
+│       └── review.py       # Cron 1×/giorno (06:10 UTC): ingest [ieri-7, ieri] + ACI + skill-history + train condizionale
+├── data/                   # guazza.duckdb, models/, output/ (non committati)
+├── frontend/               # index.html, affidabilita.html, app.js, style.css (statico, CDN jsDelivr)
+├── analysis/               # Strumenti case study (backtest, skill vs gauge primario)
 ├── Dockerfile              # Single-stage python:3.13-slim + uv + nginx (k8s)
-├── .dockerignore           # Esclude .venv/, data/, tests/, ...
-├── .github/workflows/ci.yml # CI su push tag v*.*.* → ghcr.io/iltruma/guazza
 ├── deploy/                 # nginx-k8s.conf (k8s, in-container), crontab template
 ├── tests/
 ├── DESIGN.md               # Design system frontend (palette Carbone+Iris, tipografia, componenti)
 ├── PRODUCT.md              # Product brief (utenti, scopo, principi di design)
 └── docs/
-    ├── status.md           # Stato corrente — leggere a inizio sessione
+    ├── status.md           # Stato corrente (cockpit) — leggere a inizio sessione
     ├── decisions.md        # Decisioni architetturali motivate
-    └── known_issues.md     # Problemi noti + workaround
+    ├── contract.md         # Contract JSON di output + logging DLE
+    ├── known_issues.md     # Problemi noti + workaround
+    └── archive/            # KI risolti (storico)
 ```
 
----
-
-## Roadmap
-
-Sprint completati (0–13). Storia dettagliata per release → `CHANGELOG.md`.
-Coda corrente (P-items e decisioni approvate da implementare) → `docs/status.md` §Coda.
-
-| Sprint | Obiettivo | Stato |
-|---|---|---|
-| Sprint 0 | Ricognizione sorgenti, config stazioni, struttura repo | ✅ Completato |
-| Sprint 1 | Ingestion SIR + Netatmo + Open-Meteo + ARPAT (rimosso v0.13.0), schema DuckDB, job cron | ✅ Completato |
-| Sprint 2 | Backfill SIR pre-2022, quality control (SIR), flag qualità | ✅ Completato |
-| Sprint 3 | Feature engineering, 50 feature, ring upstream pluvio | ✅ Completato |
-| Sprint 4 | LightGBM quantile + CQR, skill +25% vs NWP su temperatura | ✅ Completato |
-| Sprint 5 | Output JSON, Decision Logic Engine, indicatori operativi | ✅ Completato |
-| Sprint 6 | Frontend HTML+JS+Chart.js, layout a 3 sezioni | ✅ Completato |
-| Sprint 7 | Raffinamenti logiche, radar RainViewer, redesign frontend v2 (CSS custom) | ✅ Completato |
-| Sprint 8 | Pipeline unificata + ICON-D2 rimosso + realtime refresh (v0.12.0–v0.12.6) | ✅ Completato |
-| Sprint 9 | Adaptive Conformal Inference + monitor copertura 30d (v0.10.0) | ✅ Completato |
-| Sprint 10 | Skill history time series + GFS rimosso + CQR fix (v0.11.0–v0.11.2) | ✅ Completato |
-| Sprint 11 | Calibrazione soglie DLE post-30gg `indicator_log` in produzione | 🟡 In corso |
-| Sprint 12 | Case study / pubblicazione (articolo LinkedIn/Medium, repo pubblico) | 🔴 Da fare |
-| Sprint 13 | Semplificazione documentale + archivio KI risolti + status cockpit | ✅ Completato (commit recenti) |
-| Sprint 8 | Deploy homelab: k3s + Flux + SOPS, PVC, CronJob, immagine container | ✅ Completato |
-| Sprint 9 | Adaptive Conformal Inference + monitor copertura 30d | ✅ Completato |
+Storia per sprint/release → `CHANGELOG.md`. Coda corrente → `docs/status.md` §Coda.
 
 ---
 
@@ -155,9 +147,7 @@ uv run python -m guazza.jobs.forecast run --dry-run
 
 Output: `data/output/{location_id}.json` con CI80/CI90 per tmin/tmax/precip,
 8 indicatori semaforo (panni, motorino, gelata, ...), `coverage_empirical_30d`,
-condizioni realtime aggregate (`current` con dewpoint e temperatura percepita),
-profili orari NWP con vento, e confronto
-modelli con data ultimo run.
+condizioni realtime aggregate (`current`) e profili orari NWP con confronto modelli.
 
 > **Nota locale**: prima del forecast eseguire `ingest realtime` per avere
 > il campo `current` popolato. In produzione il cron ogni 30 min lo mantiene fresco.
@@ -173,144 +163,53 @@ uv run python -m guazza.jobs.review run --db data/guazza.duckdb \
 uv run python -m guazza.jobs.review run --dry-run
 ```
 
-### Skill history backfill manuale
-
-```bash
-# append + dump sono inclusi automaticamente in guazza-review.
-# Per backfill manuale (es. dopo perdita dati):
-python -c "
-from guazza.storage import DuckDBClient
-from guazza.skill_history import append_one, dump_payload, atomic_write_json, DEFAULT_DUMP_PATH
-from datetime import date, timedelta
-with DuckDBClient(db_path='data/guazza.duckdb') as db:
-    for i in range(30):
-        append_one(db, date.today() - timedelta(days=i+1))
-    atomic_write_json(DEFAULT_DUMP_PATH, dump_payload(db))
-"
-```
-
-### Opzioni comuni
-
-```bash
---dry-run    # Simula senza scrivere
---db PATH    # Path DuckDB (default prod: /var/lib/guazza/guazza.duckdb)
-```
-
-Variabile d'ambiente `HEALTHCHECKS_URL` per il ping dead-man switch.
-
----
-
 ## Container image & rilascio
 
 Ad ogni push di un tag `v*.*.*` (es. `v0.9.0`) il workflow CI in
 `.github/workflows/ci.yml` builda e pubblica automaticamente l'immagine
 container su GitHub Container Registry, allineata a `pyproject.toml`:
 
-- `ghcr.io/iltruma/guazza:v0.9.0`
-- `ghcr.io/iltruma/guazza:0.9.0`
+- `ghcr.io/iltruma/guazza:v0.9.0` / `ghcr.io/iltruma/guazza:0.9.0`
 
-L'immagine è single-stage: `python:3.13-slim` + `uv` (binario ufficiale) + nginx + frontend statico. Il
-container gira come utente non-root (UID 1000), include nginx sulla porta 8080
-per il servizio web e gli entry point CLI (`guazza-ingest`, `guazza-forecast`, `guazza-review`, `guazza-hourly-correct`) per i job schedulati.
-
-### Procedura di rilascio
+Immagine single-stage: `python:3.13-slim` + `uv` + nginx (porta 8080, utente
+non-root UID 1000), con gli entry point CLI (`guazza-ingest`, `guazza-review`,
+`guazza-forecast`, `guazza-storage`, `guazza-hourly-correct`) per i job schedulati.
 
 ```bash
+# Rilascio
 # 1. Bump versione in pyproject.toml (es. 0.9.0 → 0.10.0)
-# 2. Aggiorna CHANGELOG.md (sposta [Unreleased] → nuova sezione versionata)
-# 3. Commit
-git add pyproject.toml CHANGELOG.md
-git commit -m "chore(release): vX.Y.Z"
+# 2. Sposta [Unreleased] → nuova sezione in CHANGELOG.md
+git add pyproject.toml CHANGELOG.md && git commit -m "chore(release): vX.Y.Z"
+git tag vX.Y.Z && git push origin main vX.Y.Z
 
-# 4. Crea e pusha il tag — triggera il workflow CI
-git tag vX.Y.Z
-git push origin main vX.Y.Z
-```
-
-### Uso locale dell'immagine
-
-```bash
-docker pull ghcr.io/iltruma/guazza:v0.9.0
-
-# Web (monta la directory dati locale su /var/lib/guazza)
-docker run --rm -p 8080:8080 \
-    -v $(pwd)/data:/var/lib/guazza \
+# Uso locale: web (monta la directory dati su /var/lib/guazza)
+docker run --rm -p 8080:8080 -v $(pwd)/data:/var/lib/guazza \
     ghcr.io/iltruma/guazza:v0.9.0
 
-# Job CLI (es. backfill iniziale)
-docker run --rm \
-    -v $(pwd)/data:/var/lib/guazza \
-    -v $(pwd)/config:/app/config:ro \
+# Uso locale: job CLI (es. backfill iniziale)
+docker run --rm -v $(pwd)/data:/var/lib/guazza -v $(pwd)/config:/app/config:ro \
     -e HEALTHCHECKS_URL=https://hc-ping.com/<uuid> \
     -e NETATMO_CLIENT_ID=... -e NETATMO_CLIENT_SECRET=... \
-    ghcr.io/iltruma/guazza:v0.9.0 \
-    guazza-ingest historical
+    ghcr.io/iltruma/guazza:v0.9.0 guazza-ingest historical
 ```
 
 ---
 
 ## Frontend
 
-Il frontend è una SPA statica servita da nginx. Non richiede build step.
-
-### Sviluppo locale
+SPA statica servita da nginx, senza build step. Layout a 3 sezioni: condizioni
+attuali (hero + indicatori DLE su obs realtime), previsioni giornaliere
+(card D+0…D+7 con CI bar e tabella NWP), grafico multi-giorno (Chart.js,
+switch Guazza ML ↔ 4 modelli NWP), radar RainViewer (Leaflet) e pagina
+affidabilità (`affidabilita.html`).
 
 ```bash
-# Il symlink frontend/data → ../data/output deve esistere (già nel repo)
+# Sviluppo locale (il symlink frontend/data → ../data/output deve esistere)
 cd frontend && python3 -m http.server 8080
-# Apri http://localhost:8080
 ```
 
-### Layout (3 sezioni stile Foreca)
-
-| Sezione | Contenuto |
-|---|---|
-| **A — Condizioni attuali** | Temperatura grande, icona meteo, temperatura percepita (Steadman), punto di rugiada (Magnus), grid stats: vento (velocità + direzione), umidità, precipitazione, pressione (hPa + indicatore alta/bassa), alba/tramonto (SunCalc), fase lunare; indicatori DLE calcolati su obs realtime |
-| **Radar precipitazioni** | Mappa Leaflet con overlay RainViewer: ultimi ~60min osservati + nowcast +60min (se attivo); timeline animata, pausa di default, zoom custom |
-| **B — Previsioni giornaliere** | Striscia card D+0…D+7 con icona/Tmax/Tmin/precip/indicator-dots; clic espande CI bar 80/90% + 8 indicatori + tabella NWP con data ultimo run |
-| **C — Grafico multi-giorno** | Chart.js: temperatura, umidità, precipitazioni, vento — switch Guazza ML ↔ 4 modelli NWP, crosshair verticale |
-
-### Struttura file frontend
-
-```
-frontend/
-├── index.html      # HTML + CDN links (Chart.js, Leaflet, Twemoji, SunCalc; font Geist + JetBrains Mono)
-├── app.js          # Logica completa (rendering, chart, radar, routing)
-├── style.css       # CSS custom (classi g-*): palette Carbone+Iris, CI bar, indicatori DLE, Leaflet overrides, Twemoji fix
-└── data/           # Symlink → ../data/output (JSON per ogni location)
-```
-
-### JSON di output (`data/output/{location_id}.json`)
-
-Schema canonico (output per location, `skill.json` globale, `skill_history.json`,
+Schema canonico dei JSON (`{location_id}.json`, `skill.json`, `skill_history.json`,
 DLE `indicator_log`): vedi [`docs/contract.md`](docs/contract.md).
-
----
-
-## Come ricostruire da zero
-
-```bash
-# 1. Clone e setup
-git clone https://github.com/<user>/guazza.git && cd guazza
-uv sync && cp .env.example .env
-
-# 2. Edita .env con credenziali reali (Netatmo, Healthchecks.io)
-
-# 3. Inizializza schema DuckDB
-DB_PATH=/var/lib/guazza/guazza.duckdb uv run python -m guazza.storage init-schema
-
-# 4. Backfill storico (lento — SIR + Open-Meteo 2022→oggi)
-uv run python -m guazza.jobs.ingest historical
-
-# 5. Training modello (o lasciare che review lo faccia al primo run)
-uv run python -m guazza.jobs.review run --force-train
-
-# 6. Primo forecast (include feature build, predict, DLE+JSON)
-uv run python -m guazza.jobs.forecast run
-
-# 7. In produzione i job girano come CronJob k8s (namespace `guazza`, repo astra).
-#    Solo per install dev: crontab deploy/crontab.template
-```
 
 ---
 
@@ -334,11 +233,3 @@ uv run mypy src/
 | RainViewer | Radar precipitazioni (solo frontend) | API pubblica, no key |
 
 Per la lista completa con endpoint e stato: `config/sources.yaml`.
-
----
-
-*Guazza è un progetto personale open source. Pull request benvenute.*
-
-Sviluppato in collaborazione con assistenti AI: **Claude** (Anthropic),
-**Gemini** e **DeepSeek** (via OpenRouter) — usati per design review,
-debate multi-modello sulle scelte architetturali e supporto all'implementazione.
