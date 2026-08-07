@@ -1090,7 +1090,10 @@ const weatherIconsPlugin = {
       const left    = chart.canvas.offsetLeft + x.getPixelForValue(p.ts);
       const isNight = isNightAt(chart.$locMeta, p.ts);
       const c       = wmoCondition(p.weather_code ?? null, isNight);
-      html += `<span class="g-chart-icon" style="left:${left}px">${weatherIconHtml(c.iconName, c.icon, 'g-chart-icon__svg')}</span>`;
+      const prob = (p.precip_prob_ml != null && p.precip_prob_ml > 0)
+        ? `<span class="g-chart-icon__prob">${Math.round(p.precip_prob_ml * 100)}%</span>`
+        : '';
+      html += `<span class="g-chart-icon" style="left:${left}px">${weatherIconHtml(c.iconName, c.icon, 'g-chart-icon__svg')}${prob}</span>`;
     });
     overlay.style.top = `${chart.canvas.offsetTop + area.bottom + 32}px`;
     overlay.innerHTML = html;
