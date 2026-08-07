@@ -905,8 +905,8 @@ def walk_forward_cv(
         Tupla (aggregate_df, per_bucket_df):
           - aggregate_df: 1 riga per (split, target) con metriche aggregate sul test set
           - per_bucket_df: 1 riga per (split, target, lead_bucket) — breakdown per bucket
-            di lead_time_h (0-6h, 6-12h, 12-24h, 24-48h, 48-72h, 72h+) per diagnosticare
-            la calibrazione CQR per orizzonte.
+            di lead_time_h (D+0..D+5+, bucket giornalieri — vedi LEAD_BUCKETS) per
+            diagnosticare la calibrazione CQR per orizzonte.
     """
     df = load_features(db)
     if df.empty:

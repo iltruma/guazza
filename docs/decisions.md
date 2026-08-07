@@ -54,12 +54,14 @@ il lead time.
 **Problema**: un singolo modello CQR produce CI troppo stretti per t+48h e
 troppo larghi per t+1h.
 
-**Scelta**: calibration set separato per 5 bucket di lead time:
-- `0-6h`, `6-12h`, `12-24h`, `24-48h`, `48-72h`
+**Scelta**: calibration set separato per 6 bucket di lead time **giornalieri**
+(il multilead di `features_daily` è in multipli di 24h; bucket orari produrrebbero
+strati sempre vuoti con fallback sistematico al bucket adiacente):
+- `D+0`, `D+1`, `D+2`, `D+3`, `D+4`, `D+5+` (match `LEAD_BUCKETS` in `models.py`)
 
 Un set di residui (e quindi di quantili conformali) per bucket.
 
-**Conseguenze**: 5× la dimensione del calibration set necessario; minimo
+**Conseguenze**: 6× la dimensione del calibration set necessario; minimo
 ~200 esempi per bucket per coverage stabile.
 
 ---
@@ -79,11 +81,18 @@ dashboard mostra "calibrazione in corso".
 **Motivazione**: onestà scientifica. Il CI non è "magicamente" calibrato;
 mostrare quanto lo è nella pratica recente.
 
+**Stato (2026-08-07) — due canali complementari**: il campo è ancora emesso
+per location (`compute_coverage_30d` → JSON location), ma la fonte primaria
+di onestà scientifica in UI è `skill.json` → `locations.*.coverage`
+(CI80/CI90 empirici per lead D+0..D+7, intervalli CQR+ACI di produzione, card
+"Copertura intervalli" in affidabilita.html). Il 30d aggregato nel JSON location
+resta come monitor leggero; non è letto dal frontend principale.
+
 ---
 
 ## D-005 — Modello globale con location-id categorica
 
-**Contesto**: 4 location, dati storici limitati per location.
+**Contesto**: 6 location, dati storici limitati per location.
 
 **Opzioni**:
 1. 4 modelli indipendenti per location
@@ -97,7 +106,9 @@ natively le categoriche. Se una location ha dati migliori, contribuisce di
 più senza danneggiare le altre.
 
 **Conseguenza**: serve `location_id` come categoria in ogni riga del training
-set. Niente one-hot encoding.
+set. Niente one-hot encoding. Unica eccezione al training su osservazioni SIR
+validated: D-024 (correttore orario) usa realtime NRT solo per la forma del
+profilo, con QC dedicato.
 
 ---
 
@@ -113,19 +124,6 @@ Eliminare migrations riduce complessità mantenendo semplicità di recovery.
 
 **Conseguenza**: `schema.sql` va tenuto aggiornato. Ogni modifica schema =
 ricreazione del DB in staging + test che passano.
-
----
-
-## D-007 — Stack blindato (no orchestration layer)
-
-**Scelta**: i job sono CLI Python idempotenti invocabili da qualsiasi scheduler
-(cron, k8s CronJob, systemd). L'invariante è che l'app resti **orchestrator-agnostic**:
-il *target di deploy* è libero (cron in LXC o namespace k8s sono entrambi legittimi),
-ma vietato è **accoppiare la logica applicativa** a un orchestratore (Prefect/Dagster/
-Airflow/Celery) o esporre l'app come PaaS.
-
-**Riferimento canonico**: `AGENTS.md` §"Stack blindato" (tabella completa) +
-§"Anti-pattern" + §"Invariante deploy". Questa voce conserva solo il riassunto.
 
 ---
 
@@ -172,84 +170,53 @@ certezze è scientificamente disonesto e operativamente fuorviante.
 
 ---
 
-## D-011 — Ottimizzazione fetch Open-Meteo via coordinate batching
-
-**Data**: 2026-05-16
-
-**Contesto**: il download sequenziale per location/modello (24+ chiamate)
-risultava lento e incline a latenze elevate, specialmente nel job historical.
-
-**Decisione**: sfruttare la capacità di Open-Meteo di gestire liste di
-coordinate per scaricare i dati di tutte le location in una sola chiamata per
-modello.
-
-**Motivazione**: riduzione drastica del numero di richieste HTTP (da N_location
-a 1 per modello), minor rischio di throttling, velocità ~4-5x.
-
----
-
-## D-012 — Temporal chunking per backfill storico
-
-**Data**: 2026-05-16
-
-**Contesto**: le richieste alla Historical Forecast API per lunghi periodi
-(2+ anni) e modelli ad alta risoluzione (AROME, ICON-D2) causano timeout o
-errori 400 per la dimensione eccessiva dell'elaborazione server-side.
-
-**Decisione**: frazionamento automatico delle richieste in chunk (180 giorni
-per i modelli globali, 90 giorni per icon_d2 e arome_france).
-
-**Motivazione**: stabilità del download senza sovraccaricare l'API; recupero
-parziale in caso di fallimenti isolati di un singolo intervallo.
-
----
-
 ## D-013 — Selezione modelli NWP per post-processing iper-locale
 
-**Data**: 2026-05-16
+**Data**: 2026-05-16 (snellita 2026-08-07)
 
 **Contesto**: la risoluzione spaziale dei modelli globali (25 km) è
 insufficiente per catturare i microclimi toscani complessi (es. inversione
 termica nella piana di Campi o Scandicci).
 
-**Decisione**:
-- Sostituire `ecmwf_ifs025` (25 km) con `ecmwf_ifs` (HRES, 9 km). Stessa fisica, orografia molto più dettagliata.
-- Aggiungere `icon_d2` (2.2 km). Modello convective-permitting del DWD che copre il Centro-Nord Italia, fondamentale per la dinamica locale.
-- Scartare `ecmwf_aifs025`: Open-Meteo restituisce null per tutte le variabili (vedi KI-011).
-- Mantenere `arome_france` (2.5 km) e `icon_eu` (7 km) come modelli ad alta risoluzione.
-- Aggiungere `italia_meteo_arpae_icon_2i` (2.2 km, ItaliaMeteo/ARPAE): unico modello che assimila osservazioni italiane, orizzonte 72h.
+**Decisione — set finale a 4 modelli** (verificato in `features.py`,
+`NWP_MODEL_PREFIXES`):
+- `ecmwf_ifs` (HRES, 9 km): sostituisce `ecmwf_ifs025` (25 km) — stessa fisica, orografia molto più dettagliata.
+- `icon_eu` (7 km) e `arome_france` (2.5 km): alta risoluzione DWD / Météo-France.
+- `italia_meteo_arpae_icon_2i` (2.2 km, ItaliaMeteo/ARPAE): unico che assimila osservazioni italiane, orizzonte 72h.
 
-**Conseguenza**: il dataset di training `features_daily` usa 4 modelli NWP
-(ecmwf_ifs, icon_eu, arome_france, icon_2i). `icon_d2` rimosso in v0.12.5
-(KI-025), `gfs025` rimosso in v0.11.1.
-Necessario rieseguire il backfill `historical` per i nuovi modelli.
+Scartati: `ecmwf_aifs025` (Open-Meteo restituisce null, KI-011), `gfs025`
+(rimosso v0.11.1), `icon_d2` (rimosso v0.12.5, KI-025).
+
+**Conseguenza**: il dataset di training `features_daily` usa i 4 modelli sopra;
+necessario rieseguire il backfill `historical` per i nuovi modelli.
 
 ---
 
-## D-014 — Precipitazione: usare ensemble NWP direttamente nel DLE
+## D-014 — Precipitazione: rain_clf per la presenza, ceiling dichiarato per l'intensità
 
-**Data**: 2026-05-17
+**Data**: 2026-05-17 (rivista 2026-08-07)
 
-**Contesto**: walk-forward CV Sprint 4 mostra skill score precipitazione ≈ 0
-(MAE 1.526mm vs NWP ensemble mean 1.57mm). Il post-processing ML non batte il NWP grezzo.
+**Contesto**: walk-forward CV mostra skill MAE precipitazione ≈ 0 — ceiling
+strutturale: ground truth SIR rumoroso per la variabilità spaziale degli eventi,
+distribuzione zero-inflated, archivio storico lead=0-only. Il post-processing ML
+non batte il NWP sull'intensità in mm.
 
-**Cause identificate**:
-- Tutti i dati storici hanno `lead_time_h=0` (punto aperto Sprint 3): il modello
-  non impara la correzione per lead time, che è dove i NWP sbagliano di più sulla precip.
-- Ground truth SIR è una singola stazione pesata — la variabilità spaziale degli eventi
-  precipitativi introduce rumore irriducibile non catturabile da un modello globale.
-- Distribuzione zero-inflated: LightGBM quantile su dati così asimmetrici richiede
-  feature più specifiche (CAPE, theta-e, indici convettivi) non disponibili oggi.
+**Decisione — stato attuale**:
+1. **Presenza pioggia** → segnale primario = `rain_clf` (hurdle stadio 1,
+   BSS +0.16/+0.28, AUC 0.73-0.79): `P(precip > 0.2mm)` nel DLE e in UI
+   (`build_signals` in `output.py`), `rain_prob` persistita in `predictions`.
+   Niente ensemble-NWP nel DLE per la presenza pioggia.
+2. **Intensità mm** → ceiling dichiarato: i quantili ML restano in output solo
+   come display/CI, nessuna claim di skill. Wet regressor rimosso (2026-08-04,
+   skill negativo in 3/4 fold).
+3. **Nessun modello orario precip** (conferma D-024): `precip_prob_ml` oraria =
+   prob daily ML distribuita sul timing NWP, non prob oraria calibrata.
 
-**Decisione**: nel DLE (Sprint 5), per gli indicatori dipendenti dalla pioggia
-(`panni`, soglie allerta) usare la distribuzione NWP ensemble direttamente
-(probabilità di precip > soglia calcolata su 4 modelli) piuttosto che il CI
-ML post-processato. Il modello ML produce comunque un output per precip, ma
-non è il segnale primario per queste decisioni.
+L'ensemble NWP resta il segnale per vento/umidità/nebbia.
 
-**Conseguenza**: Sprint 5 deve esporre sia le previsioni ML (per temp) sia le
-probabilità ensemble NWP (per precip) nel JSON di output. Non sono due prodotti
-separati — sono due colonne dello stesso oggetto previsione.
+**Conseguenza**: il JSON espone sia i quantili ML (intensità) sia la P(pioggia)
+ML (`rain_prob`, Brier per lead in `skill.json`) — non due prodotti separati,
+due colonne dello stesso oggetto previsione.
 
 ---
 
@@ -291,105 +258,30 @@ resta da NWP ensemble anche con `build_signals_today`.
 
 ## D-016 — Baseline di confronto per le claim di skill
 
-**Data**: 2026-05-29
+**Data**: 2026-05-29 (snellita 2026-08-07 — narrativa storica: git history)
 
-**Contesto**: il baseline backtest D+0 (`analysis/baseline_backtest.py`) mostra che il
-**multimodello-mean grezzo** è già un baseline forte (MAE tmin ~0.75°C su alcune location
-nel 2025): gli errori dei singoli NWP si cancellano. Lo skill +25.6% di Sprint 4 è
-misurato contro un baseline NWP che implica MAE ~1.22°C — più debole del multimodello-mean
-costruito per-location. Le definizioni differiscono per set modelli (4 vs 6), ground truth
-(SIR pesato vs stazione primaria) e periodo (CV multi-anno vs 2025).
-
-**Decisione**: per il case study, ogni claim di skill ("meglio di X") va riferita al
+**Decisione**: per il case study ogni claim di skill ("meglio di X") va riferita al
 **baseline naive più forte ragionevole** — il multimodello-mean per-location — non al
-singolo modello NWP né a un ensemble più debole. Un debias costante mensile non basta a
-batterlo (a volte lo peggiora per drift inter-annuale del bias): il valore del modello ML
-sta nella correzione **condizionale al regime** (stagione × cielo × vento), non nella
-rimozione di un bias medio.
+singolo modello NWP né a un ensemble più debole. Ground truth = **target pesato**
+(proxy del microclima, D-005/D-018); valutazione walk-forward CV con embargo 7gg
+(D-002). Il valore del modello ML sta nella correzione **condizionale al regime**
+(stagione × cielo × vento), non nella rimozione di un bias medio: un debias costante
+non basta a batterlo (a volte lo peggiora per drift inter-annuale del bias).
 
-**Conseguenza**: prima di pubblicare numeri di skill, riconciliare il baseline di Sprint 4
-con il multimodello-mean per-location e ricomputare lo skill contro di esso. Lo stesso
-baseline va usato anche per il confronto esterno (LAMMA) quando `benchmark_forecasts` sarà
-popolata. Onestà sul baseline = credibilità del case study.
+**Numeri canonici (fold 3-4, unici rappresentativi — D-023)**, skill ML vs
+NWP-ensemble-mean su target pesato:
+- **tmax +30-32%** — robusto, model-agnostic; obiettivo raggiunto.
+- **tmin +7-25%** — positivo ma variabile per location; casa_nicco (bias NWP ≈ 0) è
+  il **floor strutturale** del post-processing: dove il NWP è già non distorto non si
+  migliora (+0.07°C MAE in assoluto, operativamente irrilevante).
+- **precip +3-11% ≈ 0** — ceiling strutturale (D-014), nessuna claim di skill.
+- **rain_clf BSS +0.16/+0.28** — P(pioggia) funziona.
 
-**Riconciliazione (2026-06-05)** — i due numeri non erano in conflitto: misurano l'errore
-NWP contro **ground truth diversi**, e il backtest 0.75 non riguarda nemmeno il modello ML.
+Dettaglio per-location e confronto vs gauge primario (KI-022, backtest multilead
+D+0..D+7): materiale case study — storico completo in git.
 
-- **+25.6% (Sprint 4)** = skill del **modello ML** vs NWP-ensemble-mean, entrambi valutati
-  contro il **target pesato** multi-stazione (il target di training), walk-forward CV con
-  embargo. Ri-eseguito oggi a 4 modelli (`walk_forward_cv`): **tmin +32.5%, tmax +42.8%,
-  precip −2.4%** (precip pareggia il NWP, conferma D-014). MAE NWP-mean vs target pesato
-  ≈ **1.34°C** tmin / **1.43°C** tmax.
-- **~0.75°C (backtest 2025)** = MAE del **NWP grezzo** (non il modello ML) vs la **stazione
-  SIR primaria**, debias-only, solo 2025, sulle location migliori. È un *floor-of-skill*
-  esplorativo, non uno skill score del modello.
-
-Fattore dominante del divario 1.34↔0.75 = **definizione del ground truth**. NWP-mean tmin
-2025 per location: vs primaria 0.75–1.33°C, vs target pesato 0.92–1.58°C. Il blend pesato
-diverge dalla singola stazione fino a **2.14°C** (lavoro_madda): il NWP grezzo lo manca di
-più perché il blend rappresenta il punto-microclima, non il pluviometro più vicino.
-L'aggregazione su giorno UTC (in `features_daily`) vs Europe/Rome (nel backtest) è invece
-**trascurabile** (~0.01°C su min/max): ipotesi testata e scartata.
-
-**Decisione finale**: ground truth e baseline del case study = **target pesato** (proxy del
-microclima, già scelta di prodotto D-005/D-018). Lo skill si cita come ML vs NWP-ensemble-mean
-su quel target, walk-forward + embargo → **+32% tmin / +43% tmax**. Il numero 0.75°C **non è
-confrontabile** con lo skill ML e non va citato come "il NWP è già buono": è una metrica
-diversa (NWP grezzo vs singolo gauge). Per trasparenza, nel case study si riporta comunque
-la MAE NWP-vs-primaria come contesto ("il NWP grezzo non è pessimo al pluviometro, ma manca
-il microclima"). Punto chiuso.
-
-**Robustness check + scoperta KI-022 (2026-06-05)** — `analysis/skill_vs_primary.py` valuta
-sia NWP sia modello ML contro la **stazione primaria** (gauge fisico indipendente),
-out-of-sample con lo stesso split walk-forward. Prima esecuzione: skill ML tmin **−31%**
-(modello peggio del NWP grezzo!), trainato fino a un **bug di pipeline** (KI-022):
-`obs_weighted` joinava anche su `location_id`, scartando i contributi delle stazioni
-condivise → target di training corrotto. `lavoro_cosimo` aveva il target **nullo al 100%**
-(mai addestrato); `lavoro_madda` un bias di −2°C.
-
-Dopo fix + rebuild + retrain:
-- **Skill vs target pesato (CV canonica)**: tmin +15.6%, tmax +42.6%, precip −2.9%. Il
-  +32.5% tmin precedente era gonfiato anche dal target corrotto: il numero onesto è ~+16%.
-  tmax era robusto (+43%).
-- **Skill vs gauge primario indipendente**: tmin **+8.1%**, tmax **+26.1%**. Modesto ma
-  positivo. Star: casa_cesto (+28% tmin), casa_cercina (+49% tmax). Punto debole: casa_nicco
-  (negativo) — non un difetto ma il floor del post-processing (vedi sotto).
-
-**Conclusione per il case study**: la claim "meglio degli altri" regge in modo robusto su
-**tmax** (+26% vs gauge indipendente, +43% vs target), in modo **modesto** su tmin (+8/+16%),
-ed è **nulla** su precip. Va dichiarata così, per location, senza headline unico gonfiato.
-Numeri di skill: usare la CV corretta post-KI-022, mai i pre-fix.
-
-**Backtest multi-lead D+0…D+7 (2026-06-05)** — con `ingest multilead` (archivio
-`previous_dayN`, disponibile da ~nov 2025) e `analysis/backtest_multilead.py`: modello
-addestrato sui dati prima del 2025-10-08 (embargo), valutato out-of-sample sulla finestra
-nov 2025→giu 2026, lead per lead. **Guazza batte il NWP-mean a ogni lead.**
-
-- **tmin**: MAE NWP degrada 1.04→2.75°C (D+0→D+7), Guazza 0.81→2.04°C. Skill vs target
-  +19…+36%, vs gauge primario +13…+33% — **positivo a ogni lead e crescente** con
-  l'orizzonte (a D+5 salva ~0.9°C in assoluto).
-- **tmax**: MAE NWP 1.30→2.30°C, Guazza 0.80→1.86°C. Skill vs target +19…+38%; vs gauge
-  più marginale a corto lead (+5/+3% a D+1/D+3) ma positivo (+10/+13%) a lead lungo.
-- **Lettura**: il valore del post-processing **cresce in assoluto col lead**, perché la
-  previsione pubblica peggiora di più dove il microclima conta. La tesi regge su tutto
-  l'orizzonte, non solo nel nowcast.
-
-**Caveat**: finestra ~7 mesi (una stagione, inverno-primavera), contigua e singola (non
-multi-fold); a lead lungo l'ensemble è solo-ECMWF (orizzonte degli altri modelli più corto).
-La versione multi-anno/multi-stagione si accumula solo in avanti dal deploy. Questi numeri
-sono un risultato **preliminare ma onesto**, sufficiente per il primo articolo.
-
-**`casa_nicco` negativo — floor del post-processing, non un difetto (2026-06-05)**: dopo
-KI-022 casa_nicco resta l'unica location con skill tmin negativo (−8% vs target e vs gauge).
-Causa: il bias grezzo del NWP-mean per casa_nicco tmin è **−0.11°C**, cioè ~zero — il NWP è
-già quasi non distorto lì, non c'è errore sistematico da correggere e il LightGBM quantile
-può solo aggiungere rumore. È il **floor strutturale** del post-processing (si migliora solo
-dove c'è bias: casa_cesto +1.12°C → +28%, casa_cercina −1.69°C → +48%). In assoluto il −8%
-vale **+0.07°C** di MAE (0.92 vs 0.85), operativamente irrilevante. Su tmax il modello
-corregge il bias (−0.85°C → +27% vs target); il −25% vs gauge è solo l'offset target↔primaria
-di +0.6°C (stessa caveat, al piccolo). Nessuna correzione: uno shrinkage modello↔NWP-mean
-dove il bias è ~0 sarebbe un cambio ad ampio impatto per recuperare 0.07°C. Da riportare nel
-case study come onestà sul limite ("dove il NWP è già buono, non miglioriamo").
+**Conseguenza**: lo stesso baseline va usato per il confronto esterno (LAMMA) quando
+`benchmark_forecasts` sarà popolata. Onestà sul baseline = credibilità del case study.
 
 ## D-017 — Convenzione timestamp nel DB: UTC naive ovunque
 
@@ -407,7 +299,6 @@ SIR realtime (CET naive, UTC+1 fisso), fonti esterne con timestamp locale, Netat
 
 **Conseguenze**:
 - `strftime` in `output.py` usa `%Y-%m-%dT%H:%M:%SZ` per tutti i campi UTC (`current.ts`, `last_run`, `ts_valid` fallback NWP).
-- `coverage_empirical_30d` resta misurata sui `forecasts` grezzi ML, non su valori corretti intraday.
 - Nota: SIR realtime storici registrati in CEST (estate) avevano CET naive invece di CEST naive → errore residuo di 1h non recuperabile su quei record. Accettato.
 
 ## D-018 — `casa_cercina`: target temperatura in quota + accumulo Netatmo forward-looking
@@ -473,8 +364,8 @@ target, dopo che D+0…D+7 sono backfillati).
    bloccare la generazione delle previsioni, e viceversa.
 
 **Conseguenze**:
-- `aci_state` in DuckDB persiste α_t per (target, lead_bucket) — sopravvive
-  ai restart.
+- Implementazione: `src/guazza/aci.py` (`ACI_COLD_START_N=30`); stato `aci_state`
+  in DuckDB persiste α_t per (target, lead_bucket) — sopravvive ai restart.
 - Nessuna modifica al contract JSON: il consumatore vede i bound CI di
   sempre, semplicemente corretti da ACI quando warm.
 - Se dopo 30-60gg di operatività la copertura è in target ma il MAE cresce
@@ -520,6 +411,11 @@ a D, per ogni modello. Time series pura, non aggregata.
 **Limitazione**: la PK include `lead_h` (oggi fisso a 24h) per future
 estensioni multi-lead (es. confrontare forecast D+0 vs D+3 nel tempo).
 Per ora il JSON espone solo lead 24h.
+
+**Confini con `skill.json` (2026-08-06)**: `skill_history_daily` = time series
+giorno-per-giorno (MAE per modello nel tempo, lead fisso 24h); `skill.json` =
+aggregati per lead (MAE, coverage CI, Brier). La sessione 2026-08-06 ha cambiato
+la fonte della curva skill (predictions di produzione), non questo canale.
 
 ---
 
@@ -687,10 +583,22 @@ Mitigazioni obbligatorie: nuovi flag QC (`spike_realtime`, `stall_sensor`,
 `bias_solar`) + aggregazione mediana per slot con minimo campioni (3). D-005 resta
 in vigore per i target daily e le feature del modello principale.
 
-**Esclusioni**: precip orario (D-014: rumore), umidità; nessun impatto su CV/CQR/ACI.
+**Esclusioni**: precip orario (D-014: ceiling intensità, nessun target orario), umidità; nessun impatto su CV/CQR/ACI.
 
 **Conseguenze**: dati sufficienti per l'allenamento arrivano dall'accumulo realtime
 in prod (~60 giorni/location); prima il correttore non è addestrato (cold-start
 silenzioso). La skill daily non si muove: il guadagno è l'onestà della curva.
 
 **Stato**: accettata (sessione 2026-08-07).
+
+---
+
+## Decisioni rimosse
+
+Rimosse dalla revisione 2026-08-07 (testo completo nel git history):
+
+- **D-007** — Stack blindato: contenuto canonico in `AGENTS.md` §"Stack blindato"
+  (tabella completa + anti-pattern + invariante deploy).
+- **D-011** — Coordinate batching Open-Meteo: implementazione in `fetch_openmeteo.py`.
+- **D-012** — Temporal chunking backfill: vincolo operativo in KI-004 +
+  `_OM_CELL_BUDGET` in `fetch_openmeteo.py`.

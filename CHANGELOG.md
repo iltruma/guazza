@@ -9,6 +9,13 @@ Versioning: major per sprint, minor per milestone interne.
 ## [Unreleased]
 
 ### Docs
+- **Revisione decisioni** (review @oracle): rimosse D-007 (canonica in AGENTS.md),
+  D-011 e D-012 (implementative, in `fetch_openmeteo.py`/KI-004); semplificate
+  D-013 (solo set finale 4 modelli) e D-016 (decisione + numeri canonici fold 3-4,
+  narrativa storica in git); aggiornati D-003 (bucket lead giornalieri D+0..D+5+),
+  D-004 (dual path JSON location vs skill.json), D-005 (6 location, eccezione D-024),
+  D-014 (rain_clf primario per presenza, ceiling per intensità), D-017/D-019/D-020/D-024
+  (allineamento testo→codice). Docstring `walk_forward_cv` in `models.py` allineata.
 - **Revisione known_issues** (review @oracle): KI-007 e KI-024 archiviati
   (obs non conclusiva; path anomaly rimosso in 5083290); KI-002/014/015/019/020
   semplificati con testi verificati sul codice (corretta la fonte di
