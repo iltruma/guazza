@@ -212,6 +212,7 @@ def cmd_run(
                             precip_ci80_lo=pred["precip_mm"].get("ci80_lo"),
                             precip_ci80_hi=pred["precip_mm"].get("ci80_hi"),
                             corrector=corrector,
+                            rain_prob_daily=pred.get("rain_clf", {}).get("prob_rain"),
                         )
                         nwp_comparison = get_nwp_model_comparison(db, location_id, str(target_date_obj))
                         weather_code = get_daily_weather_code(db, location_id, str(target_date_obj))

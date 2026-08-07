@@ -242,6 +242,40 @@ def test_train_corrector_high_threshold_returns_none(db: DuckDBClient, tmp_path:
     assert not out_path.exists()
 
 
+def test_train_corrector_early_stopping() -> None:
+    """T3: eval_set canonico + early_stopping — il training si ferma prima di 500.
+
+    Su un dataset deterministico e semplice (curva seno senza rumore) la metrica
+    di validazione smette di migliorare rapidamente: best_iteration_ < 500 prova
+    che l'early stopping è attivo con la chiamata eval_set=[(X_val, y_val)]
+    (stessa firma usata da train_corrector). Sul dataset sintetico completo la
+    loss val migliora fino a 500 iterazioni — il meccanismo va verificato su un
+    segnale che plateau davvero.
+    """
+    import lightgbm as lgb
+    import numpy as np
+
+    Xtr = pd.DataFrame({"hour": np.arange(400), "loc": pd.Categorical(["a"] * 400)})
+    ytr = np.sin(Xtr["hour"] / 10).astype(float)
+    Xva = pd.DataFrame({"hour": np.arange(400, 600), "loc": pd.Categorical(["a"] * 200)})
+    yva = np.sin(Xva["hour"] / 10).astype(float)
+
+    model = lgb.LGBMRegressor(
+        objective="regression", num_leaves=31, learning_rate=0.05,
+        n_estimators=500, random_state=42, n_jobs=-1, verbose=-1,
+    )
+    model.fit(
+        Xtr, ytr,
+        categorical_feature=["loc"],
+        eval_set=[(Xva, yva)],
+        callbacks=[
+            lgb.early_stopping(50, verbose=False),
+            lgb.log_evaluation(0),
+        ],
+    )
+    assert model.best_iteration_ < 500
+
+
 # ── Test: load_corrector ───────────────────────────────────────────────────────
 
 def test_load_corrector_missing_returns_none(tmp_path: Path) -> None:

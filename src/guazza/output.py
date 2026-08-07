@@ -223,6 +223,7 @@ def compute_hourly_profile(
     precip_ci80_lo: float | None = None,
     precip_ci80_hi: float | None = None,
     corrector: Any = None,
+    rain_prob_daily: float | None = None,
 ) -> list[dict[str, float | None]] | None:
     """Profilo orario disaggregato da NWP ensemble, ancorato alle previsioni ML.
 
@@ -231,9 +232,12 @@ def compute_hourly_profile(
     Se corrector è fornito, aggiunge un delta Δ(h) dalla shape normalizzata (correttore
     orario opzionale) e ri-ancora il risultato ai bound ML daily.
 
-    Bande CI 80% orarie (opzionali): due ulteriori rescaling con gli stessi bound
-    NWP ma ancorati a (tmin_ci80_lo, tmax_ci80_lo) e (tmin_ci80_hi, tmax_ci80_hi).
-    Servono al frontend per disegnare la fascia di incertezza giornaliera.
+    Bande CI 80% orarie (opzionali): due rescaling lineari ancorati a
+    (tmin_ci80_lo, tmax_ci80_lo) e (tmin_ci80_hi, tmax_ci80_hi). Quando il correttore
+    è attivo, le bande sono derivate dalla posizione normalizzata del p50 corretto
+    nello stesso intervallo dei bound daily annidati (tmin_ci80_lo <= tmin_p50 <=
+    tmin_ci80_hi, tmax_ci80_lo <= tmax_p50 <= tmax_ci80_hi): la mappa è monotona,
+    quindi lo <= p50 <= hi è garantita per costruzione anche con bound asimmetrici.
 
     Precipitazione: distribuzione oraria NWP scalata proporzionalmente così che la
     somma giornaliera corrisponda a precip_anchor (E[precip] ML). precip_prob =
@@ -241,10 +245,18 @@ def compute_hourly_profile(
     seguono la stessa shape ma con scale diverse (precip_ci80_lo/hi come
     anchor al posto di precip_anchor).
 
+    precip_prob_ml (opzionale, da rain_prob_daily): P che l'ora h sia l'ora di
+    pioggia, condizionato a giorno piovoso — la prob daily del classificatore ML
+    (rain_clf.prob_rain) distribuita secondo il timing NWP (precip_prob oraria
+    normalizzata a max=1 sul giorno). NON è una probabilità oraria calibrata e
+    non somma a 1. None se rain_prob_daily è assente, se nessuna ora ha
+    precip_prob non-null o se il massimo giornaliero è 0.
+
     Returns:
         Lista di 24 dict {hour, temp_c, temp_ci80_lo, temp_ci80_hi, humidity_pct,
-        precip_mm, precip_ci80_lo, precip_ci80_hi, precip_prob, wind_speed_ms,
-        weather_code} oppure None se non ci sono dati NWP per il giorno richiesto.
+        precip_mm, precip_ci80_lo, precip_ci80_hi, precip_prob, precip_prob_ml,
+        wind_speed_ms, weather_code} oppure None se non ci sono dati NWP per il
+        giorno richiesto.
     """
     df = db.execute("""
         SELECT
@@ -352,13 +364,14 @@ def compute_hourly_profile(
         tmin_ci80_lo is not None and tmax_ci80_lo is not None
         and tmin_ci80_hi is not None and tmax_ci80_hi is not None
     )
+    p50_span = (tmax_p50 - tmin_p50) if (tmin_p50 is not None and tmax_p50 is not None) else 0.0
 
     # ── Correttore orario opzionale ───────────────────────────────────────────
     # Calcola un delta Δ(h) per ogni ora disponibile e ri-ancora il profilo
-    # corretto ai bound ML daily (tmin_p50, tmax_p50).
+    # corretto ai bound ML daily (tmin_p50, tmax_p50). Le bande CI80 NON vengono
+    # ri-ancorate indipendentemente (distruggerebbe l'ordinamento lo <= p50 <= hi):
+    # nel loop finale sono derivate dalla posizione normalizzata del p50 corretto.
     final_temp: dict[int, float] = {}           # h → temp corretta ri-ancorata
-    band_lo_corrected: dict[int, float] = {}    # h → ci80_lo corretta ri-ancorata
-    band_hi_corrected: dict[int, float] = {}    # h → ci80_hi corretta ri-ancorata
 
     if (
         corrector is not None
@@ -395,8 +408,6 @@ def compute_hourly_profile(
                     delta_by_hour[h] = d
 
             if delta_by_hour:
-                p50_span = tmax_p50 - tmin_p50
-
                 # ── temp_c: shape_ml + delta, poi ri-ancora a [tmin_p50, tmax_p50]
                 corrected: dict[int, float] = {
                     h: _rescale_temp_p50(hour_data[h][0]) + delta_by_hour[h]
@@ -414,50 +425,49 @@ def compute_hourly_profile(
                     mid = round((tmin_p50 + tmax_p50) / 2.0, 1)
                     final_temp = dict.fromkeys(corrected, mid)
 
-                # ── Bande CI: stessa logica con ri-ancoraggio ai rispettivi bound
-                if has_temp_band:
-                    for band_out, t_lo, t_hi in (
-                        (band_lo_corrected, tmin_ci80_lo, tmax_ci80_lo),
-                        (band_hi_corrected, tmin_ci80_hi, tmax_ci80_hi),
-                    ):
-                        if t_lo is None or t_hi is None:
-                            continue
-                        c_band: dict[int, float] = {
-                            h: _rescale_temp(hour_data[h][0], t_lo, t_hi) + delta_by_hour[h]
-                            for h in delta_by_hour
-                        }
-                        b_min = min(c_band.values())
-                        b_max = max(c_band.values())
-                        b_span = t_hi - t_lo
-                        if b_max - b_min > 0 and b_span != 0:
-                            for h, v in c_band.items():
-                                band_out[h] = round(
-                                    t_lo + (v - b_min) / (b_max - b_min) * b_span, 1
-                                )
-                        else:
-                            mid_b = round((t_lo + t_hi) / 2.0, 1)
-                            for h in c_band:
-                                band_out[h] = mid_b
+    # precip_prob_ml: P(pioggia) oraria ML-based. La prob daily del classificatore
+    # viene distribuita secondo il timing NWP (precip_prob oraria normalizzata a
+    # max=1 sul giorno). max_precip_prob = massimo dei precip_prob sulle ore presenti.
+    # NB: NULL in DuckDB arriva come NaN in pandas — trattato come prob mancante.
+    precip_probs = [
+        prob for _, (_, _, _, prob, _) in hour_data.items()
+        if prob is not None and not pd.isna(prob)
+    ]
+    max_precip_prob = max(precip_probs) if precip_probs else 0.0
 
     for h in range(24):
         if h in hour_data:
             t_raw, hum, p_raw, prob, wind = hour_data[h]
+            # Bande CI80: dalla posizione normalizzata del p50 corretto quando il
+            # correttore è attivo per quell'ora; altrimenti rescale lineare classico.
+            band_lo: float | None
+            band_hi: float | None
+            if h in final_temp and has_temp_band and p50_span > 0:
+                assert tmin_p50 is not None and tmax_p50 is not None
+                assert tmin_ci80_lo is not None and tmax_ci80_lo is not None
+                assert tmin_ci80_hi is not None and tmax_ci80_hi is not None
+                norm = (final_temp[h] - tmin_p50) / p50_span
+                band_lo = round(tmin_ci80_lo + norm * (tmax_ci80_lo - tmin_ci80_lo), 1)
+                band_hi = round(tmin_ci80_hi + norm * (tmax_ci80_hi - tmin_ci80_hi), 1)
+            else:
+                band_lo = _rescale_temp(t_raw, tmin_ci80_lo, tmax_ci80_lo) if has_temp_band else None
+                band_hi = _rescale_temp(t_raw, tmin_ci80_hi, tmax_ci80_hi) if has_temp_band else None
             result.append({
                 "hour":          h,
                 "temp_c":        final_temp[h] if h in final_temp else _rescale_temp_p50(t_raw),
-                "temp_ci80_lo":  (
-                    band_lo_corrected[h] if h in band_lo_corrected
-                    else (_rescale_temp(t_raw, tmin_ci80_lo, tmax_ci80_lo) if has_temp_band else None)
-                ),
-                "temp_ci80_hi":  (
-                    band_hi_corrected[h] if h in band_hi_corrected
-                    else (_rescale_temp(t_raw, tmin_ci80_hi, tmax_ci80_hi) if has_temp_band else None)
-                ),
+                "temp_ci80_lo":  band_lo,
+                "temp_ci80_hi":  band_hi,
                 "humidity_pct":  round(hum, 0) if hum is not None else None,
                 "precip_mm":     round(p_raw * precip_scale, 2),
                 "precip_ci80_lo": round(p_raw * precip_scale_lo, 2) if precip_scale_lo > 0 else None,
                 "precip_ci80_hi": round(p_raw * precip_scale_hi, 2) if precip_scale_hi > 0 else None,
                 "precip_prob":   round(prob, 2) if prob is not None else None,
+                "precip_prob_ml": (
+                    round(rain_prob_daily * prob / max_precip_prob, 2)
+                    if rain_prob_daily is not None and max_precip_prob > 0
+                    and prob is not None and not pd.isna(prob)
+                    else None
+                ),
                 "wind_speed_ms": round(wind, 1) if wind is not None else None,
                 "weather_code":  hour_wc_modal.get(h),
             })
@@ -466,7 +476,8 @@ def compute_hourly_profile(
                 "hour": h, "temp_c": None, "temp_ci80_lo": None, "temp_ci80_hi": None,
                 "humidity_pct": None,
                 "precip_mm": None, "precip_ci80_lo": None, "precip_ci80_hi": None,
-                "precip_prob": None, "wind_speed_ms": None,
+                "precip_prob": None, "precip_prob_ml": None,
+                "wind_speed_ms": None,
                 "weather_code": None,
             })
 

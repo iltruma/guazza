@@ -972,6 +972,7 @@ function buildChartPoints(data, model, targetDate) {
                     temp_c: h.temp_c, humidity_pct: h.humidity_pct,
                     temp_ci80_lo: h.temp_ci80_lo, temp_ci80_hi: h.temp_ci80_hi,
                     precip_mm: h.precip_mm, precip_prob: h.precip_prob,
+                    precip_prob_ml: h.precip_prob_ml,
                     precip_ci80_lo: h.precip_ci80_lo, precip_ci80_hi: h.precip_ci80_hi,
                     wind_speed_ms: h.wind_speed_ms, weather_code: h.weather_code });
     });
@@ -999,6 +1000,7 @@ function buildWeeklyPoints(data, model) {
         temp_c: h.temp_c, humidity_pct: h.humidity_pct,
         temp_ci80_lo: h.temp_ci80_lo, temp_ci80_hi: h.temp_ci80_hi,
         precip_mm: h.precip_mm, precip_prob: h.precip_prob,
+        precip_prob_ml: h.precip_prob_ml,
         precip_ci80_lo: h.precip_ci80_lo, precip_ci80_hi: h.precip_ci80_hi,
         wind_speed_ms: h.wind_speed_ms, weather_code: h.weather_code,
       }));
@@ -1119,6 +1121,8 @@ function _makeTooltipHandler(elId) {
     const ts   = new Date(items[0].raw.x);
     const date = ts.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
     const time = ts.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    // P(pioggia) oraria ML: dal punto guazza corrente (i punti NWP non hanno il campo).
+    const wpt = (chart.$weatherPoints ?? []).find(p => p.ts && p.ts.getTime() === ts.getTime());
 
     const row = (dotColor, label, val) =>
       `<div style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:3px 0">
@@ -1136,6 +1140,7 @@ function _makeTooltipHandler(elId) {
       ${temp ? row('var(--chart-temp)', 'Temp',  `${temp.raw.y.toFixed(1)}°C`) : ''}
       ${(tLo && tHi) ? ciRow('var(--chart-temp)',  'Temp CI',  tLo.raw.y, tHi.raw.y) : ''}
       ${prec && prec.raw.y > 0.05 ? row('var(--chart-precip)', 'Precip', `${prec.raw.y.toFixed(1)} mm`) : ''}
+      ${prec && wpt && wpt.precip_prob_ml != null ? row('var(--chart-precip)', 'P pioggia ML', `${Math.round(wpt.precip_prob_ml * 100)}%`) : ''}
       ${(pLo && pHi && (pHi.raw.y - pLo.raw.y) > 0.1) ? ciRow('var(--chart-precip)', 'Precip CI', pLo.raw.y, pHi.raw.y) : ''}
       ${wind ? row('var(--chart-wind)', 'Vento', `${wind.raw.y.toFixed(0)} km/h`) : ''}`;
 

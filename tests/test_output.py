@@ -1814,3 +1814,248 @@ def test_hourly_profile_corrector_none_identical_to_baseline(seeded_db: Path) ->
         return _json.dumps(lst, allow_nan=True)
 
     assert _normalize(baseline) == _normalize(no_corrector)
+
+
+# ── compute_hourly_profile — bande CI80 con correttore ────────────────────────
+
+def test_hourly_profile_corrector_ci80_bands_nested(seeded_db: Path) -> None:
+    """Con corrector e bound CI asimmetrici, ogni ora ha lo <= p50 <= hi.
+
+    Regressione T1: il vecchio ri-ancoraggio indipendente delle bande poteva
+    produrre lo > p50 (e persino lo > hi) con bound asimmetrici.
+    """
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    tmin_p50, tmax_p50 = 10.0, 26.0
+    tmin_lo, tmin_hi = 8.0, 13.0
+    tmax_lo, tmax_hi = 23.0, 28.0
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19",
+            tmin_p50=tmin_p50, tmax_p50=tmax_p50, precip_anchor=0.0,
+            tmin_ci80_lo=tmin_lo, tmin_ci80_hi=tmin_hi,
+            tmax_ci80_lo=tmax_lo, tmax_ci80_hi=tmax_hi,
+            corrector=_FakeCorrector(),
+        )
+
+    assert result is not None
+    corrected_hours = [r for r in result if r["temp_c"] is not None]
+    assert corrected_hours, "nessuna ora corretta"
+    for r in corrected_hours:
+        assert r["temp_ci80_lo"] is not None and r["temp_ci80_hi"] is not None
+        assert r["temp_ci80_lo"] <= r["temp_c"] <= r["temp_ci80_hi"], (
+            f"hour={r['hour']} p50={r['temp_c']} band=[{r['temp_ci80_lo']}, {r['temp_ci80_hi']}]"
+        )
+
+
+def test_hourly_profile_corrector_ci80_band_extremes(seeded_db: Path) -> None:
+    """Alle ore estreme (norm 0 e 1) le bande toccano i bound daily CI80."""
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    tmin_p50, tmax_p50 = 10.0, 26.0
+    tmin_lo, tmin_hi = 8.0, 13.0
+    tmax_lo, tmax_hi = 23.0, 28.0
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19",
+            tmin_p50=tmin_p50, tmax_p50=tmax_p50, precip_anchor=0.0,
+            tmin_ci80_lo=tmin_lo, tmin_ci80_hi=tmin_hi,
+            tmax_ci80_lo=tmax_lo, tmax_ci80_hi=tmax_hi,
+            corrector=_FakeCorrector(),
+        )
+
+    assert result is not None
+    present = [r for r in result if r["temp_c"] is not None]
+    min_h = min(present, key=lambda r: r["temp_c"])
+    max_h = max(present, key=lambda r: r["temp_c"])
+
+    # Ora con p50 al minimo daily → bande ai bound di tmin
+    assert min_h["temp_c"] == pytest.approx(tmin_p50, abs=0.1)
+    assert min_h["temp_ci80_lo"] == pytest.approx(tmin_lo, abs=0.1)
+    assert min_h["temp_ci80_hi"] == pytest.approx(tmin_hi, abs=0.1)
+
+    # Ora con p50 al massimo daily → bande ai bound di tmax
+    assert max_h["temp_c"] == pytest.approx(tmax_p50, abs=0.1)
+    assert max_h["temp_ci80_lo"] == pytest.approx(tmax_lo, abs=0.1)
+    assert max_h["temp_ci80_hi"] == pytest.approx(tmax_hi, abs=0.1)
+
+
+def test_hourly_profile_corrector_ci80_bands_follow_shape(seeded_db: Path) -> None:
+    """Le bande si spostano nella stessa direzione del p50 corretto vs baseline.
+
+    Ora con delta forte (>= 12): p50, lo e hi corretti tutti più alti della baseline.
+    """
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    tmin_p50, tmax_p50 = 10.0, 26.0
+    tmin_lo, tmin_hi = 8.0, 13.0
+    tmax_lo, tmax_hi = 23.0, 28.0
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        baseline = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19",
+            tmin_p50=tmin_p50, tmax_p50=tmax_p50, precip_anchor=0.0,
+            tmin_ci80_lo=tmin_lo, tmin_ci80_hi=tmin_hi,
+            tmax_ci80_lo=tmax_lo, tmax_ci80_hi=tmax_hi,
+        )
+        corrected = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19",
+            tmin_p50=tmin_p50, tmax_p50=tmax_p50, precip_anchor=0.0,
+            tmin_ci80_lo=tmin_lo, tmin_ci80_hi=tmin_hi,
+            tmax_ci80_lo=tmax_lo, tmax_ci80_hi=tmax_hi,
+            corrector=_FakeCorrector(),
+        )
+
+    assert baseline is not None and corrected is not None
+    b_by_h = {r["hour"]: r for r in baseline}
+    c_by_h = {r["hour"]: r for r in corrected}
+
+    # Ora con delta forte: la correzione alza il p50 e le bande seguono.
+    h = 14  # ora locale pomeridiana (delta 3.0), presente nel profilo
+    assert c_by_h[h]["temp_c"] is not None
+    assert c_by_h[h]["temp_c"] > b_by_h[h]["temp_c"]
+    assert c_by_h[h]["temp_ci80_lo"] > b_by_h[h]["temp_ci80_lo"]
+    assert c_by_h[h]["temp_ci80_hi"] > b_by_h[h]["temp_ci80_hi"]
+
+
+def test_hourly_profile_corrector_ci80_narrow_bands(seeded_db: Path) -> None:
+    """Bound simmetrici con span banda diverso dallo span p50: lo <= p50 <= hi.
+
+    band_lo span 14 e band_hi span 18 (vs span p50 16) — annidati, mappe monotone.
+    """
+    _insert_hourly_nwp(seeded_db, "casa_campi", "2026-05-19")
+    tmin_p50, tmax_p50 = 10.0, 26.0
+    tmin_lo, tmin_hi = 8.0, 12.0
+    tmax_lo, tmax_hi = 22.0, 30.0
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19",
+            tmin_p50=tmin_p50, tmax_p50=tmax_p50, precip_anchor=0.0,
+            tmin_ci80_lo=tmin_lo, tmin_ci80_hi=tmin_hi,
+            tmax_ci80_lo=tmax_lo, tmax_ci80_hi=tmax_hi,
+            corrector=_FakeCorrector(),
+        )
+
+    assert result is not None
+    for r in result:
+        if r["temp_c"] is None:
+            continue
+        assert r["temp_ci80_lo"] <= r["temp_c"] <= r["temp_ci80_hi"], (
+            f"hour={r['hour']} p50={r['temp_c']} band=[{r['temp_ci80_lo']}, {r['temp_ci80_hi']}]"
+        )
+
+
+# ── compute_hourly_profile — precip_prob_ml (P pioggia oraria ML) ─────────────
+
+def _insert_hourly_nwp_precip_prob(
+    db_path: Path,
+    location_id: str,
+    target_date: str,
+    frac_by_hour: dict[int, float],
+    null_hours: set[int] | None = None,
+) -> None:
+    """Inserisce 24h NWP per 4 sorgenti con precip_prob oraria configurabile.
+
+    frac_by_hour[h] = frazione di sorgenti con precip > 0.1mm/h nell'ora h
+    (0, 0.25, 0.5, 0.75, 1.0). null_hours: ore con precip_mm NULL in tutte le
+    sorgenti → precip_prob None.
+    """
+    from datetime import date
+
+    import duckdb
+
+    null_hours = null_hours or set()
+    d = date.fromisoformat(target_date)
+    ts_run = datetime(d.year, d.month, d.day, 0, 0, 0)
+    sources = ("ecmwf_ifs", "icon_eu", "arome_france", "icon2i")
+    records = []
+    for h in range(24):
+        frac = frac_by_hour.get(h, 0.0)
+        n_wet = round(frac * len(sources))
+        for i, src in enumerate(sources):
+            ts_valid = datetime(d.year, d.month, d.day, h, 0, 0)
+            precip = None if h in null_hours else (2.0 if i < n_wet else 0.0)
+            records.append((src, location_id, ts_run, ts_valid, h, 15.0 + h * 0.2, precip))
+
+    con = duckdb.connect(str(db_path))
+    con.executemany(
+        "INSERT OR REPLACE INTO forecasts "
+        "(source, location_id, ts_run, ts_valid, lead_time_h, temp_c, precip_mm) "
+        "VALUES (?,?,?,?,?,?,?)",
+        records,
+    )
+    con.close()
+
+
+def test_hourly_profile_precip_prob_ml_scaled(seeded_db: Path) -> None:
+    """precip_prob_ml: max == rain_prob_daily, scala proporzionale altrove."""
+    # chiavi = ore UTC inserite (CEST: UTC+2 → ore locali 4-8 con 1.0/0.75/0.5/0.25/0.0)
+    fracs = {2: 1.0, 3: 0.75, 4: 0.5, 5: 0.25, 6: 0.0}
+    _insert_hourly_nwp_precip_prob(seeded_db, "casa_campi", "2026-05-19", fracs)
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19", 5.0, 20.0, 0.0,
+            rain_prob_daily=0.6,
+        )
+
+    assert result is not None
+    by_h = {r["hour"]: r for r in result}
+
+    # Ore locali 4-8: max precip_prob = 1.0 all'ora 4.
+    assert by_h[4]["precip_prob_ml"] == pytest.approx(0.6, abs=0.01)
+    assert by_h[5]["precip_prob_ml"] == pytest.approx(0.45, abs=0.01)   # 0.6 * 0.75
+    assert by_h[6]["precip_prob_ml"] == pytest.approx(0.3, abs=0.01)    # 0.6 * 0.5
+    assert by_h[7]["precip_prob_ml"] == pytest.approx(0.15, abs=0.01)   # 0.6 * 0.25
+    assert by_h[8]["precip_prob_ml"] == pytest.approx(0.0, abs=0.01)    # prob 0 → 0.0
+
+
+def test_hourly_profile_precip_prob_ml_none_without_daily(seeded_db: Path) -> None:
+    """rain_prob_daily=None → tutti i precip_prob_ml null."""
+    fracs = {2: 1.0, 3: 0.75}
+    _insert_hourly_nwp_precip_prob(seeded_db, "casa_campi", "2026-05-19", fracs)
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19", 5.0, 20.0, 0.0,
+            rain_prob_daily=None,
+        )
+
+    assert result is not None
+    for r in result:
+        assert r["precip_prob_ml"] is None
+
+
+def test_hourly_profile_precip_prob_ml_null_when_all_dry(seeded_db: Path) -> None:
+    """Tutti i precip_prob NWP = 0 → max_prob <= 0 → tutti null."""
+    _insert_hourly_nwp_precip_prob(seeded_db, "casa_campi", "2026-05-19", {})
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19", 5.0, 20.0, 0.0,
+            rain_prob_daily=0.6,
+        )
+
+    assert result is not None
+    for r in result:
+        assert r["precip_prob_ml"] is None
+
+
+def test_hourly_profile_precip_prob_ml_null_when_prob_none(seeded_db: Path) -> None:
+    """Ore con precip_prob NWP None → precip_prob_ml null (le altre ore no)."""
+    # UTC 2 → locale 4 (prob 1.0); UTC 4 → locale 6 (tutte sorgenti NULL → prob None)
+    fracs = {2: 1.0, 3: 0.5}
+    _insert_hourly_nwp_precip_prob(
+        seeded_db, "casa_campi", "2026-05-19", fracs, null_hours={4}
+    )
+
+    with DuckDBClient(db_path=seeded_db, read_only=True) as db:
+        result = compute_hourly_profile(
+            db, "casa_campi", "2026-05-19", 5.0, 20.0, 0.0,
+            rain_prob_daily=0.6,
+        )
+
+    assert result is not None
+    by_h = {r["hour"]: r for r in result}
+    assert by_h[4]["precip_prob_ml"] == pytest.approx(0.6, abs=0.01)
+    assert by_h[6]["precip_prob_ml"] is None  # precip_prob None (tutte sorgenti NULL)

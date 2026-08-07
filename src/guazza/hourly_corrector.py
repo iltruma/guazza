@@ -384,8 +384,7 @@ def train_corrector(
         model.fit(
             X_train, y_train,
             categorical_feature=["location_id"],
-            eval_X=X_val,
-            eval_y=val["delta"],
+            eval_set=[(X_val, val["delta"])],
             callbacks=[
                 lgb.early_stopping(50, verbose=False),
                 lgb.log_evaluation(0),
