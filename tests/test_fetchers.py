@@ -342,15 +342,6 @@ def _make_station(mac: str, temp: float, qc: bool = True) -> _StationData:
     )
 
 
-def test_save_netatmo_to_db_inserts_fetch_log(seeded_db: Path) -> None:
-    stations = [_make_station("70:ee:50:aa:bb:cc", 18.5)]
-    fetched_at = datetime(2026, 5, 14, 10, 0, 0, tzinfo=UTC)
-    with DuckDBClient(db_path=seeded_db) as db:
-        save_netatmo_to_db(db, "casa_campi", stations, fetched_at)
-        count = db.execute("SELECT COUNT(*) FROM netatmo_fetch_log").fetchone()[0]
-    assert count == 1
-
-
 def test_save_netatmo_to_db_inserts_observations_wide(seeded_db: Path) -> None:
     stations = [_make_station("70:ee:50:aa:bb:cc", 18.5)]
     fetched_at = datetime(2026, 5, 14, 10, 0, 0, tzinfo=UTC)
@@ -369,9 +360,7 @@ def test_save_netatmo_to_db_idempotent(seeded_db: Path) -> None:
     with DuckDBClient(db_path=seeded_db) as db:
         save_netatmo_to_db(db, "casa_campi", stations, fetched_at)
         save_netatmo_to_db(db, "casa_campi", stations, fetched_at)
-        count_log = db.execute("SELECT COUNT(*) FROM netatmo_fetch_log").fetchone()[0]
         count_obs = db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
-    assert count_log == 1
     assert count_obs == 1
 
 

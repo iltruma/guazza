@@ -61,7 +61,7 @@ Deploy prod: reset DB schema (cape_jkg), `guazza-ingest historical` su k8s, `gua
 - **Correttore orario** (commit 2e014fd, D-024): nuovo modulo `hourly_corrector.py` + CLI `guazza-hourly-correct` (train/eval/status). LightGBM p50 sul residuo di shape Δ(h) = obs_mediana − shape NWP normalizzata; embargo 7gg, split cronologico, salvataggio solo con improvement RMSE ≥ 15% su holdout. `compute_hourly_profile` accetta il correttore: delta + ri-ancoraggio a [tmin_p50, tmax_p50] e bande CI80 ai rispettivi bound — livelli sempre ML daily, cambia solo la forma; fallback automatico se il file manca.
 - **QC realtime** (`qc.py`): 3 flag nuovi nel batch idempotente — `spike_realtime` (Δ>8°C entro 90min), `stall_sensor` (costante ≥180min), `bias_solar` (Netatmo 10-17 locali + cielo sereno NWP modale) — consumati dal dataset del correttore.
 - **Dati**: nessun DB ha ancora storico realtime sufficiente (prod da resettare); il training si attiva da solo quando l'accumulo raggiunge ~60gg/location (P9).
-- Nota: 2 test pre-esistenti rotti su HEAD (`test_save_netatmo_to_db_inserts_fetch_log`, `test_save_netatmo_to_db_idempotent`): referenziano `netatmo_fetch_log`, tabella rimossa in 54ed68f — fuori scope, da sistemare in task dedicato.
+- Nota: 2 test riferivano `netatmo_fetch_log` (tabella rimossa in 54ed68f) — sistemati in sessione (test della feature rimossa eliminato, idempotenza su observations preservata).
 
 ## Sessione 2026-08-06 — daily fuori dal cron, review con finestra di recupero
 
