@@ -22,7 +22,7 @@ ENV CONFIG_DIR=/app/config
 RUN uv pip install --system --no-cache .
 
 # Statici + nginx-k8s
-COPY frontend/index.html frontend/app.js frontend/style.css /usr/share/nginx/html/
+COPY frontend/index.html frontend/affidabilita.html frontend/app.js frontend/style.css /usr/share/nginx/html/
 COPY deploy/nginx-k8s.conf /etc/nginx/conf.d/default.conf
 
 # Permessi e pid compatibile con readOnlyRootFS
